@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import Role, Utilisateur
@@ -78,9 +78,25 @@ def exiger_role(*roles: Role):
     return verifier
 
 
-TOUS = (Role.directeur, Role.comptable, Role.enseignant)
+TOUS = (Role.directeur, Role.comptable, Role.enseignant, Role.surveillant)
 GESTION = (Role.directeur, Role.comptable)
 PEDAGOGIE = (Role.directeur, Role.enseignant)
+APPEL = (Role.directeur, Role.enseignant, Role.surveillant)        # faire l'appel, voir les absences
+JUSTIFICATION = (Role.directeur, Role.surveillant)                 # justifier / supprimer une absence
+
+
+def affectations_de(session: Session, user: Utilisateur) -> set[tuple[int, int]]:
+    """(matiere_id, classe_id) attribués à un enseignant."""
+    from app.models import Affectation
+    return {(a.matiere_id, a.classe_id) for a in session.exec(
+        select(Affectation).where(Affectation.utilisateur_id == user.id)).all()}
+
+
+def classes_autorisees(session: Session, user: Utilisateur) -> set[int] | None:
+    """Classes d'un enseignant ; None = toutes (autres rôles)."""
+    if user.role != Role.enseignant:
+        return None
+    return {c for _, c in affectations_de(session, user)}
 
 
 # ---------- Espace parents ----------

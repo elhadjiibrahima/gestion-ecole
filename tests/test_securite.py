@@ -1,4 +1,4 @@
-from tests.conftest import creer_compte, creer_ecole
+from tests.conftest import creer_compte, creer_ecole, toutes_matieres
 
 
 def test_sans_connexion_refuse(client):
@@ -46,7 +46,8 @@ def test_isolation_entre_ecoles(client, dir_headers, setup):
 def test_roles(client, dir_headers, setup):
     classe, eleve = setup
     compta = creer_compte(client, dir_headers, "comptable", "compta@test.gn")
-    prof = creer_compte(client, dir_headers, "enseignant", "prof@test.gn")
+    prof = creer_compte(client, dir_headers, "enseignant", "prof@test.gn",
+                        toutes_matieres(client, dir_headers, classe["id"]))
 
     # Comptable : paiements oui, notes et classes non
     assert client.post("/paiements", headers=compta, json={"eleve_id": eleve["id"], "montant": 1000}).status_code == 201
@@ -57,7 +58,7 @@ def test_roles(client, dir_headers, setup):
 
     # Enseignant : notes et bulletins oui, argent non
     assert client.post("/notes", headers=prof, json={
-        "eleve_id": eleve["id"], "matiere": "M", "valeur": 10, "trimestre": 1}).status_code == 201
+        "eleve_id": eleve["id"], "matiere": "Mathématiques", "valeur": 10, "trimestre": 1}).status_code == 201
     assert client.get(f"/eleves/{eleve['id']}/bulletin?trimestre=1", headers=prof).status_code == 200
     assert client.get("/stats", headers=prof).status_code == 403
     assert client.get("/impayes", headers=prof).status_code == 403

@@ -15,6 +15,9 @@ class EcoleBase(SQLModel):
     devise: str = "FCFA"
     annee_scolaire: str = "2026-2027"
     indicatif_tel: str = "224"               # ajouté aux numéros des parents sans indicatif
+    nb_devoirs: int = 2                      # colonnes « devoir » dans la grille de notes
+    poids_composition: float = 2             # moyenne = (devoirs + composition × poids) / (1 + poids)
+    seuil_admission: float = 10              # moyenne annuelle minimale pour passer
 
 
 class Ecole(EcoleBase, table=True):
@@ -28,13 +31,17 @@ class EcoleUpdate(SQLModel):
     telephone: Optional[str] = None
     devise: Optional[str] = None
     indicatif_tel: Optional[str] = None
+    nb_devoirs: Optional[int] = Field(default=None, ge=0, le=6)
+    poids_composition: Optional[float] = Field(default=None, ge=0, le=10)
+    seuil_admission: Optional[float] = Field(default=None, ge=0, le=20)
 
 
 # ---------- Utilisateurs ----------
 class Role(str, Enum):
     directeur = "directeur"      # tout
     comptable = "comptable"      # élèves, paiements, impayés
-    enseignant = "enseignant"    # notes, bulletins
+    enseignant = "enseignant"    # notes de ses matières dans ses classes, appel de ses classes
+    surveillant = "surveillant"  # appel de toutes les classes, justification des absences et retards
 
 
 class UtilisateurBase(SQLModel):
@@ -50,17 +57,24 @@ class Utilisateur(UtilisateurBase, table=True):
     actif: bool = True
 
 
+class AffectationSaisie(SQLModel):
+    matiere_id: int
+    classe_id: int
+
+
 class UtilisateurCreate(SQLModel):
     nom: str
     email: EmailStr
     role: Role
     mot_de_passe: str = Field(min_length=8)
+    affectations: list[AffectationSaisie] = []   # enseignant : matières × classes
 
 
 class UtilisateurPublic(UtilisateurBase):
     id: int
     ecole_id: int
     actif: bool
+    affectations: list[AffectationSaisie] = []
 
 
 class InscriptionEcole(SQLModel):
@@ -124,7 +138,10 @@ class Eleve(EleveBase, table=True):
     matricule: Optional[str] = Field(default=None, unique=True, index=True)
     actif: bool = True                       # False : a quitté l'école (fin de cycle, départ)
     annee_sortie: Optional[str] = None
-    code_parent: Optional[str] = Field(default=None, index=True)   # accès à l'espace parents
+    code_parent: Optional[str] = Field(default=None, index=True, exclude=True)   # jamais renvoyé dans les listes
+    reduction_pct: float = 0                 # réduction sur les frais (2e enfant, enfant d'enseignant…)
+    reduction_montant: int = 0               # ou montant fixe (bourse)
+    reduction_motif: Optional[str] = None
 
 
 class EleveUpdate(SQLModel):
@@ -246,6 +263,8 @@ class NoteBase(SQLModel):
     valeur: float = Field(ge=0, le=20)
     coefficient: int = Field(default=1, ge=1)
     trimestre: int = Field(ge=1, le=3)
+    type: str = Field(default="devoir")      # devoir / composition
+    numero: int = Field(default=1, ge=1)     # devoir 1, devoir 2…
 
 
 class Note(NoteBase, table=True):
@@ -258,11 +277,14 @@ class NoteCreate(NoteBase):
 
 
 class CaseNote(SQLModel):
-    """Une case de la grille de saisie : une matière, sa note (ou vide)."""
+    """Une ligne de la grille de saisie : une matière, ses devoirs, sa composition et sa moyenne."""
     matiere_id: Optional[int] = None         # None : ancienne note sans matière enregistrée
     matiere: str
     coefficient: int
-    valeur: Optional[float] = None
+    devoirs: list[Optional[float]] = []
+    composition: Optional[float] = None
+    valeur: Optional[float] = None           # moyenne de la matière
+    modifiable: bool = True                  # l'utilisateur peut-il saisir cette matière ?
     saisi_par: Optional[str] = None          # dernière personne à avoir modifié la case
     saisi_le: Optional[datetime] = None
 
@@ -279,6 +301,7 @@ class NoteHistorique(SQLModel, table=True):
     nouvelle_valeur: Optional[float] = None  # None : la note a été effacée
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
     annee_scolaire: Optional[str] = Field(default=None, index=True)
+    type_note: Optional[str] = None          # devoir 1, devoir 2, composition
 
 
 class LigneHistorique(SQLModel):
@@ -294,11 +317,15 @@ class LigneHistorique(SQLModel):
     ancienne_valeur: Optional[float]
     nouvelle_valeur: Optional[float]
     action: str                              # ajout / modification / suppression
+    type_note: Optional[str] = None
 
 
 class SaisieNote(SQLModel):
     matiere_id: int
-    valeur: Optional[float] = Field(default=None, ge=0, le=20)   # vide = effacer
+    devoirs: Optional[list[Optional[float]]] = None              # None : ne pas toucher aux devoirs
+    composition: Optional[float] = Field(default=None, ge=0, le=20)
+    valeur: Optional[float] = Field(default=None, ge=0, le=20)   # ancienne saisie (une note) = composition
+    effacer_composition: bool = False
 
 
 # ---------- Réponses calculées ----------
@@ -335,6 +362,9 @@ class Solde(SQLModel):
     prochaine_echeance: Optional[date] = None
     prochain_montant: int = 0
     echeances: list[Echeance] = []
+    frais_classe: int = 0                    # frais de la classe avant réduction
+    reduction: int = 0
+    reduction_motif: Optional[str] = None
 
 
 class LigneBulletin(SQLModel):
@@ -357,6 +387,11 @@ class Bulletin(SQLModel):
     absences: int = 0
     absences_justifiees: int = 0
     retards: int = 0
+    # Renseignés sur le bulletin du 3e trimestre
+    moyennes_trimestres: list[Optional[float]] = []
+    moyenne_annuelle: Optional[float] = None
+    rang_annuel: Optional[int] = None
+    decision: Optional[str] = None           # Admis(e) / Redouble
 
 
 # ---------- Coefficients spécifiques à une classe ----------
@@ -631,3 +666,29 @@ class EspaceParent(SQLModel):
     paiements: list[PaiementParent]
     bulletins: list[Bulletin]
     absences: list[AbsenceParent]
+
+
+# ---------- Enseignants : matières et classes attribuées ----------
+class Affectation(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True)
+    matiere_id: int = Field(foreign_key="matiere.id", index=True)
+    classe_id: int = Field(foreign_key="classe.id", index=True)
+
+
+# ---------- Réductions ----------
+class Reduction(SQLModel):
+    pourcentage: float = Field(default=0, ge=0, le=100)
+    montant: int = Field(default=0, ge=0)
+    motif: Optional[str] = Field(default=None, max_length=80)
+
+
+# ---------- Résultats annuels ----------
+class ResultatAnnuel(SQLModel):
+    eleve_id: int
+    matricule: Optional[str]
+    eleve: str
+    moyennes_trimestres: list[Optional[float]]
+    moyenne_annuelle: Optional[float]
+    rang: Optional[int]
+    decision: Optional[str]

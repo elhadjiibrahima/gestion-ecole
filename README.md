@@ -7,10 +7,13 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Multi-écoles** : chaque école a son compte, ses données sont isolées des autres.
 - **Comptes et rôles**
   - *Directeur* : tout, plus la gestion de l'équipe et des paramètres de l'école
-  - *Comptable* : élèves, paiements, impayés, tableau de bord
-  - *Enseignant* : notes et bulletins
+  - *Comptable* : élèves, paiements, impayés, caisse, tableau de bord
+  - *Enseignant* : notes de **ses matières dans ses classes** (attribuées par le directeur), appel de ses classes
+  - *Surveillant* : appel de toutes les classes, **justification** des absences et retards
+  - 5 mots de passe faux = compte bloqué 15 minutes
 - **Élèves** : inscription avec **premier paiement obligatoire** (reçu immédiat), matricule automatique, recherche, **import depuis Excel** (modèle fourni, sans paiement : pour reprendre des élèves existants)
 - **Paiements** : espèces, Orange Money, MTN MoMo, virement — **reçu PDF numéroté** avec montant en lettres
+- **Réductions et bourses** par élève (pourcentage et/ou montant, avec motif), prises en compte partout (reçus, soldes, rappels)
 - Un paiement ne peut pas dépasser le reste à payer (évite les erreurs de saisie)
 - Formulaire de paiement : classe puis élève, seuls les élèves qui doivent encore sont proposés
 - **Suivi des paiements par classe** (à jour / partiel / rien payé), état PDF par classe
@@ -19,6 +22,8 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Caisse** : dépenses par catégorie (salaires, loyer, électricité…), bilan mensuel entrées / sorties / solde, export Excel
 - **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
 - **Matières et coefficients** gérés par le directeur (liste usuelle créée automatiquement)
+- **Devoirs et compositions** : plusieurs devoirs + une composition par matière ; moyenne = (devoirs + composition × poids) ÷ (1 + poids), réglable
+- **Moyenne annuelle** : moyenne des trimestres, rang annuel, décision admis / redouble selon un seuil réglable ; les redoublants sont proposés au passage d'année
 - **Saisie des notes en grille** : une case par matière, Entrée pour passer à la suivante, moyenne en direct, enregistrement automatique en changeant d'élève
 - **Historique des notes** : qui a ajouté, modifié ou effacé chaque note, et quand (le directeur voit tout, l'enseignant ses saisies) ; la grille indique qui a rempli chaque case
 - **Coefficients propres à une classe** (ex : Maths coef 5 en 3ème), applicables à plusieurs classes d'un coup
@@ -110,6 +115,9 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | GET | `/classes/{id}/codes-parents.pdf`, `/messages/acces` | Distribuer les codes | gestion |
 | POST | `/parents/connexion` | Connexion parent (matricule + code) | public |
 | GET | `/parents/moi`, `/parents/recu/{id}.pdf`, `/parents/bulletin.pdf` | Espace parents | parent |
+| PUT | `/utilisateurs/{id}/affectations` | Matières × classes d'un enseignant | directeur |
+| GET | `/classes/{id}/resultats-annuels` | Moyennes annuelles, rang, décision | tous |
+| PUT | `/eleves/{id}/reduction` | Réduction / bourse | directeur |
 | GET | `/stats` | Chiffres du tableau de bord | gestion |
 | GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
 | GET | `/notes/historique?classe_id=&eleve_id=&utilisateur_id=` | Qui a saisi quoi | pédagogie |

@@ -1,4 +1,4 @@
-from tests.conftest import creer_compte, creer_ecole, inscrire
+from tests.conftest import creer_compte, creer_ecole, inscrire, toutes_matieres
 
 
 def _matieres(client, h):
@@ -92,8 +92,8 @@ def test_changer_coefficient_met_a_jour_les_notes(client, dir_headers, setup):
 def test_historique_qui_a_saisi_quoi(client, dir_headers, setup):
     classe, eleve = setup
     m = _matieres(client, dir_headers)
-    prof = creer_compte(client, dir_headers, "enseignant", "prof@test.gn")
-    prof2 = creer_compte(client, dir_headers, "enseignant", "prof2@test.gn")
+    prof = creer_compte(client, dir_headers, "enseignant", "prof@test.gn", toutes_matieres(client, dir_headers, classe["id"]))
+    prof2 = creer_compte(client, dir_headers, "enseignant", "prof2@test.gn", toutes_matieres(client, dir_headers, classe["id"]))
     url = f"/notes/grille?eleve_id={eleve['id']}&trimestre=1"
     maths, fr = m["Mathématiques"]["id"], m["Français"]["id"]
 

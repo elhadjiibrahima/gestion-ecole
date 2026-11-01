@@ -12,7 +12,7 @@ from sqlmodel import Session, SQLModel, select
 from app.database import get_session
 from app.models import Classe, Ecole, Eleve, NouvelleAnnee, ResultatNouvelleAnnee, Role, Utilisateur
 from app.security import exiger_role
-from app.services import get_classe
+from app.services import get_classe, resultats_annuels
 
 router = APIRouter(prefix="/annee", tags=["Année scolaire"])
 
@@ -22,6 +22,7 @@ class PropositionPassage(SQLModel):
     classe: str
     nb_eleves: int
     vers_classe_id: int | None
+    redoublants_proposes: list[int] = []     # moyenne annuelle sous le seuil d'admission
 
 
 class Proposition(SQLModel):
@@ -65,10 +66,13 @@ def proposition(user: Utilisateur = Depends(exiger_role(Role.directeur)), sessio
     suite = proposer_passages(classes)
     effectifs = {c.id: len(session.exec(select(Eleve.id).where(
         Eleve.classe_id == c.id, Eleve.actif == True)).all()) for c in classes}  # noqa: E712
+    def redoublants(c):
+        return [r.eleve_id for r in resultats_annuels(session, c) if r.decision == "Redouble"]
     return Proposition(
         annee_actuelle=ecole.annee_scolaire, annee_suivante=_annee_suivante(ecole.annee_scolaire),
         passages=[PropositionPassage(classe_id=c.id, classe=c.nom, nb_eleves=effectifs[c.id],
-                                     vers_classe_id=suite[c.id]) for c in classes],
+                                     vers_classe_id=suite[c.id], redoublants_proposes=redoublants(c))
+                  for c in classes],
     )
 
 

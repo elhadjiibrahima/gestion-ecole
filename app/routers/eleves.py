@@ -7,7 +7,7 @@ from app.database import get_session
 from app.excel import lire_import_eleves, modele_import_eleves
 from app.models import (
     Bulletin, Classe, Ecole, Eleve, EleveCreate, EleveInscrit, EleveUpdate, ResultatImport,
-    Solde, Utilisateur,
+    Reduction, Role, Solde, Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_bulletins
 from app.security import GESTION, TOUS, exiger_role
@@ -149,6 +149,25 @@ def modifier_eleve(
     session.commit()
     session.refresh(eleve)
     return eleve
+
+
+@router.put("/{eleve_id}/reduction", response_model=Solde)
+def definir_reduction(
+    eleve_id: int,
+    data: Reduction,
+    user: Utilisateur = Depends(exiger_role(Role.directeur)),
+    session: Session = Depends(get_session),
+):
+    """Réduction sur les frais (pourcentage et/ou montant fixe), avec son motif. 0 et 0 = aucune."""
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
+    if (data.pourcentage or data.montant) and not (data.motif or "").strip():
+        raise HTTPException(400, "Indique le motif de la réduction (2e enfant, bourse…)")
+    eleve.reduction_pct = data.pourcentage
+    eleve.reduction_montant = data.montant
+    eleve.reduction_motif = (data.motif or "").strip() or None if (data.pourcentage or data.montant) else None
+    session.add(eleve)
+    session.commit()
+    return calculer_solde(session, eleve)
 
 
 @router.get("/{eleve_id}/solde", response_model=Solde)

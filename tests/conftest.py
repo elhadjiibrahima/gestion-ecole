@@ -11,6 +11,20 @@ from app.database import get_session
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def compteurs_a_zero():
+    """Les compteurs d'essais de connexion ne doivent pas passer d'un test à l'autre."""
+    from app.routers import auth, parents
+    auth._ECHECS.clear()
+    parents._ECHECS.clear()
+    yield
+
+
+def toutes_matieres(client, headers, classe_id):
+    """Affectations : toutes les matières de l'école dans une classe."""
+    return [{"matiere_id": m["id"], "classe_id": classe_id} for m in client.get("/matieres", headers=headers).json()]
+
+
 @pytest.fixture
 def client():
     # Base SQLite en mémoire, isolée pour chaque test
@@ -37,9 +51,10 @@ def creer_ecole(client, nom="École Test", email="directeur@test.gn"):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def creer_compte(client, headers, role, email):
+def creer_compte(client, headers, role, email, affectations=None):
     r = client.post("/utilisateurs", headers=headers, json={
         "nom": role.capitalize(), "email": email, "role": role, "mot_de_passe": "motdepasse123",
+        "affectations": affectations or [],
     })
     assert r.status_code == 201, r.text
     tok = client.post("/auth/token", data={"username": email, "password": "motdepasse123"}).json()

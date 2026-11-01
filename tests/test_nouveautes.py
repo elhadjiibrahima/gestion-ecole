@@ -131,7 +131,11 @@ def test_appel_controles(client, dir_headers, setup):
     compta = creer_compte(client, dir_headers, "comptable", "c@test.gn")
     assert client.post("/absences/appel", headers=compta, json={
         "classe_id": classe["id"], "jour": date.today().isoformat(), "trimestre": 1}).status_code == 403
-    prof = creer_compte(client, dir_headers, "enseignant", "p@test.gn")
+    sans_classe = creer_compte(client, dir_headers, "enseignant", "p0@test.gn")
+    assert client.post("/absences/appel", headers=sans_classe, json={
+        "classe_id": classe["id"], "jour": date.today().isoformat(), "trimestre": 1}).status_code == 403
+    m = client.get("/matieres", headers=dir_headers).json()[0]["id"]
+    prof = creer_compte(client, dir_headers, "enseignant", "p@test.gn", [{"matiere_id": m, "classe_id": classe["id"]}])
     assert client.post("/absences/appel", headers=prof, json={
         "classe_id": classe["id"], "jour": date.today().isoformat(), "trimestre": 1}).status_code == 200
 

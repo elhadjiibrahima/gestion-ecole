@@ -7,7 +7,7 @@ from app.database import get_session
 from app.models import (
     Absence, AbsenceDetail, AbsenceUpdate, Appel, Classe, Eleve, ResumeAbsences, TypeAbsence, Utilisateur,
 )
-from app.security import PEDAGOGIE, exiger_role
+from app.security import APPEL, JUSTIFICATION, classes_autorisees, exiger_role
 from app.services import annee_courante, get_classe
 
 router = APIRouter(prefix="/absences", tags=["Absences"])
@@ -16,6 +16,12 @@ router = APIRouter(prefix="/absences", tags=["Absences"])
 class EtatAppel(SQLModel):
     absents: list[int]
     retards: list[int]
+
+
+def _verifier_classe(session: Session, user: Utilisateur, classe_id: int) -> None:
+    autorisees = classes_autorisees(session, user)
+    if autorisees is not None and classe_id not in autorisees:
+        raise HTTPException(403, "Cette classe ne t'est pas attribuée")
 
 
 def _eleves_classe(session: Session, classe: Classe) -> list[Eleve]:
@@ -36,11 +42,12 @@ def _absences_du_jour(session: Session, ids: list[int], jour: date) -> dict[int,
 def etat_appel(
     classe_id: int,
     jour: date,
-    user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)),
+    user: Utilisateur = Depends(exiger_role(*APPEL)),
     session: Session = Depends(get_session),
 ):
     """Ce qui a déjà été saisi pour cette classe ce jour-là (pour reprendre l'appel)."""
     classe = get_classe(session, classe_id, user.ecole_id)
+    _verifier_classe(session, user, classe.id)
     jour_abs = _absences_du_jour(session, [e.id for e in _eleves_classe(session, classe)], jour)
     return EtatAppel(
         absents=[i for i, a in jour_abs.items() if a.type == TypeAbsence.absence],
@@ -51,7 +58,7 @@ def etat_appel(
 @router.post("/appel", response_model=EtatAppel)
 def faire_appel(
     data: Appel,
-    user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)),
+    user: Utilisateur = Depends(exiger_role(*APPEL)),
     session: Session = Depends(get_session),
 ):
     """Enregistre l'appel d'une classe pour un jour. Refaire l'appel du même jour le remplace
@@ -59,6 +66,7 @@ def faire_appel(
     if data.jour > date.today():
         raise HTTPException(400, "On ne peut pas faire l'appel d'un jour futur")
     classe = get_classe(session, data.classe_id, user.ecole_id, code=400)
+    _verifier_classe(session, user, classe.id)
     ids = {e.id for e in _eleves_classe(session, classe)}
     inconnus = (set(data.absents) | set(data.retards)) - ids
     if inconnus:
@@ -91,7 +99,7 @@ def lister(
     trimestre: int | None = None,
     non_justifiees: bool = False,
     limite: int = 300,
-    user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)),
+    user: Utilisateur = Depends(exiger_role(*APPEL)),
     session: Session = Depends(get_session),
 ):
     stmt = (select(Absence, Eleve, Classe)
@@ -99,7 +107,11 @@ def lister(
             .where(Absence.ecole_id == user.ecole_id,
                    Absence.annee_scolaire == annee_courante(session, user.ecole_id)))
     if classe_id:
+        _verifier_classe(session, user, classe_id)
         stmt = stmt.where(Eleve.classe_id == classe_id)
+    autorisees = classes_autorisees(session, user)
+    if autorisees is not None:          # enseignant : seulement ses classes
+        stmt = stmt.where(Eleve.classe_id.in_(autorisees or {-1}))
     if eleve_id:
         stmt = stmt.where(Absence.eleve_id == eleve_id)
     if trimestre:
@@ -121,11 +133,12 @@ def lister(
 def resume(
     classe_id: int,
     trimestre: int | None = None,
-    user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)),
+    user: Utilisateur = Depends(exiger_role(*APPEL)),
     session: Session = Depends(get_session),
 ):
     """Total par élève de la classe : absences (dont justifiées) et retards."""
     classe = get_classe(session, classe_id, user.ecole_id)
+    _verifier_classe(session, user, classe.id)
     eleves = _eleves_classe(session, classe)
     stmt = select(Absence).where(Absence.eleve_id.in_([e.id for e in eleves]),
                                  Absence.annee_scolaire == annee_courante(session, user.ecole_id))
@@ -155,7 +168,7 @@ def _get(session: Session, absence_id: int, ecole_id: int) -> Absence:
 def justifier(
     absence_id: int,
     data: AbsenceUpdate,
-    user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)),
+    user: Utilisateur = Depends(exiger_role(*JUSTIFICATION)),
     session: Session = Depends(get_session),
 ):
     a = _get(session, absence_id, user.ecole_id)
@@ -169,7 +182,7 @@ def justifier(
 @router.delete("/{absence_id}", status_code=204)
 def supprimer(
     absence_id: int,
-    user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)),
+    user: Utilisateur = Depends(exiger_role(*JUSTIFICATION)),
     session: Session = Depends(get_session),
 ):
     session.delete(_get(session, absence_id, user.ecole_id))

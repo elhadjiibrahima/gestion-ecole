@@ -150,18 +150,22 @@ def pdf_recu(ecole: Ecole, paiement: Paiement, eleve: Eleve, classe: Classe,
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
+    lignes_situation = [["Frais annuels", argent(solde.frais_annuels, d)]]
+    if solde.reduction:
+        lignes_situation = [["Frais de la classe", argent(solde.frais_classe, d)],
+                            [f"Réduction ({solde.reduction_motif or '—'})", "− " + argent(solde.reduction, d)],
+                            ["Frais à payer", argent(solde.frais_annuels, d)]]
     situation = Table(
-        [["Frais annuels", argent(solde.frais_annuels, d)],
-         ["Total payé à ce jour", argent(solde.total_paye, d)],
-         ["Reste à payer", argent(solde.reste_a_payer, d)]],
+        lignes_situation + [["Total payé à ce jour", argent(solde.total_paye, d)],
+                            ["Reste à payer", argent(solde.reste_a_payer, d)]],
         colWidths=[largeur * 0.6, largeur * 0.4],
     )
     situation.setStyle(TableStyle([
         ("FONTSIZE", (0, 0), (-1, -1), 9.5),
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
         ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.lightgrey),
-        ("FONTNAME", (0, 2), (-1, 2), "Helvetica-Bold"),
-        ("TEXTCOLOR", (1, 2), (1, 2), colors.HexColor("#dc2626") if solde.reste_a_payer else colors.HexColor("#059669")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("TEXTCOLOR", (1, -1), (1, -1), colors.HexColor("#dc2626") if solde.reste_a_payer else colors.HexColor("#059669")),
     ]))
 
     infos = [
@@ -231,7 +235,15 @@ def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
          [Paragraph("<b>Rang</b>", S_NORMAL), Paragraph(f"<b>{rang}</b>", S_DROITE)],
          [Paragraph("<b>Appréciation</b>", S_NORMAL), Paragraph(b.appreciation, S_DROITE)],
          [Paragraph("<b>Assiduité</b>", S_NORMAL), Paragraph(
-             f"{b.absences} absence(s) dont {b.absences_justifiees} justifiée(s) · {b.retards} retard(s)", S_DROITE)]],
+             f"{b.absences} absence(s) dont {b.absences_justifiees} justifiée(s) · {b.retards} retard(s)", S_DROITE)]]
+        + ([[Paragraph("<b>Moyennes T1 / T2 / T3</b>", S_NORMAL), Paragraph(
+              " / ".join("–" if m is None else f"{m:.2f}" for m in b.moyennes_trimestres), S_DROITE)],
+            [Paragraph("<b>Moyenne annuelle</b>", S_NORMAL), Paragraph(
+              f"<font size=13><b>{b.moyenne_annuelle:.2f} / 20</b></font>"
+              + (f" — rang {b.rang_annuel}{'er' if b.rang_annuel == 1 else 'e'}" if b.rang_annuel else ""), S_DROITE)],
+            [Paragraph("<b>Décision</b>", S_NORMAL), Paragraph(
+              f"<font color='{'#059669' if b.decision == 'Admis(e)' else '#dc2626'}'><b>{b.decision}</b></font>", S_DROITE)]]
+           if b.moyenne_annuelle is not None else []),
         colWidths=[largeur * 0.4, largeur * 0.6],
     )
     resume.setStyle(TableStyle([

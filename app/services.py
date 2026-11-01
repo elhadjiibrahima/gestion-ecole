@@ -96,37 +96,48 @@ def calculer_echeances(frais: int, total_paye: int, tranches: list[Tranche],
 
 
 # ---------- Soldes ----------
+def frais_eleve(classe: Classe, eleve: Eleve) -> tuple[int, int]:
+    """(frais dus par l'élève, montant de la réduction)."""
+    reduction = round(classe.frais_annuels * (eleve.reduction_pct or 0) / 100) + (eleve.reduction_montant or 0)
+    reduction = min(reduction, classe.frais_annuels)
+    return classe.frais_annuels - reduction, reduction
+
+
 def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | None = None) -> Solde:
     classe = session.get(Classe, eleve.classe_id)
+    frais, reduction = frais_eleve(classe, eleve)
     total, nb, dernier = session.exec(
         select(func.coalesce(func.sum(Paiement.montant), 0), func.count(Paiement.id),
                func.max(Paiement.date_paiement))
         .where(Paiement.eleve_id == eleve.id, Paiement.annule == False,  # noqa: E712
                Paiement.annee_scolaire == annee_courante(session, eleve.ecole_id))
     ).one()
-    reste = max(classe.frais_annuels - total, 0)
+    reste = max(frais - total, 0)
     statut = (StatutPaiement.a_jour if reste == 0
               else StatutPaiement.partiel if total > 0 else StatutPaiement.rien_paye)
     if tranches is None:
         tranches = tranches_annee(session, eleve.ecole_id)
     if tranches:
-        echeances = calculer_echeances(classe.frais_annuels, total, tranches)
+        echeances = calculer_echeances(frais, total, tranches)
         exigible = sum(e.montant for e in echeances if e.date_limite < date.today())
         prochaine = next((e for e in echeances if e.statut == "a_venir"), None)
     else:   # pas d'échéancier : tout est dû
-        echeances, exigible, prochaine = [], classe.frais_annuels, None
+        echeances, exigible, prochaine = [], frais, None
     return Solde(
         montant_exigible=exigible,
         retard=max(exigible - total, 0),
         prochaine_echeance=prochaine.date_limite if prochaine else None,
         prochain_montant=prochaine.reste if prochaine else 0,
         echeances=echeances,
+        frais_classe=classe.frais_annuels,
+        reduction=reduction,
+        reduction_motif=eleve.reduction_motif if reduction else None,
         eleve_id=eleve.id,
         matricule=eleve.matricule,
         nom_complet=f"{eleve.prenom} {eleve.nom}",
         classe_id=classe.id,
         classe=classe.nom,
-        frais_annuels=classe.frais_annuels,
+        frais_annuels=frais,
         total_paye=total,
         reste_a_payer=reste,
         nb_paiements=nb,
@@ -162,14 +173,26 @@ def appreciation(moyenne: float | None) -> str:
     return "Résultats très insuffisants, avertissement"
 
 
-def _moyennes(notes: list[Note], ordre: dict[str, int] | None = None) -> tuple[list[LigneBulletin], float | None]:
+def moyenne_matiere(notes: list[Note], poids_composition: float = 2) -> float | None:
+    """(moyenne des devoirs + composition × poids) / (1 + poids) ; une seule sorte de note : sa moyenne."""
+    devoirs = [n.valeur for n in notes if n.type != "composition"]
+    compos = [n.valeur for n in notes if n.type == "composition"]
+    if devoirs and compos:
+        md, mc = sum(devoirs) / len(devoirs), sum(compos) / len(compos)
+        return (md + mc * poids_composition) / (1 + poids_composition)
+    valeurs = devoirs or compos
+    return sum(valeurs) / len(valeurs) if valeurs else None
+
+
+def _moyennes(notes: list[Note], ordre: dict[str, int] | None = None,
+              poids_composition: float = 2) -> tuple[list[LigneBulletin], float | None]:
     par_matiere: dict[str, list[Note]] = {}
     for n in notes:
         par_matiere.setdefault(n.matiere, []).append(n)
     ordre = ordre or {}
     lignes = []
     for matiere, ns in sorted(par_matiere.items(), key=lambda kv: (ordre.get(kv[0].lower(), 999), kv[0])):
-        moy = sum(n.valeur for n in ns) / len(ns)
+        moy = moyenne_matiere(ns, poids_composition)
         coef = max(n.coefficient for n in ns)
         lignes.append(LigneBulletin(matiere=matiere, moyenne=round(moy, 2), coefficient=coef))
     total_coef = sum(l.coefficient for l in lignes)
@@ -203,9 +226,10 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
         abs_par_eleve.setdefault(a.eleve_id, []).append(a)
 
     ordre = {m.nom.lower(): i for i, m in enumerate(matieres_ecole(session, classe.ecole_id))}
+    ecole = session.get(Ecole, classe.ecole_id)
     resultats = []
     for e in eleves:
-        lignes, generale = _moyennes(notes_par_eleve.get(e.id, []), ordre)
+        lignes, generale = _moyennes(notes_par_eleve.get(e.id, []), ordre, ecole.poids_composition)
         resultats.append((e, lignes, generale))
 
     # Rang : ex-æquo partagent le même rang (1, 2, 2, 4…) ; un élève sorti n'est pas classé
@@ -218,16 +242,55 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
         return sum(1 for a in abs_par_eleve.get(e.id, [])
                    if a.type == type_ and (justifiee is None or a.justifiee == justifiee))
 
-    return [
-        Bulletin(
+    annuels = {r.eleve_id: r for r in resultats_annuels(session, classe, inclure)} if trimestre == 3 else {}
+    bulletins = []
+    for e, lignes, g in resultats:
+        b = Bulletin(
             eleve_id=e.id, matricule=e.matricule, nom_complet=f"{e.prenom} {e.nom}",
             classe=classe.nom, trimestre=trimestre, matieres=lignes,
             moyenne_generale=g, rang=rang(e, g), effectif=len(classes_ids), appreciation=appreciation(g),
             absences=compte(e, TypeAbsence.absence), absences_justifiees=compte(e, TypeAbsence.absence, True),
             retards=compte(e, TypeAbsence.retard),
         )
-        for e, lignes, g in resultats
-    ]
+        if e.id in annuels:
+            a = annuels[e.id]
+            b.moyennes_trimestres, b.moyenne_annuelle = a.moyennes_trimestres, a.moyenne_annuelle
+            b.rang_annuel, b.decision = a.rang, a.decision
+        bulletins.append(b)
+    return bulletins
+
+
+def resultats_annuels(session: Session, classe: Classe, inclure: Eleve | None = None) -> list:
+    """Moyenne de l'année (moyenne des trimestres notés), rang annuel et décision de passage."""
+    from app.models import ResultatAnnuel
+    ecole = session.get(Ecole, classe.ecole_id)
+    eleves = list(session.exec(
+        select(Eleve).where(Eleve.classe_id == classe.id, Eleve.actif == True)  # noqa: E712
+        .order_by(Eleve.nom, Eleve.prenom)).all())
+    if inclure and inclure not in eleves:
+        eleves.append(inclure)
+    ids = [e.id for e in eleves]
+    notes = session.exec(select(Note).where(Note.eleve_id.in_(ids),
+                                            Note.annee_scolaire == ecole.annee_scolaire)).all() if ids else []
+    par_eleve_trim: dict[tuple[int, int], list[Note]] = {}
+    for n in notes:
+        par_eleve_trim.setdefault((n.eleve_id, n.trimestre), []).append(n)
+    lignes = []
+    for e in eleves:
+        moys = [_moyennes(par_eleve_trim.get((e.id, t), []), None, ecole.poids_composition)[1] for t in (1, 2, 3)]
+        notees = [m for m in moys if m is not None]
+        annuelle = round(sum(notees) / len(notees), 2) if notees else None
+        decision = None if annuelle is None else ("Admis(e)" if annuelle >= ecole.seuil_admission else "Redouble")
+        lignes.append(ResultatAnnuel(eleve_id=e.id, matricule=e.matricule, eleve=f"{e.prenom} {e.nom}",
+                                     moyennes_trimestres=moys, moyenne_annuelle=annuelle, rang=None,
+                                     decision=decision))
+    classees = sorted((l.moyenne_annuelle for l in lignes
+                       if l.moyenne_annuelle is not None and any(e.id == l.eleve_id and e.actif for e in eleves)),
+                      reverse=True)
+    for l in lignes:
+        if l.moyenne_annuelle is not None and l.moyenne_annuelle in classees:
+            l.rang = classees.index(l.moyenne_annuelle) + 1
+    return lignes
 
 
 def bulletin_eleve(session: Session, eleve: Eleve, trimestre: int) -> Bulletin:
