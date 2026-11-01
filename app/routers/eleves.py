@@ -46,11 +46,12 @@ def inscrire_eleve(
 def lister_eleves(
     q: str | None = None,
     classe_id: int | None = None,
+    sortis: bool = False,
     user: Utilisateur = Depends(exiger_role(*TOUS)),
     session: Session = Depends(get_session),
 ):
-    """Liste les élèves de l'école. `q` filtre par nom, prénom ou matricule."""
-    stmt = select(Eleve).where(Eleve.ecole_id == user.ecole_id)
+    """Élèves inscrits. `q` filtre par nom, prénom ou matricule ; `sortis=true` : anciens élèves."""
+    stmt = select(Eleve).where(Eleve.ecole_id == user.ecole_id, Eleve.actif == (not sortis))
     if q:
         motif = f"%{q}%"
         stmt = stmt.where(

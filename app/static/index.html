@@ -100,6 +100,26 @@
   .grille-pied { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: .95rem; }
   #t-matieres input { padding: 6px 8px; }
   #t-matieres input[type=number] { width: 70px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: none; background: #fff; padding: 7px 10px; cursor: pointer; font-size: .85rem; color: var(--muted); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on[data-etat=present] { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
+  .seg button.on[data-etat=absence] { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+  .seg button.on[data-etat=retard] { background: #fef3c7; color: #b45309; font-weight: 600; }
+  tr.annule td { color: var(--muted); }
+  tr.annule td.num { text-decoration: line-through; }
+  .inline-form { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+  .inline-form input { max-width: 200px; padding: 6px 8px; }
+  .msg { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; }
+  .msg + .msg { margin-top: 10px; }
+  .msg .tete { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .msg .texte { background: #f8fafc; border-radius: 6px; padding: 8px 10px; font-size: .88rem; white-space: pre-wrap; }
+  .msg .boutons { display: flex; gap: 8px; flex-wrap: wrap; }
+  a.btn { text-decoration: none; display: inline-block; }
+  .btn.wa { background: #16a34a; }
+  .liste-cases { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; }
+  .liste-cases label { display: flex; flex-direction: row; gap: 6px; align-items: center; color: var(--text); font-size: .9rem; }
+  .liste-cases input { width: auto; }
   .recu-pret { background: var(--ok-bg); border-radius: 8px; padding: 10px 12px; display: flex;
                justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; font-size: .9rem; }
 
@@ -167,9 +187,12 @@
   <button data-tab="classes">Classes</button>
   <button data-tab="eleves">Élèves</button>
   <button data-tab="paiements" data-roles="directeur comptable">Paiements</button>
+  <button data-tab="parents" data-roles="directeur comptable">Parents</button>
   <button data-tab="notes" data-roles="directeur enseignant">Notes & bulletins</button>
+  <button data-tab="absences" data-roles="directeur enseignant">Absences</button>
   <button data-tab="equipe" data-roles="directeur">Équipe</button>
   <button data-tab="parametres" data-roles="directeur">Paramètres</button>
+  <button data-tab="compte">Mon compte</button>
 </nav>
 
 <main>
@@ -261,6 +284,9 @@
         <div class="toolbar">
           <input id="q-eleve" placeholder="Rechercher nom, prénom, matricule…">
           <select id="filtre-classe" class="sel-classes" data-all="Toutes les classes"></select>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text)">
+            <input type="checkbox" id="anciens" style="width:auto"> Anciens élèves</label>
+          <button class="btn secondary" id="btn-export-eleves" data-roles="directeur comptable">⬇ Excel</button>
         </div>
         <div class="table-wrap"><table id="t-eleves"></table></div>
       </div>
@@ -297,6 +323,7 @@
           <select id="suivi-classe" class="sel-classes" data-all="Toutes les classes"></select>
           <input id="suivi-q" placeholder="Rechercher un élève…">
           <button class="btn secondary" id="btn-etat-pdf" title="Choisis une classe">📄 État PDF</button>
+          <button class="btn secondary" id="btn-export-paiements">⬇ Excel</button>
         </div>
         <div class="chips" id="suivi-chips"></div>
         <div class="table-wrap"><table id="t-suivi"></table></div>
@@ -352,6 +379,12 @@
         </form>
         <div class="table-wrap mt"><table id="t-matieres"></table></div>
         <button class="link" id="btn-matieres-defaut" style="margin-top:10px">+ Ajouter les matières usuelles manquantes</button>
+        <h2 class="mt" style="font-size:.95rem">Coefficients propres à une classe</h2>
+        <p class="hint">Ex : Maths coef 5 en 3ème. Laisse vide pour garder le coefficient par défaut.</p>
+        <label>Classe<select id="cc-classe" class="sel-classes"></select></label>
+        <div class="table-wrap"><table id="t-coefs-classe"></table></div>
+        <div id="cc-autres"></div>
+        <button class="btn" id="btn-coefs-classe" style="margin-top:8px">Enregistrer les coefficients</button>
       </div>
       <div class="card" id="card-bc">
         <h2>Bulletins de toute une classe</h2>
@@ -361,6 +394,9 @@
           <select id="bc-trimestre"><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option></select>
           <button class="btn" id="btn-bulletins-classe">📄 PDF</button>
         </div>
+        <h2 class="mt" style="font-size:.95rem">Exporter les notes</h2>
+        <p class="hint">Un fichier Excel, une feuille par classe : moyennes, rang, absences.</p>
+        <button class="btn secondary" id="btn-export-notes">⬇ Excel du trimestre choisi</button>
       </div>
     </div>
     <div class="card mt">
@@ -413,9 +449,82 @@
         <label>Téléphone<input name="telephone"></label>
         <div class="row">
           <label>Devise<input name="devise" required></label>
-          <label>Année scolaire<input name="annee_scolaire" placeholder="2026-2027" required></label>
+          <label>Indicatif téléphone<input name="indicatif_tel" placeholder="224" required></label>
         </div>
+        <p class="hint" style="margin:0">L'indicatif est ajouté aux numéros des parents écrits sans (pour WhatsApp).</p>
         <button class="btn">Enregistrer</button>
+      </form>
+    </div>
+    <div class="card mt">
+      <h2>Nouvelle année scolaire</h2>
+      <p class="hint">Année en cours : <b id="na-actuelle"></b>. Les élèves montent de classe, les redoublants restent,
+        les élèves de fin de cycle quittent l'école. Les frais repartent de zéro ; paiements, notes et absences
+        de l'année passée restent consultables.</p>
+      <div class="row" style="max-width:420px">
+        <label>Nouvelle année<input id="na-annee" placeholder="2027-2028"></label>
+      </div>
+      <div class="table-wrap mt"><table id="t-passages"></table></div>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:12px">
+        <input type="checkbox" id="na-confirme" style="width:auto">
+        J'ai vérifié les passages et les redoublants. Je comprends que c'est définitif.</label>
+      <button class="btn" id="btn-nouvelle-annee" style="margin-top:10px" disabled>Passer à la nouvelle année</button>
+    </div>
+  </section>
+
+  <!-- ===== Absences ===== -->
+  <section class="tab" id="absences">
+    <div class="two-eq">
+      <div class="card">
+        <h2>Faire l'appel</h2>
+        <div class="toolbar">
+          <select id="a-classe" class="sel-classes"></select>
+          <input type="date" id="a-jour" style="max-width:170px">
+          <select id="a-trimestre"><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
+        </div>
+        <div class="toolbar"><button class="link" id="a-tous-presents">Tout le monde présent</button>
+          <span id="a-compte" style="color:var(--muted);font-size:.85rem;margin-left:auto"></span></div>
+        <div class="table-wrap"><table id="t-appel"></table></div>
+        <button class="btn" id="btn-appel" style="margin-top:10px;width:100%">Enregistrer l'appel</button>
+      </div>
+      <div class="card">
+        <h2>Absences et retards</h2>
+        <div class="toolbar">
+          <select id="al-classe" class="sel-classes" data-all="Toutes les classes"></select>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text)">
+            <input type="checkbox" id="al-non-justif" style="width:auto"> Non justifiées</label>
+        </div>
+        <div class="table-wrap" style="max-height:560px;overflow-y:auto"><table id="t-absences"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Parents (messages) ===== -->
+  <section class="tab" id="parents">
+    <div class="card">
+      <h2>Messages aux parents</h2>
+      <p class="hint">Le message est prêt : « WhatsApp » ou « SMS » ouvre l'application avec le texte déjà écrit, il suffit d'appuyer sur Envoyer.</p>
+      <div class="toolbar">
+        <select id="m-type">
+          <option value="impaye">Rappels d'impayés</option>
+          <option value="bulletin">Bulletins disponibles</option>
+        </select>
+        <select id="m-classe" class="sel-classes" data-all="Toutes les classes"></select>
+        <select id="m-trimestre" hidden><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
+        <span id="m-resume" style="color:var(--muted);font-size:.85rem"></span>
+      </div>
+      <div id="m-liste"></div>
+    </div>
+  </section>
+
+  <!-- ===== Mon compte ===== -->
+  <section class="tab" id="compte">
+    <div class="card" style="max-width:460px">
+      <h2>Changer mon mot de passe</h2>
+      <form id="f-mdp">
+        <label>Mot de passe actuel<input name="ancien" type="password" autocomplete="current-password" required></label>
+        <label>Nouveau mot de passe (8 caractères min.)<input name="nouveau" type="password" minlength="8" autocomplete="new-password" required></label>
+        <label>Confirmer le nouveau mot de passe<input name="confirmation" type="password" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn">Changer le mot de passe</button>
       </form>
     </div>
   </section>
@@ -442,6 +551,7 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + (moi?.ecole.devise ?? "");
 const peut = (...roles) => moi && roles.includes(moi.utilisateur.role);
+const titreEcole = () => { $("#nom-ecole").textContent = `🏫 ${moi.ecole.nom} · ${moi.ecole.annee_scolaire}`; };
 const dateHeure = (d) => {
   if (!d) return "";
   const x = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(d) ? d : d + "Z");   // dates du serveur en UTC
@@ -625,8 +735,10 @@ async function afficherEleves() {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (classeId) params.set("classe_id", classeId);
+  const anciens = $("#anciens").checked;
+  if (anciens) params.set("sortis", "true");
   const liste = await api("/eleves?" + params);
-  const gestion = peut("directeur", "comptable");
+  const gestion = peut("directeur", "comptable") && !anciens;
   let soldes = {};
   if (gestion) {
     (await api("/eleves/soldes" + (classeId ? "?classe_id=" + classeId : "")))
@@ -644,7 +756,7 @@ async function afficherEleves() {
         <td>${esc(classeNom(e.classe_id))}</td><td>${esc(e.telephone_parent || "–")}</td>
         ${gestion ? `<td class="num">${badge}</td>` : ""}</tr>`;
     }),
-    q || classeId ? "Aucun résultat" : "Aucun élève inscrit");
+    anciens ? "Aucun ancien élève" : q || classeId ? "Aucun résultat" : "Aucun élève inscrit");
 }
 
 $("#btn-modele").addEventListener("click", () =>
@@ -846,18 +958,46 @@ $("#t-suivi").addEventListener("click", async (ev) => {
 async function afficherHistorique(eleveId) {
   const e = eleves.find((x) => x.id === eleveId);
   const p = await api(`/eleves/${eleveId}/paiements`);
+  historiqueEleve = eleveId;
   $("#historique-nom").textContent = e ? `${e.prenom} ${e.nom}` : "";
   table($("#t-historique"),
-    ["N° reçu", "Date", "Mode", "Référence", { label: "Montant", num: true }, ""],
-    p.map((x) => `<tr><td>${esc(x.numero_recu)}</td>
-      <td>${esc(new Date(x.date_paiement).toLocaleDateString("fr-FR"))}</td>
+    ["N° reçu", "Date", "Mode", "Référence", "Par", { label: "Montant", num: true }, ""],
+    p.map((x) => `<tr class="${x.annule ? "annule" : ""}"><td>${esc(x.numero_recu)}${x.annule
+        ? `<span class="sub" style="color:var(--bad)">Annulé le ${dateHeure(x.annule_le)} par ${esc(x.annule_par || "?")} : ${esc(x.motif_annulation)}</span>` : ""}</td>
+      <td>${esc(new Date(x.date_paiement).toLocaleDateString("fr-FR"))}${x.annee_scolaire !== moi.ecole.annee_scolaire
+        ? `<span class="sub">${esc(x.annee_scolaire || "")}</span>` : ""}</td>
       <td>${esc(MODES[x.mode] || x.mode)}</td><td>${esc(x.reference || "–")}</td>
+      <td>${esc(x.enregistre_par || "–")}</td>
       <td class="num">${argent(x.montant)}</td>
-      <td><button class="link" data-recu="${x.id}">📄 Reçu</button></td></tr>`),
+      <td class="actions"><button class="link" data-recu="${x.id}">📄 Reçu</button>${peut("directeur") && !x.annule
+        ? `<button class="link danger" data-annuler="${x.id}">Annuler</button>` : ""}</td></tr>`),
     "Aucun paiement");
   $("#historique-card").hidden = false;
   $("#historique-card").scrollIntoView({ behavior: "smooth" });
 }
+
+let historiqueEleve = null;
+$("#t-historique").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.annuler;
+  const confirmer = ev.target.dataset.confirmerAnnulation;
+  if (id) {
+    const td = ev.target.closest("td");
+    td.innerHTML = `<div class="inline-form">
+      <input placeholder="Motif (obligatoire)" data-motif="${id}">
+      <button class="btn" style="background:var(--bad);padding:6px 10px" data-confirmer-annulation="${id}">Confirmer</button></div>`;
+    td.querySelector("[data-motif]").focus();
+  }
+  if (confirmer) {
+    const motif = ev.target.closest("td").querySelector("[data-motif]").value.trim();
+    if (motif.length < 3) return toast("Indique le motif de l'annulation", true);
+    try {
+      await api(`/paiements/${confirmer}/annuler`, { method: "POST", body: JSON.stringify({ motif }) });
+      toast("Paiement annulé : il reste visible dans l'historique");
+      await afficherHistorique(historiqueEleve);
+      afficherSuivi();
+    } catch (err) { toast(err.message, true); }
+  }
+});
 
 // ---------- Notes : saisie en grille ----------
 let grille = [];                 // cases renvoyées par le serveur
@@ -1064,7 +1204,8 @@ async function afficherBulletin() {
     <div class="bulletin-head">
       <div><strong>${esc(b.nom_complet)}</strong><br>
         <span style="color:var(--muted)">${esc(b.classe)} — Trimestre ${b.trimestre}</span><br>
-        <span class="badge info">Rang : ${rang}</span></div>
+        <span class="badge info">Rang : ${rang}</span>
+        <span class="sub">Absences : ${b.absences} (${b.absences_justifiees} justifiée(s)) · Retards : ${b.retards}</span></div>
       <div style="text-align:right">Moyenne générale<br>
         <span class="moyenne" style="color:${moy == null ? "inherit" : moy >= 10 ? "var(--ok)" : "var(--bad)"}">
         ${moy == null ? "–" : moy.toFixed(2) + " / 20"}</span><br>
@@ -1091,6 +1232,7 @@ $("#btn-bulletins-classe").addEventListener("click", () => {
 // ---------- Matières et coefficients (directeur) ----------
 async function afficherMatieres() {
   if (!peut("directeur")) return;
+  afficherCoefsClasse();
   const liste = await api("/matieres");
   table($("#t-matieres"),
     ["Matière", { label: "Coef.", num: true }, ""],
@@ -1101,6 +1243,35 @@ async function afficherMatieres() {
     </tr>`),
     "Aucune matière");
 }
+
+async function afficherCoefsClasse() {
+  if (!peut("directeur")) return;
+  const cid = $("#cc-classe").value;
+  if (!cid) { $("#t-coefs-classe").innerHTML = ""; $("#cc-autres").innerHTML = ""; return; }
+  const lignes = await api(`/matieres/coefficients?classe_id=${cid}`);
+  table($("#t-coefs-classe"),
+    ["Matière", { label: "Par défaut", num: true }, { label: "Pour cette classe", num: true }],
+    lignes.map((l) => `<tr><td>${esc(l.matiere)}</td><td class="num">${l.coefficient_defaut}</td>
+      <td class="num"><input type="number" min="1" max="20" style="width:80px;text-align:right" data-cc="${l.matiere_id}"
+        value="${l.specifique ? l.coefficient : ""}" placeholder="${l.coefficient_defaut}"></td></tr>`),
+    "Aucune matière");
+  const autres = classes.filter((c) => c.id !== Number(cid));
+  $("#cc-autres").innerHTML = autres.length ? `<div class="hint" style="margin:8px 0 0">Appliquer aussi à :</div>
+    <div class="liste-cases">${autres.map((c) => `<label><input type="checkbox" data-cc-autre value="${c.id}"> ${esc(c.nom)}</label>`).join("")}</div>` : "";
+}
+$("#cc-classe").addEventListener("change", afficherCoefsClasse);
+$("#btn-coefs-classe").addEventListener("click", async () => {
+  const classe_ids = [Number($("#cc-classe").value),
+    ...[...document.querySelectorAll("[data-cc-autre]:checked")].map((c) => Number(c.value))];
+  const coefficients = [...document.querySelectorAll("[data-cc]")].map((i) => ({
+    matiere_id: Number(i.dataset.cc), coefficient: i.value === "" ? null : Number(i.value) }));
+  try {
+    if (!(await avantChangement())) return;
+    await api("/matieres/coefficients", { method: "PUT", body: JSON.stringify({ classe_ids, coefficients }) });
+    toast(`Coefficients enregistrés pour ${classe_ids.length} classe(s) ✔`);
+    chargerGrille();
+  } catch (err) { toast(err.message, true); }
+});
 
 $("#f-matiere").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -1149,12 +1320,30 @@ async function afficherEquipe() {
     users.map((u) => `<tr><td>${esc(u.nom)}</td><td>${esc(u.email)}</td>
       <td>${esc(ROLES[u.role] || u.role)}</td>
       <td>${u.actif ? '<span class="badge ok">Actif</span>' : '<span class="badge bad">Désactivé</span>'}</td>
-      <td class="num">${u.id === moi.utilisateur.id ? "<em style='color:var(--muted)'>toi</em>" :
-        `<button class="link ${u.actif ? "danger" : ""}" data-user="${u.id}" data-actif="${!u.actif}">
+      <td class="actions">${u.id === moi.utilisateur.id ? "<em style='color:var(--muted)'>toi</em>" :
+        `<button class="link" data-mdp="${u.id}">Nouveau mot de passe</button><button class="link ${u.actif ? "danger" : ""}" data-user="${u.id}" data-actif="${!u.actif}">
           ${u.actif ? "Désactiver" : "Réactiver"}</button>`}</td></tr>`));
 }
 
 $("#t-users").addEventListener("click", async (ev) => {
+  const mdp = ev.target.dataset.mdp, valider = ev.target.dataset.validerMdp;
+  if (mdp) {
+    const td = ev.target.closest("td");
+    td.innerHTML = `<div class="inline-form">
+      <input placeholder="8 caractères min." data-nouveau="${mdp}">
+      <button class="btn" style="padding:6px 10px" data-valider-mdp="${mdp}">OK</button></div>`;
+    return td.querySelector("[data-nouveau]").focus();
+  }
+  if (valider) {
+    const nouveau = ev.target.closest("td").querySelector("[data-nouveau]").value;
+    if (nouveau.length < 8) return toast("8 caractères minimum", true);
+    try {
+      await api(`/utilisateurs/${valider}/mot-de-passe`, { method: "POST", body: JSON.stringify({ nouveau }) });
+      toast("Mot de passe changé ✔ Donne-le à la personne.");
+      afficherEquipe();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
   const id = ev.target.dataset.user;
   if (!id) return;
   try {
@@ -1164,17 +1353,223 @@ $("#t-users").addEventListener("click", async (ev) => {
 });
 
 // ---------- Paramètres ----------
-function afficherParametres() {
+async function afficherParametres() {
   const f = $("#f-ecole");
-  for (const k of ["nom", "adresse", "telephone", "devise", "annee_scolaire"]) f.elements[k].value = moi.ecole[k] ?? "";
+  for (const k of ["nom", "adresse", "telephone", "devise", "indicatif_tel"]) f.elements[k].value = moi.ecole[k] ?? "";
+  await afficherPassages();
 }
+
+// ---------- Nouvelle année scolaire ----------
+let proposition = null;
+async function afficherPassages() {
+  proposition = await api("/annee/proposition");
+  $("#na-actuelle").textContent = proposition.annee_actuelle;
+  $("#na-annee").value = proposition.annee_suivante;
+  $("#na-confirme").checked = false;
+  $("#btn-nouvelle-annee").disabled = true;
+  const options = (sel) => `<option value="">— Quittent l'école (fin de cycle) —</option>` +
+    classes.map((c) => `<option value="${c.id}" ${c.id === sel ? "selected" : ""}>→ ${esc(c.nom)}</option>`).join("");
+  const lignes = [];
+  for (const p of proposition.passages) {
+    lignes.push(`<tr data-passage="${p.classe_id}"><td><b>${esc(p.classe)}</b><span class="sub">${p.nb_eleves} élève(s)</span></td>
+      <td><select data-vers="${p.classe_id}">${options(p.vers_classe_id)}</select></td>
+      <td class="actions"><button class="link" data-voir-redoublants="${p.classe_id}">Redoublants (<span data-nb-red="${p.classe_id}">0</span>)</button></td></tr>
+      <tr data-liste-red="${p.classe_id}" hidden><td colspan="3"><div class="liste-cases">${
+        eleves.filter((e) => e.classe_id === p.classe_id).map((e) =>
+          `<label><input type="checkbox" data-red="${p.classe_id}" value="${e.id}"> ${esc(e.nom)} ${esc(e.prenom)}</label>`).join("")
+        || "<span style='color:var(--muted)'>Aucun élève</span>"}</div></td></tr>`);
+  }
+  table($("#t-passages"), ["Classe actuelle", "L'année prochaine", ""], lignes, "Aucune classe");
+}
+$("#t-passages").addEventListener("click", (ev) => {
+  const id = ev.target.closest("[data-voir-redoublants]")?.dataset.voirRedoublants;
+  if (id) { const tr = $(`tr[data-liste-red="${id}"]`); tr.hidden = !tr.hidden; }
+});
+$("#t-passages").addEventListener("change", (ev) => {
+  const cid = ev.target.dataset.red;
+  if (cid) $(`[data-nb-red="${cid}"]`).textContent = document.querySelectorAll(`[data-red="${cid}"]:checked`).length;
+});
+$("#na-confirme").addEventListener("change", () => ($("#btn-nouvelle-annee").disabled = !$("#na-confirme").checked));
+$("#btn-nouvelle-annee").addEventListener("click", async () => {
+  const passages = proposition.passages.map((p) => ({
+    classe_id: p.classe_id,
+    vers_classe_id: Number($(`[data-vers="${p.classe_id}"]`).value) || null,
+    redoublants: [...document.querySelectorAll(`[data-red="${p.classe_id}"]:checked`)].map((c) => Number(c.value)),
+  }));
+  const btn = $("#btn-nouvelle-annee");
+  btn.disabled = true;
+  try {
+    const r = await api("/annee/nouvelle", { method: "POST", body: JSON.stringify({ nouvelle_annee: $("#na-annee").value.trim(), passages }) });
+    toast(`Bienvenue en ${r.annee_scolaire} : ${r.passes} élève(s) passent, ${r.redoublants} redoublent, ${r.sortants} quittent l'école.`);
+    moi = await api("/auth/moi");
+    titreEcole();
+    rafraichir();
+  } catch (err) { toast(err.message, true); btn.disabled = false; }
+});
+
+// ---------- Absences : appel ----------
+let appelEtat = {};
+function aujourdhui() { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+
+async function afficherAbsences() {
+  if (!$("#a-jour").value) { $("#a-jour").value = aujourdhui(); }
+  $("#a-jour").max = aujourdhui();
+  await chargerAppel();
+  await afficherListeAbsences();
+}
+
+async function chargerAppel() {
+  const cid = $("#a-classe").value;
+  if (!cid) { $("#t-appel").innerHTML = `<tr><td class="empty">Crée d'abord une classe</td></tr>`; return; }
+  const [etat, resume] = await Promise.all([
+    api(`/absences/appel?classe_id=${cid}&jour=${$("#a-jour").value}`),
+    api(`/absences/resume?classe_id=${cid}&trimestre=${$("#a-trimestre").value}`),
+  ]);
+  appelEtat = {};
+  resume.forEach((r) => (appelEtat[r.eleve_id] = "present"));
+  etat.retards.forEach((i) => (appelEtat[i] = "retard"));
+  etat.absents.forEach((i) => (appelEtat[i] = "absence"));
+  const bouton = (id, e, label) => `<button type="button" data-eleve="${id}" data-etat="${e}" class="${appelEtat[id] === e ? "on" : ""}">${label}</button>`;
+  table($("#t-appel"),
+    ["N°", "Élève", "", { label: "Trim.", num: true }],
+    resume.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.eleve)}</td>
+      <td><div class="seg">${bouton(r.eleve_id, "present", "Présent")}${bouton(r.eleve_id, "absence", "Absent")}${bouton(r.eleve_id, "retard", "Retard")}</div></td>
+      <td class="num" title="Absences / retards ce trimestre">${r.absences} abs · ${r.retards} ret</td></tr>`),
+    "Aucun élève dans cette classe");
+  compterAppel();
+}
+function compterAppel() {
+  const v = Object.values(appelEtat);
+  $("#a-compte").textContent = `${v.filter((x) => x === "present").length} présent(s) · ${v.filter((x) => x === "absence").length} absent(s) · ${v.filter((x) => x === "retard").length} retard(s)`;
+}
+$("#t-appel").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-eleve]");
+  if (!b) return;
+  appelEtat[b.dataset.eleve] = b.dataset.etat;
+  b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  compterAppel();
+});
+$("#a-tous-presents").addEventListener("click", () => {
+  Object.keys(appelEtat).forEach((k) => (appelEtat[k] = "present"));
+  document.querySelectorAll("#t-appel .seg button").forEach((x) => x.classList.toggle("on", x.dataset.etat === "present"));
+  compterAppel();
+});
+for (const id of ["#a-classe", "#a-jour", "#a-trimestre"]) $(id).addEventListener("change", chargerAppel);
+$("#a-classe").addEventListener("change", () => { $("#al-classe").value = $("#a-classe").value; afficherListeAbsences(); });
+$("#btn-appel").addEventListener("click", async () => {
+  const ids = (e) => Object.entries(appelEtat).filter(([, v]) => v === e).map(([k]) => Number(k));
+  try {
+    await api("/absences/appel", { method: "POST", body: JSON.stringify({
+      classe_id: Number($("#a-classe").value), jour: $("#a-jour").value, trimestre: Number($("#a-trimestre").value),
+      absents: ids("absence"), retards: ids("retard") }) });
+    toast(`Appel du ${new Date($("#a-jour").value).toLocaleDateString("fr-FR")} enregistré ✔`);
+    chargerAppel(); afficherListeAbsences();
+  } catch (err) { toast(err.message, true); }
+});
+
+async function afficherListeAbsences() {
+  const params = new URLSearchParams();
+  if ($("#al-classe").value) params.set("classe_id", $("#al-classe").value);
+  if ($("#al-non-justif").checked) params.set("non_justifiees", "true");
+  const liste = await api("/absences?" + params);
+  table($("#t-absences"),
+    ["Date", "Élève", "Type", "Justification", ""],
+    liste.map((a) => `<tr><td style="white-space:nowrap">${new Date(a.jour).toLocaleDateString("fr-FR")}<span class="sub">T${a.trimestre}</span></td>
+      <td>${esc(a.eleve)}<span class="sub">${esc(a.classe)}${a.saisi_par ? " · par " + esc(a.saisi_par) : ""}</span></td>
+      <td><span class="badge ${a.type === "absence" ? "bad" : "warn"}">${a.type === "absence" ? "Absence" : "Retard"}</span></td>
+      <td>${a.justifiee ? `<span class="badge ok">Justifiée</span><span class="sub">${esc(a.motif || "")}</span>` : "<span style='color:var(--muted)'>Non justifiée</span>"}</td>
+      <td class="actions">${a.justifiee
+        ? `<button class="link" data-dejustifier="${a.id}">Retirer</button>`
+        : `<button class="link" data-justifier="${a.id}">Justifier</button>`}<button class="link danger" data-suppr-absence="${a.id}">Supprimer</button></td></tr>`),
+    "Aucune absence");
+}
+$("#al-classe").addEventListener("change", afficherListeAbsences);
+$("#al-non-justif").addEventListener("change", afficherListeAbsences);
+$("#t-absences").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  try {
+    if (d.justifier) {
+      const td = ev.target.closest("td");
+      td.innerHTML = `<div class="inline-form"><input placeholder="Motif (maladie…)" data-motif-abs="${d.justifier}">
+        <button class="btn" style="padding:6px 10px" data-valider-justif="${d.justifier}">OK</button></div>`;
+      return td.querySelector("input").focus();
+    }
+    if (d.validerJustif) {
+      const motif = ev.target.closest("td").querySelector("input").value.trim() || null;
+      await api(`/absences/${d.validerJustif}`, { method: "PATCH", body: JSON.stringify({ justifiee: true, motif }) });
+      toast("Absence justifiée ✔");
+    } else if (d.dejustifier) {
+      await api(`/absences/${d.dejustifier}`, { method: "PATCH", body: JSON.stringify({ justifiee: false, motif: null }) });
+    } else if (d.supprAbsence) {
+      await api(`/absences/${d.supprAbsence}`, { method: "DELETE" });
+      toast("Absence supprimée");
+    } else return;
+    afficherListeAbsences(); chargerAppel();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Parents : messages WhatsApp / SMS ----------
+let messages = [];
+async function afficherMessages() {
+  const type = $("#m-type").value;
+  $("#m-trimestre").hidden = type !== "bulletin";
+  const zone = $("#m-liste");
+  const cid = $("#m-classe").value;
+  if (type === "bulletin" && !cid) {
+    $("#m-resume").textContent = "";
+    zone.innerHTML = `<p class="empty">Choisis une classe pour annoncer ses bulletins</p>`;
+    return;
+  }
+  messages = await api(type === "impaye"
+    ? "/messages/impayes" + (cid ? "?classe_id=" + cid : "")
+    : `/messages/bulletins?classe_id=${cid}&trimestre=${$("#m-trimestre").value}`);
+  const sansNumero = messages.filter((m) => !m.lien_whatsapp).length;
+  $("#m-resume").textContent = `${messages.length} message(s)` + (sansNumero ? ` · ${sansNumero} sans numéro de téléphone` : "");
+  zone.innerHTML = messages.length ? messages.map((m, i) => `<div class="msg">
+      <div class="tete"><span><b>${esc(m.eleve)}</b> · ${esc(m.classe)}</span>
+        <span style="font-size:.85rem;color:var(--muted)">${m.telephone ? esc(m.telephone) : "<span style='color:var(--bad)'>pas de numéro</span>"}${
+          m.dernier_envoi ? " · dernier envoi " + dateHeure(m.dernier_envoi) : ""}</span></div>
+      <div class="texte">${esc(m.texte)}</div>
+      <div class="boutons">${m.lien_whatsapp
+        ? `<a class="btn wa" href="${esc(m.lien_whatsapp)}" target="_blank" rel="noopener" data-envoi="${i}" data-canal="whatsapp">WhatsApp</a>
+           <a class="btn secondary" href="${esc(m.lien_sms)}" data-envoi="${i}" data-canal="sms">SMS</a>` : ""}
+        <button class="btn secondary" data-copier="${i}">Copier le texte</button></div></div>`).join("")
+    : `<p class="empty">${type === "impaye" ? "Aucun impayé 🎉" : "Aucun élève dans cette classe"}</p>`;
+}
+for (const id of ["#m-type", "#m-classe", "#m-trimestre"]) $(id).addEventListener("change", afficherMessages);
+$("#m-liste").addEventListener("click", async (ev) => {
+  const lien = ev.target.closest("[data-envoi]");
+  const copier = ev.target.dataset.copier;
+  if (lien) {   // le lien s'ouvre normalement ; on note juste l'envoi
+    const m = messages[lien.dataset.envoi];
+    api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: m.eleve_id, type: $("#m-type").value, canal: lien.dataset.canal }) })
+      .catch(() => {});
+  }
+  if (copier !== undefined) {
+    const texte = messages[copier].texte;
+    try { await navigator.clipboard.writeText(texte); toast("Texte copié ✔"); }
+    catch { toast("Copie impossible : sélectionne le texte à la main", true); }
+  }
+});
+
+// ---------- Mon compte ----------
+$("#f-mdp").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = Object.fromEntries(new FormData(ev.target));
+  if (d.nouveau !== d.confirmation) return toast("Les deux nouveaux mots de passe ne sont pas identiques", true);
+  try {
+    await api("/auth/mot-de-passe", { method: "POST", body: JSON.stringify({ ancien: d.ancien, nouveau: d.nouveau }) });
+    ev.target.reset();
+    toast("Mot de passe changé ✔");
+  } catch (err) { toast(err.message, true); }
+});
 
 $("#f-ecole").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const data = Object.fromEntries(new FormData(ev.target));
   try {
     moi.ecole = await api("/ecole", { method: "PATCH", body: JSON.stringify(data) });
-    $("#nom-ecole").textContent = "🏫 " + moi.ecole.nom;
+    titreEcole();
     toast("Informations enregistrées ✔");
   } catch (err) { toast(err.message, true); }
 });
@@ -1183,7 +1578,8 @@ $("#f-ecole").addEventListener("submit", async (ev) => {
 const vues = {
   dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
   paiements: afficherSuivi, notes: chargerGrille, equipe: afficherEquipe,
-  parametres: afficherParametres,
+  parametres: afficherParametres, absences: afficherAbsences, parents: afficherMessages,
+  compte: () => {},
 };
 let vueActive = null;
 
@@ -1237,6 +1633,11 @@ $("#q-eleve").addEventListener("input", () => {
   rechercheTimer = setTimeout(afficherEleves, 250);
 });
 $("#filtre-classe").addEventListener("change", afficherEleves);
+$("#anciens").addEventListener("change", afficherEleves);
+$("#btn-export-eleves").addEventListener("click", () => ouvrirFichier("/export/eleves.xlsx", "eleves.xlsx"));
+$("#btn-export-paiements").addEventListener("click", () => ouvrirFichier("/export/paiements.xlsx", "paiements.xlsx"));
+$("#btn-export-notes").addEventListener("click", () =>
+  ouvrirFichier(`/export/notes.xlsx?trimestre=${$("#bc-trimestre").value}`, "notes.xlsx"));
 document.addEventListener("click", (ev) => {
   const id = ev.target.dataset.recu;
   if (id) ouvrirFichier(`/paiements/${id}/recu.pdf`, "recu.pdf");
@@ -1248,7 +1649,7 @@ async function demarrer(ongletDemande) {
   try { moi = await api("/auth/moi"); }
   catch { return afficherAuth("login"); }
 
-  $("#nom-ecole").textContent = "🏫 " + moi.ecole.nom;
+  titreEcole();
   $("#nom-user").textContent = moi.utilisateur.nom;
   $("#role-user").textContent = ROLES[moi.utilisateur.role];
   // Affiche seulement ce que le rôle permet

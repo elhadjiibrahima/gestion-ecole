@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.database import init_db
-from app.routers import auth, classes, eleves, matieres, notes, paiements, stats
+from app.routers import (
+    absences, annee, auth, classes, eleves, exports, matieres, messages, notes, paiements, stats,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -19,7 +21,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Gestion École",
     description="API de gestion scolaire : élèves, classes, frais et notes.",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -30,6 +32,10 @@ app.include_router(paiements.router)
 app.include_router(matieres.router)
 app.include_router(notes.router)
 app.include_router(stats.router)
+app.include_router(absences.router)
+app.include_router(exports.router)
+app.include_router(messages.router)
+app.include_router(annee.router)
 
 
 @app.get("/", include_in_schema=False)

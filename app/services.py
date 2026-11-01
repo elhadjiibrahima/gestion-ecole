@@ -4,7 +4,34 @@ from datetime import date
 from fastapi import HTTPException
 from sqlmodel import Session, func, select
 
-from app.models import Bulletin, Classe, Eleve, LigneBulletin, Note, Paiement, Solde, StatutPaiement
+from app.models import (
+    Absence, Bulletin, Classe, CoefficientClasse, Ecole, Eleve, LigneBulletin, Matiere, Note, Paiement,
+    Solde, StatutPaiement, TypeAbsence,
+)
+
+
+# ---------- Année scolaire ----------
+def annee_courante(session: Session, ecole_id: int) -> str:
+    return session.get(Ecole, ecole_id).annee_scolaire
+
+
+# ---------- Matières et coefficients ----------
+def matieres_ecole(session: Session, ecole_id: int) -> list[Matiere]:
+    return session.exec(
+        select(Matiere).where(Matiere.ecole_id == ecole_id).order_by(Matiere.ordre, Matiere.id)
+    ).all()
+
+
+def coefficients_specifiques(session: Session, classe_id: int) -> dict[int, int]:
+    """{matiere_id: coefficient} propres à une classe."""
+    return {c.matiere_id: c.coefficient for c in session.exec(
+        select(CoefficientClasse).where(CoefficientClasse.classe_id == classe_id)).all()}
+
+
+def matieres_classe(session: Session, classe: Classe) -> list[tuple[Matiere, int]]:
+    """Matières de l'école avec le coefficient applicable à cette classe."""
+    specifiques = coefficients_specifiques(session, classe.id)
+    return [(m, specifiques.get(m.id, m.coefficient)) for m in matieres_ecole(session, classe.ecole_id)]
 
 
 # ---------- Accès limité à l'école de l'utilisateur ----------
@@ -32,7 +59,8 @@ def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference
     if montant > reste:
         raise HTTPException(400, f"Montant trop élevé : il ne reste que {reste:,} à payer".replace(",", " "))
     paiement = Paiement(eleve_id=eleve.id, montant=montant, mode=mode, reference=reference,
-                        date_paiement=date_paiement or date.today(), enregistre_par_id=utilisateur_id)
+                        date_paiement=date_paiement or date.today(), enregistre_par_id=utilisateur_id,
+                        annee_scolaire=annee_courante(session, eleve.ecole_id))
     session.add(paiement)
     session.flush()
     paiement.numero_recu = f"R{date.today().year}-{paiement.id:06d}"
@@ -45,7 +73,8 @@ def calculer_solde(session: Session, eleve: Eleve) -> Solde:
     total, nb, dernier = session.exec(
         select(func.coalesce(func.sum(Paiement.montant), 0), func.count(Paiement.id),
                func.max(Paiement.date_paiement))
-        .where(Paiement.eleve_id == eleve.id)
+        .where(Paiement.eleve_id == eleve.id, Paiement.annule == False,  # noqa: E712
+               Paiement.annee_scolaire == annee_courante(session, eleve.ecole_id))
     ).one()
     reste = max(classe.frais_annuels - total, 0)
     statut = (StatutPaiement.a_jour if reste == 0
@@ -66,8 +95,8 @@ def calculer_solde(session: Session, eleve: Eleve) -> Solde:
 
 
 def soldes_ecole(session: Session, ecole_id: int, classe_id: int | None = None) -> list[Solde]:
-    """Soldes des élèves de l'école (ou d'une classe), triés par classe puis par nom."""
-    stmt = select(Eleve).where(Eleve.ecole_id == ecole_id)
+    """Soldes des élèves inscrits (ou d'une classe), triés par classe puis par nom."""
+    stmt = select(Eleve).where(Eleve.ecole_id == ecole_id, Eleve.actif == True)  # noqa: E712
     if classe_id:
         stmt = stmt.where(Eleve.classe_id == classe_id)
     soldes = [calculer_solde(session, e) for e in session.exec(stmt.order_by(Eleve.nom, Eleve.prenom)).all()]
@@ -106,36 +135,54 @@ def _moyennes(notes: list[Note], ordre: dict[str, int] | None = None) -> tuple[l
     return lignes, generale
 
 
-def bulletins_classe(session: Session, classe: Classe, trimestre: int) -> list[Bulletin]:
-    """Bulletins de toute la classe, avec le rang de chaque élève."""
-    eleves = session.exec(
-        select(Eleve).where(Eleve.classe_id == classe.id).order_by(Eleve.nom, Eleve.prenom)
-    ).all()
+def bulletins_classe(session: Session, classe: Classe, trimestre: int,
+                     inclure: Eleve | None = None) -> list[Bulletin]:
+    """Bulletins de toute la classe (élèves inscrits), avec le rang de chaque élève."""
+    eleves = list(session.exec(
+        select(Eleve).where(Eleve.classe_id == classe.id, Eleve.actif == True)  # noqa: E712
+        .order_by(Eleve.nom, Eleve.prenom)
+    ).all())
+    if inclure and inclure not in eleves:   # élève sorti : bulletin consultable quand même
+        eleves.append(inclure)
     ids = [e.id for e in eleves]
+    annee = annee_courante(session, classe.ecole_id)
     notes = session.exec(
-        select(Note).where(Note.eleve_id.in_(ids), Note.trimestre == trimestre)
+        select(Note).where(Note.eleve_id.in_(ids), Note.trimestre == trimestre, Note.annee_scolaire == annee)
     ).all() if ids else []
     notes_par_eleve: dict[int, list[Note]] = {}
     for n in notes:
         notes_par_eleve.setdefault(n.eleve_id, []).append(n)
+    absences = session.exec(
+        select(Absence).where(Absence.eleve_id.in_(ids), Absence.trimestre == trimestre,
+                              Absence.annee_scolaire == annee)
+    ).all() if ids else []
+    abs_par_eleve: dict[int, list[Absence]] = {}
+    for a in absences:
+        abs_par_eleve.setdefault(a.eleve_id, []).append(a)
 
-    from app.routers.matieres import matieres_ecole  # import local : évite une boucle d'imports
     ordre = {m.nom.lower(): i for i, m in enumerate(matieres_ecole(session, classe.ecole_id))}
     resultats = []
     for e in eleves:
         lignes, generale = _moyennes(notes_par_eleve.get(e.id, []), ordre)
         resultats.append((e, lignes, generale))
 
-    # Rang : ex-æquo partagent le même rang (1, 2, 2, 4…)
-    moyennes = sorted((g for _, _, g in resultats if g is not None), reverse=True)
-    def rang(g):
-        return None if g is None else moyennes.index(g) + 1
+    # Rang : ex-æquo partagent le même rang (1, 2, 2, 4…) ; un élève sorti n'est pas classé
+    classes_ids = {e.id for e in eleves if e.actif}
+    moyennes = sorted((g for e, _, g in resultats if g is not None and e.id in classes_ids), reverse=True)
+    def rang(e, g):
+        return None if g is None or e.id not in classes_ids else moyennes.index(g) + 1
+
+    def compte(e, type_, justifiee=None):
+        return sum(1 for a in abs_par_eleve.get(e.id, [])
+                   if a.type == type_ and (justifiee is None or a.justifiee == justifiee))
 
     return [
         Bulletin(
             eleve_id=e.id, matricule=e.matricule, nom_complet=f"{e.prenom} {e.nom}",
             classe=classe.nom, trimestre=trimestre, matieres=lignes,
-            moyenne_generale=g, rang=rang(g), effectif=len(eleves), appreciation=appreciation(g),
+            moyenne_generale=g, rang=rang(e, g), effectif=len(classes_ids), appreciation=appreciation(g),
+            absences=compte(e, TypeAbsence.absence), absences_justifiees=compte(e, TypeAbsence.absence, True),
+            retards=compte(e, TypeAbsence.retard),
         )
         for e, lignes, g in resultats
     ]
@@ -143,4 +190,4 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int) -> list[B
 
 def bulletin_eleve(session: Session, eleve: Eleve, trimestre: int) -> Bulletin:
     classe = session.get(Classe, eleve.classe_id)
-    return next(b for b in bulletins_classe(session, classe, trimestre) if b.eleve_id == eleve.id)
+    return next(b for b in bulletins_classe(session, classe, trimestre, inclure=eleve) if b.eleve_id == eleve.id)

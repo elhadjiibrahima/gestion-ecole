@@ -56,7 +56,7 @@ def eleves_de_la_classe(
 ):
     get_classe(session, classe_id, user.ecole_id)
     return session.exec(
-        select(Eleve).where(Eleve.classe_id == classe_id).order_by(Eleve.nom)
+        select(Eleve).where(Eleve.classe_id == classe_id, Eleve.actif == True).order_by(Eleve.nom)  # noqa: E712
     ).all()
 
 

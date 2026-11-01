@@ -174,8 +174,14 @@ def pdf_recu(ecole: Ecole, paiement: Paiement, eleve: Eleve, classe: Classe,
     if paiement.reference:
         infos.append(("Référence", paiement.reference))
 
+    annulation = []
+    if paiement.annule:
+        annulation = [Paragraph(
+            f"<font color='#dc2626'><b>PAIEMENT ANNULÉ</b> le {date_fr(paiement.annule_le.date())}"
+            f" — motif : {paiement.motif_annulation}</font>", S_NORMAL), Spacer(1, 4)]
     elems = _entete_ecole(ecole) + [
         Paragraph(f"REÇU DE PAIEMENT N° {paiement.numero_recu}", S_TITRE),
+        *annulation,
         _tableau_infos(infos, largeur),
         Spacer(1, 8), montant, Spacer(1, 10),
         Paragraph("<b>Situation du compte</b>", S_NORMAL), Spacer(1, 3), situation,
@@ -223,7 +229,9 @@ def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
     resume = Table(
         [[Paragraph("<b>Moyenne générale</b>", S_NORMAL), Paragraph(f"<font size=13><b>{moy}</b></font>", S_DROITE)],
          [Paragraph("<b>Rang</b>", S_NORMAL), Paragraph(f"<b>{rang}</b>", S_DROITE)],
-         [Paragraph("<b>Appréciation</b>", S_NORMAL), Paragraph(b.appreciation, S_DROITE)]],
+         [Paragraph("<b>Appréciation</b>", S_NORMAL), Paragraph(b.appreciation, S_DROITE)],
+         [Paragraph("<b>Assiduité</b>", S_NORMAL), Paragraph(
+             f"{b.absences} absence(s) dont {b.absences_justifiees} justifiée(s) · {b.retards} retard(s)", S_DROITE)]],
         colWidths=[largeur * 0.4, largeur * 0.6],
     )
     resume.setStyle(TableStyle([

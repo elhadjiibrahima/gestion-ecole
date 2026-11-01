@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import (
+    ChangementMotDePasse, ReinitialisationMotDePasse,
     Ecole, EcoleUpdate, InscriptionEcole, Moi, Role, Token, Utilisateur,
     UtilisateurCreate, UtilisateurPublic,
 )
@@ -46,6 +47,22 @@ def connexion(form: OAuth2PasswordRequestForm = Depends(), session: Session = De
     if not user or not user.actif or not verifier_mot_de_passe(form.password, user.mot_de_passe_hash):
         raise HTTPException(401, "E-mail ou mot de passe incorrect")
     return Token(access_token=creer_token(user))
+
+
+@router.post("/auth/mot-de-passe", status_code=204)
+def changer_mot_de_passe(
+    data: ChangementMotDePasse,
+    user: Utilisateur = Depends(utilisateur_courant),
+    session: Session = Depends(get_session),
+):
+    """Chacun peut changer son propre mot de passe (il faut connaître l'ancien)."""
+    if not verifier_mot_de_passe(data.ancien, user.mot_de_passe_hash):
+        raise HTTPException(400, "Ancien mot de passe incorrect")
+    if data.ancien == data.nouveau:
+        raise HTTPException(400, "Le nouveau mot de passe doit être différent de l'ancien")
+    user.mot_de_passe_hash = hacher_mot_de_passe(data.nouveau)
+    session.add(user)
+    session.commit()
 
 
 @router.get("/auth/moi", response_model=Moi)
@@ -94,6 +111,22 @@ def creer_utilisateur(
     session.commit()
     session.refresh(nouveau)
     return nouveau
+
+
+@router.post("/utilisateurs/{utilisateur_id}/mot-de-passe", status_code=204)
+def reinitialiser_mot_de_passe(
+    utilisateur_id: int,
+    data: ReinitialisationMotDePasse,
+    user: Utilisateur = Depends(exiger_role(Role.directeur)),
+    session: Session = Depends(get_session),
+):
+    """Le directeur donne un nouveau mot de passe à un membre de l'équipe (mot de passe oublié)."""
+    cible = session.get(Utilisateur, utilisateur_id)
+    if not cible or cible.ecole_id != user.ecole_id:
+        raise HTTPException(404, "Utilisateur introuvable")
+    cible.mot_de_passe_hash = hacher_mot_de_passe(data.nouveau)
+    session.add(cible)
+    session.commit()
 
 
 @router.patch("/utilisateurs/{utilisateur_id}/actif", response_model=UtilisateurPublic)

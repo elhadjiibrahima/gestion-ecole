@@ -14,11 +14,19 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - Un paiement ne peut pas dépasser le reste à payer (évite les erreurs de saisie)
 - Formulaire de paiement : classe puis élève, seuls les élèves qui doivent encore sont proposés
 - **Suivi des paiements par classe** (à jour / partiel / rien payé), état PDF par classe
+- **Annulation d'un paiement** saisi par erreur (directeur, motif obligatoire) : le paiement reste visible, barré, avec qui l'a annulé
 - **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
 - **Matières et coefficients** gérés par le directeur (liste usuelle créée automatiquement)
 - **Saisie des notes en grille** : une case par matière, Entrée pour passer à la suivante, moyenne en direct, enregistrement automatique en changeant d'élève
 - **Historique des notes** : qui a ajouté, modifié ou effacé chaque note, et quand (le directeur voit tout, l'enseignant ses saisies) ; la grille indique qui a rempli chaque case
+- **Coefficients propres à une classe** (ex : Maths coef 5 en 3ème), applicables à plusieurs classes d'un coup
+- **Absences et retards** : appel par classe en quelques clics, justification, total sur le bulletin
 - **Bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
+
+- **Messages aux parents** : rappels d'impayés et annonce des bulletins, envoyés par WhatsApp ou SMS en un clic (texte prérempli, aucun abonnement)
+- **Exports Excel** : élèves, paiements (annulés compris), notes par classe
+- **Mots de passe** : chacun change le sien, le directeur réinitialise ceux de l'équipe
+- **Nouvelle année scolaire** : passage en classe supérieure proposé automatiquement, redoublants, élèves de fin de cycle ; frais remis à zéro, historique conservé
 
 ## Installation
 
@@ -39,8 +47,8 @@ python -m uvicorn app.main:app --reload
 
 La base `ecole.db` est créée automatiquement.
 
-> **Tu avais déjà une ancienne version ?** Supprime le fichier `ecole.db` avant de relancer :
-> la structure de la base a changé (écoles, comptes, n° de reçus).
+> **Mise à jour depuis une ancienne version :** la base `ecole.db` est mise à jour automatiquement
+> au démarrage (nouvelles colonnes ajoutées, données conservées).
 
 ## Tests
 
@@ -77,6 +85,17 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | POST | `/paiements` | Enregistrer un paiement | gestion |
 | GET | `/paiements/{id}/recu.pdf` | Reçu PDF | gestion |
 | GET | `/impayes` | Élèves qui doivent encore de l'argent | gestion |
+| POST | `/paiements/{id}/annuler` | Annuler un paiement (motif) | directeur |
+| POST | `/auth/mot-de-passe` | Changer son mot de passe | tous |
+| POST | `/utilisateurs/{id}/mot-de-passe` | Réinitialiser le mot de passe d'un membre | directeur |
+| GET/PUT | `/matieres/coefficients` | Coefficients propres à une classe | tous / directeur |
+| GET/POST | `/absences/appel` | Appel d'une classe pour un jour | pédagogie |
+| GET/PATCH/DELETE | `/absences` | Liste, justification, suppression | pédagogie |
+| GET | `/absences/resume?classe_id=` | Totaux par élève | pédagogie |
+| GET | `/messages/impayes`, `/messages/bulletins` | Messages prêts pour WhatsApp / SMS | gestion |
+| GET | `/export/eleves.xlsx`, `/export/paiements.xlsx` | Exports Excel | gestion |
+| GET | `/export/notes.xlsx?trimestre=` | Export des notes (une feuille par classe) | pédagogie |
+| GET/POST | `/annee/proposition`, `/annee/nouvelle` | Passage à la nouvelle année | directeur |
 | GET | `/stats` | Chiffres du tableau de bord | gestion |
 | GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
 | GET | `/notes/historique?classe_id=&eleve_id=&utilisateur_id=` | Qui a saisi quoi | pédagogie |
@@ -97,13 +116,12 @@ app/
   services.py        soldes, bulletins, rangs
   pdf.py             reçus et bulletins (ReportLab)
   excel.py           modèle et import Excel (openpyxl)
-  routers/           auth, classes, eleves, matieres, paiements, notes, stats
+  routers/           auth, classes, eleves, matieres, paiements, notes, stats,
+                     absences, messages, exports, annee
   static/index.html  interface web
 tests/               tests automatiques (pytest)
 ```
 
 ## Prochaines étapes
 
-1. Rappels SMS aux parents en retard de paiement
-2. Suivi des absences
-3. Mise en ligne (PostgreSQL / Supabase + hébergement)
+1. Mise en ligne (PostgreSQL + hébergement)
