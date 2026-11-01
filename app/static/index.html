@@ -246,7 +246,9 @@
       <div class="card">
         <h2>Enregistrer un paiement</h2>
         <form id="f-paiement">
-          <label>Élève<select name="eleve_id" class="sel-eleves" required></select></label>
+          <label>1. Classe<select id="p-classe" class="sel-classes"></select></label>
+          <label>2. Élève<select name="eleve_id" id="p-eleve" required></select></label>
+          <div id="p-solde" class="hint" style="font-size:.85rem;margin-top:-4px"></div>
           <label>Montant<input name="montant" type="number" min="1" required></label>
           <label>Mode
             <select name="mode">
@@ -614,6 +616,35 @@ $("#f-import").addEventListener("submit", async (ev) => {
 });
 
 // ---------- Paiements ----------
+function remplirElevesPaiement(eleveId) {
+  const classeId = Number($("#p-classe").value);
+  const sel = $("#p-eleve");
+  const ec = eleves.filter((e) => e.classe_id === classeId);
+  sel.innerHTML = ec.length
+    ? `<option value="">— Choisir un élève (${ec.length}) —</option>` +
+      ec.map((e) => `<option value="${e.id}">${esc(e.nom)} ${esc(e.prenom)}</option>`).join("")
+    : `<option value="">Aucun élève dans cette classe</option>`;
+  if (eleveId && ec.some((e) => e.id === Number(eleveId))) sel.value = eleveId;
+  afficherSoldePaiement();
+}
+
+async function afficherSoldePaiement() {
+  const id = $("#p-eleve").value;
+  const zone = $("#p-solde");
+  const montant = $("#f-paiement").elements.montant;
+  if (!id) { zone.innerHTML = ""; montant.placeholder = ""; return; }
+  try {
+    const s = await api(`/eleves/${id}/solde`);
+    zone.innerHTML = s.reste_a_payer
+      ? `Déjà payé : ${argent(s.total_paye)} · <b style="color:var(--bad)">reste ${argent(s.reste_a_payer)}</b>`
+      : `<b style="color:var(--ok)">✔ Frais entièrement payés</b>`;
+    montant.placeholder = s.reste_a_payer ? "Reste à payer : " + argent(s.reste_a_payer) : "";
+  } catch (err) { toast(err.message, true); }
+}
+
+$("#p-classe").addEventListener("change", () => remplirElevesPaiement());
+$("#p-eleve").addEventListener("change", afficherSoldePaiement);
+
 const STATUTS = {
   a_jour: ["À jour", "ok"], partiel: ["Partiel", "warn"], rien_paye: ["Rien payé", "bad"],
 };
@@ -621,6 +652,7 @@ let suiviFiltre = "tous";
 let suiviSoldes = [];
 
 async function afficherSuivi() {
+  remplirElevesPaiement($("#p-eleve").value);
   const classeId = $("#suivi-classe").value;
   suiviSoldes = await api("/eleves/soldes" + (classeId ? "?classe_id=" + classeId : ""));
   $("#btn-etat-pdf").disabled = !classeId;
@@ -669,7 +701,10 @@ function dessinerSuivi() {
     lignes, suiviSoldes.length ? "Aucun élève pour ce filtre" : "Aucun élève dans cette sélection");
 }
 
-$("#suivi-classe").addEventListener("change", afficherSuivi);
+$("#suivi-classe").addEventListener("change", () => {
+  if ($("#suivi-classe").value) { $("#p-classe").value = $("#suivi-classe").value; remplirElevesPaiement(); }
+  afficherSuivi();
+});
 $("#suivi-q").addEventListener("input", dessinerSuivi);
 $("#suivi-chips").addEventListener("click", (ev) => {
   const f = ev.target.closest("[data-filtre]")?.dataset.filtre;
@@ -686,9 +721,9 @@ $("#t-suivi").addEventListener("click", (ev) => {
   if (payer) {
     const s = suiviSoldes.find((x) => x.eleve_id === Number(payer));
     const f = $("#f-paiement");
-    f.elements.eleve_id.value = payer;
+    $("#p-classe").value = s.classe_id;
+    remplirElevesPaiement(payer);
     f.elements.montant.value = "";
-    f.elements.montant.placeholder = "Reste à payer : " + argent(s.reste_a_payer);
     document.querySelectorAll("#t-suivi tr.surligne").forEach((tr) => tr.classList.remove("surligne"));
     ev.target.closest("tr").classList.add("surligne");
     f.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -851,6 +886,7 @@ brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔");
 brancherFormulaire("#f-user", "/utilisateurs", "Compte créé ✔ Donne-lui son e-mail et son mot de passe.");
 brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔", (p) => {
   $("#f-paiement").elements.montant.placeholder = "";
+  $("#p-eleve").value = String(p.eleve_id);
   $("#dernier-recu").innerHTML = `<div class="recu-pret">
     <span>Reçu <b>${esc(p.numero_recu)}</b> — ${argent(p.montant)}</span>
     <button class="btn" data-recu="${p.id}">📄 Imprimer le reçu</button></div>`;
