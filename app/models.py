@@ -170,6 +170,33 @@ class EleveInscrit(SQLModel):
 
 
 
+# ---------- Matières ----------
+class MatiereBase(SQLModel):
+    nom: str = Field(min_length=1, max_length=60)
+    coefficient: int = Field(default=1, ge=1, le=20)
+
+
+class Matiere(MatiereBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    ordre: int = 0                           # ordre d'affichage
+
+
+class MatiereCreate(MatiereBase):
+    pass
+
+
+class MatiereUpdate(SQLModel):
+    nom: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    coefficient: Optional[int] = Field(default=None, ge=1, le=20)
+
+
+MATIERES_PAR_DEFAUT = [
+    ("Mathématiques", 4), ("Français", 4), ("Anglais", 2), ("Physique-Chimie", 3),
+    ("SVT", 3), ("Histoire-Géographie", 2), ("Éducation civique", 1), ("EPS", 1),
+]
+
+
 # ---------- Notes ----------
 class NoteBase(SQLModel):
     eleve_id: int = Field(foreign_key="eleve.id", index=True)
@@ -185,6 +212,19 @@ class Note(NoteBase, table=True):
 
 class NoteCreate(NoteBase):
     pass
+
+
+class CaseNote(SQLModel):
+    """Une case de la grille de saisie : une matière, sa note (ou vide)."""
+    matiere_id: Optional[int] = None         # None : ancienne note sans matière enregistrée
+    matiere: str
+    coefficient: int
+    valeur: Optional[float] = None
+
+
+class SaisieNote(SQLModel):
+    matiere_id: int
+    valeur: Optional[float] = Field(default=None, ge=0, le=20)   # vide = effacer
 
 
 # ---------- Réponses calculées ----------

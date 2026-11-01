@@ -7,6 +7,7 @@ from app.models import (
     Ecole, EcoleUpdate, InscriptionEcole, Moi, Role, Token, Utilisateur,
     UtilisateurCreate, UtilisateurPublic,
 )
+from app.routers.matieres import ajouter_matieres_defaut
 from app.security import (
     creer_token, exiger_role, hacher_mot_de_passe, utilisateur_courant,
     verifier_mot_de_passe,
@@ -32,6 +33,7 @@ def inscrire_ecole(data: InscriptionEcole, session: Session = Depends(get_sessio
         ecole_id=ecole.id, mot_de_passe_hash=hacher_mot_de_passe(data.mot_de_passe),
     )
     session.add(directeur)
+    ajouter_matieres_defaut(session, ecole.id)   # liste de départ, modifiable ensuite
     session.commit()
     session.refresh(directeur)
     return Token(access_token=creer_token(directeur))

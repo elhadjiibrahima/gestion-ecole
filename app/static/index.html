@@ -90,6 +90,16 @@
   tr.surligne td { background: #fffbeb; }
   .actions { white-space: nowrap; text-align: right; }
   .actions button + button { margin-left: 10px; }
+  .two-eq { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 800px) { .two-eq { grid-template-columns: 1fr; } }
+  table.grille td { padding: 6px 8px; }
+  table.grille input { width: 90px; text-align: right; padding: 7px 8px; font-size: 1rem; }
+  table.grille input.modifie { border-color: #f59e0b; background: #fffbeb; }
+  table.grille input.invalide { border-color: var(--bad); background: var(--bad-bg); }
+  table.grille td.faible { color: var(--bad); }
+  .grille-pied { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: .95rem; }
+  #t-matieres input { padding: 6px 8px; }
+  #t-matieres input[type=number] { width: 70px; }
   .recu-pret { background: var(--ok-bg); border-radius: 8px; padding: 10px 12px; display: flex;
                justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; font-size: .9rem; }
 
@@ -300,49 +310,57 @@
 
   <!-- ===== Notes ===== -->
   <section class="tab" id="notes">
-    <div class="two">
-      <div class="stack">
-        <div class="card">
-          <h2>Ajouter une note</h2>
-          <form id="f-note">
-            <label>1. Classe<select id="n-classe" class="sel-classes"></select></label>
-            <label>2. Élève<select name="eleve_id" id="n-eleve" required></select></label>
-            <label>Matière<input name="matiere" list="matieres" required></label>
-            <datalist id="matieres">
-              <option>Mathématiques</option><option>Français</option><option>Anglais</option>
-              <option>Physique-Chimie</option><option>SVT</option><option>Histoire-Géographie</option>
-            </datalist>
-            <div class="row">
-              <label>Note /20<input name="valeur" type="number" min="0" max="20" step="0.25" required></label>
-              <label>Coefficient<input name="coefficient" type="number" min="1" value="1" required></label>
-            </div>
-            <label>Trimestre
-              <select name="trimestre"><option>1</option><option>2</option><option>3</option></select>
-            </label>
-            <button class="btn">Ajouter</button>
-          </form>
+    <div class="two-eq">
+      <div class="card">
+        <h2>Saisie des notes</h2>
+        <div class="toolbar">
+          <select id="n-classe" class="sel-classes"></select>
+          <select id="n-eleve"></select>
+          <select id="n-trimestre"><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
         </div>
-        <div class="card">
-          <h2>Bulletins de toute une classe</h2>
-          <p class="hint">Un seul PDF, une page par élève, prêt à imprimer.</p>
-          <div class="toolbar" style="margin:0">
-            <select id="bc-classe" class="sel-classes"></select>
-            <select id="bc-trimestre"><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option></select>
-            <button class="btn" id="btn-bulletins-classe">📄 PDF</button>
-          </div>
+        <div class="toolbar" style="justify-content:space-between">
+          <button class="btn secondary" id="n-prec">◀ Précédent</button>
+          <span id="n-position" style="color:var(--muted);font-size:.85rem"></span>
+          <button class="btn secondary" id="n-suiv">Suivant ▶</button>
         </div>
+        <div class="table-wrap"><table id="t-grille" class="grille"></table></div>
+        <div class="grille-pied">
+          <span>Moyenne : <b id="n-moyenne">–</b></span>
+          <span id="n-etat" style="font-size:.85rem;color:var(--muted)"></span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="n-enregistrer">Enregistrer</button>
+          <button class="btn secondary" id="n-enregistrer-suiv">Enregistrer et élève suivant ▶</button>
+        </div>
+        <p class="hint" style="margin:10px 0 0">Astuce : <b>Entrée</b> passe à la matière suivante. Les notes sont enregistrées automatiquement quand tu changes d'élève.</p>
       </div>
       <div class="card">
-        <h2>Bulletin</h2>
-        <div class="toolbar">
-          <select id="b-classe" class="sel-classes"></select>
-          <select id="b-eleve"></select>
-          <select id="b-trimestre"><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
+        <div class="toolbar" style="justify-content:space-between;margin-bottom:6px">
+          <h2 style="margin:0">Bulletin</h2>
           <button class="btn secondary" id="btn-bulletin-pdf">📄 PDF</button>
         </div>
         <div id="bulletin"></div>
-        <h2 class="mt" style="font-size:.95rem">Notes saisies</h2>
-        <div class="table-wrap"><table id="t-notes"></table></div>
+      </div>
+    </div>
+    <div class="two-eq mt">
+      <div class="card" data-roles="directeur">
+        <h2>Matières et coefficients</h2>
+        <form id="f-matiere" class="row" style="align-items:end">
+          <label style="flex:3">Nouvelle matière<input name="nom" placeholder="ex : Arabe" required></label>
+          <label style="flex:1">Coef.<input name="coefficient" type="number" min="1" max="20" value="1" required></label>
+          <button class="btn" style="flex:0 0 auto">Ajouter</button>
+        </form>
+        <div class="table-wrap mt"><table id="t-matieres"></table></div>
+        <button class="link" id="btn-matieres-defaut" style="margin-top:10px">+ Ajouter les matières usuelles manquantes</button>
+      </div>
+      <div class="card" id="card-bc">
+        <h2>Bulletins de toute une classe</h2>
+        <p class="hint">Un seul PDF, une page par élève, prêt à imprimer.</p>
+        <div class="toolbar" style="margin:0">
+          <select id="bc-classe" class="sel-classes"></select>
+          <select id="bc-trimestre"><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option></select>
+          <button class="btn" id="btn-bulletins-classe">📄 PDF</button>
+        </div>
       </div>
     </div>
   </section>
@@ -807,21 +825,164 @@ async function afficherHistorique(eleveId) {
   $("#historique-card").scrollIntoView({ behavior: "smooth" });
 }
 
-// ---------- Notes & bulletins ----------
-async function afficherBulletin() {
+// ---------- Notes : saisie en grille ----------
+let grille = [];                 // cases renvoyées par le serveur
+let grilleCle = null;            // { eleve, trimestre } de la grille affichée
+let grilleModifiee = false;
+
+const noteValide = (v) => v === "" || (!isNaN(v) && Number(v) >= 0 && Number(v) <= 20);
+
+function elevesClasseNotes() {
+  const cid = Number($("#n-classe").value);
+  return eleves.filter((e) => e.classe_id === cid);
+}
+
+async function chargerGrille() {
   remplirEleves($("#n-classe"), $("#n-eleve"), $("#n-eleve").value);
-  remplirEleves($("#b-classe"), $("#b-eleve"), $("#b-eleve").value);
-  const id = $("#b-eleve").value;
+  if (!$("#n-eleve").value) {   // choisit le premier élève de la classe
+    const premier = elevesClasseNotes()[0];
+    if (premier) $("#n-eleve").value = String(premier.id);
+  }
+  afficherMatieres();
+  const id = $("#n-eleve").value;
+  const liste = elevesClasseNotes();
+  const pos = liste.findIndex((e) => e.id === Number(id));
+  $("#n-position").textContent = id ? `Élève ${pos + 1} / ${liste.length}` : "";
+  $("#n-prec").disabled = pos <= 0;
+  $("#n-suiv").disabled = pos < 0 || pos >= liste.length - 1;
+  $("#n-enregistrer-suiv").disabled = $("#n-suiv").disabled;
+
   if (!id) {
-    $("#bulletin").innerHTML = `<p class="empty">Choisis une classe puis un élève</p>`;
-    $("#t-notes").innerHTML = "";
+    grille = []; grilleCle = null;
+    $("#t-grille").innerHTML = `<tr><td class="empty">${classes.length ? "Aucun élève dans cette classe" : "Crée d'abord une classe"}</td></tr>`;
+    majMoyenne(); afficherBulletin();
     return;
   }
-  const trimestre = $("#b-trimestre").value;
-  const [b, notes] = await Promise.all([
-    api(`/eleves/${id}/bulletin?trimestre=${trimestre}`),
-    api(`/notes?eleve_id=${id}&trimestre=${trimestre}`),
-  ]);
+  const trimestre = $("#n-trimestre").value;
+  grille = await api(`/notes/grille?eleve_id=${id}&trimestre=${trimestre}`);
+  grilleCle = { eleve: id, trimestre };
+  grilleModifiee = false;
+  const lectureSeule = !peut("directeur", "enseignant");
+  table($("#t-grille"),
+    ["Matière", { label: "Coef.", num: true }, { label: "Note / 20", num: true }],
+    grille.map((c, i) => `<tr>
+      <td>${esc(c.matiere)}${c.matiere_id ? "" : ' <span class="sub">matière retirée de la liste</span>'}</td>
+      <td class="num">${c.coefficient}</td>
+      <td class="num">${c.matiere_id && !lectureSeule
+        ? `<input type="number" inputmode="decimal" min="0" max="20" step="0.25" data-i="${i}" value="${c.valeur ?? ""}" placeholder="–">`
+        : (c.valeur ?? "–")}</td></tr>`),
+    peut("directeur") ? "Aucune matière : ajoute-les ci-dessous" : "Aucune matière définie par le directeur");
+  majMoyenne();
+  $("#n-etat").textContent = "";
+  afficherBulletin();
+}
+
+function majMoyenne() {
+  let pts = 0, coefs = 0, ok = true;
+  grille.forEach((c, i) => {
+    const input = $(`#t-grille input[data-i="${i}"]`);
+    const v = input ? input.value.trim() : (c.valeur ?? "");
+    if (input) {
+      const valide = noteValide(v);
+      ok &&= valide;
+      input.classList.toggle("invalide", !valide);
+      input.classList.toggle("modifie", valide && String(c.valeur ?? "") !== v);
+    }
+    if (v !== "" && noteValide(v)) { pts += Number(v) * c.coefficient; coefs += c.coefficient; }
+  });
+  const moy = coefs ? pts / coefs : null;
+  const el = $("#n-moyenne");
+  el.textContent = moy == null ? "–" : moy.toFixed(2) + " / 20";
+  el.style.color = moy == null ? "" : moy >= 10 ? "var(--ok)" : "var(--bad)";
+  return ok;
+}
+
+async function enregistrerGrille({ silencieux = false } = {}) {
+  if (!grilleCle) return true;
+  if (!majMoyenne()) { toast("Une note doit être entre 0 et 20", true); return false; }
+  const saisies = grille.map((c, i) => {
+    const input = $(`#t-grille input[data-i="${i}"]`);
+    if (!input) return null;
+    const v = input.value.trim();
+    return { matiere_id: c.matiere_id, valeur: v === "" ? null : Number(v) };
+  }).filter(Boolean);
+  try {
+    grille = await api(`/notes/grille?eleve_id=${grilleCle.eleve}&trimestre=${grilleCle.trimestre}`,
+      { method: "PUT", body: JSON.stringify(saisies) });
+    grilleModifiee = false;
+    grille.forEach((c, i) => { const inp = $(`#t-grille input[data-i="${i}"]`); if (inp) inp.value = c.valeur ?? ""; });
+    majMoyenne();
+    const e = eleves.find((x) => x.id === Number(grilleCle.eleve));
+    $("#n-etat").textContent = "✔ Enregistré";
+    if (!silencieux) toast(`Notes de ${e ? e.prenom + " " + e.nom : "l'élève"} enregistrées ✔`);
+    else toast(`Notes de ${e ? e.prenom + " " + e.nom : "l'élève"} enregistrées automatiquement`);
+    return true;
+  } catch (err) { toast(err.message, true); return false; }
+}
+
+// Avant de changer d'élève / de trimestre : on enregistre ce qui a été tapé
+async function avantChangement() {
+  return grilleModifiee ? enregistrerGrille({ silencieux: true }) : true;
+}
+
+async function allerA(decalage) {
+  if (!(await avantChangement())) return;
+  const liste = elevesClasseNotes();
+  const pos = liste.findIndex((e) => e.id === Number($("#n-eleve").value));
+  const cible = liste[pos + decalage];
+  if (cible) { $("#n-eleve").value = String(cible.id); await chargerGrille(); focusPremiereCase(); }
+}
+
+function focusPremiereCase() { $("#t-grille input")?.focus(); }
+
+$("#t-grille").addEventListener("input", () => {
+  grilleModifiee = true;
+  $("#n-etat").textContent = "Modifications non enregistrées";
+  majMoyenne();
+});
+$("#t-grille").addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" || !ev.target.matches("input")) return;
+  ev.preventDefault();
+  const inputs = [...document.querySelectorAll("#t-grille input")];
+  const i = inputs.indexOf(ev.target);
+  if (i < inputs.length - 1) { inputs[i + 1].focus(); inputs[i + 1].select(); }
+  else $("#n-enregistrer").focus();
+});
+$("#n-enregistrer").addEventListener("click", () => enregistrerGrille().then(afficherBulletin));
+$("#n-enregistrer-suiv").addEventListener("click", async () => {
+  if (await enregistrerGrille()) { grilleModifiee = false; allerA(1); }
+});
+$("#n-prec").addEventListener("click", () => allerA(-1));
+$("#n-suiv").addEventListener("click", () => allerA(1));
+
+// Changement de classe / élève / trimestre (avec enregistrement automatique)
+for (const id of ["#n-classe", "#n-eleve", "#n-trimestre"]) {
+  const sel = $(id);
+  sel.addEventListener("focus", () => (sel.dataset.avant = sel.value));
+  sel.addEventListener("change", async () => {
+    const nouveau = sel.value;
+    if (grilleModifiee) {
+      sel.value = sel.dataset.avant ?? sel.value;   // le temps d'enregistrer l'ancien élève
+      if (id === "#n-classe") remplirEleves($("#n-classe"), $("#n-eleve"), grilleCle?.eleve);
+      if (!(await avantChangement())) return;
+      sel.value = nouveau;
+    }
+    if (id === "#n-classe") {
+      $("#n-eleve").value = "";
+      remplirEleves($("#n-classe"), $("#n-eleve"));
+      $("#bc-classe").value = nouveau;
+    }
+    if (id === "#n-trimestre") $("#bc-trimestre").value = nouveau;
+    sel.dataset.avant = nouveau;
+    chargerGrille();
+  });
+}
+
+// ---------- Bulletin de l'élève sélectionné ----------
+async function afficherBulletin() {
+  const id = $("#n-eleve").value;
+  if (!id) { $("#bulletin").innerHTML = `<p class="empty">Choisis une classe puis un élève</p>`; return; }
+  const b = await api(`/eleves/${id}/bulletin?trimestre=${$("#n-trimestre").value}`);
   const moy = b.moyenne_generale;
   const rang = b.rang ? `${b.rang}${b.rang === 1 ? "er" : "e"} / ${b.effectif}` : "–";
   $("#bulletin").innerHTML = `
@@ -836,31 +997,73 @@ async function afficherBulletin() {
     </div>
     <div class="table-wrap"><table id="t-bulletin"></table></div>`;
   table($("#t-bulletin"),
-    ["Matière", { label: "Coef.", num: true }, { label: "Moyenne", num: true }],
+    ["Matière", { label: "Coef.", num: true }, { label: "Moyenne", num: true }, { label: "Points", num: true }],
     b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="num">${m.coefficient}</td>
-      <td class="num">${m.moyenne.toFixed(2)}</td></tr>`),
+      <td class="num ${m.moyenne < 10 ? "faible" : ""}" style="${m.moyenne < 10 ? "color:var(--bad)" : ""}">${m.moyenne.toFixed(2)}</td>
+      <td class="num">${(m.moyenne * m.coefficient).toFixed(2)}</td></tr>`),
     "Aucune note pour ce trimestre");
-  table($("#t-notes"),
-    ["Matière", { label: "Note", num: true }, { label: "Coef.", num: true }, ""],
-    notes.map((n) => `<tr><td>${esc(n.matiere)}</td><td class="num">${n.valeur}</td>
-      <td class="num">${n.coefficient}</td>
-      <td class="num"><button class="link danger" data-suppr-note="${n.id}">Supprimer</button></td></tr>`),
-    "Aucune note");
 }
 
 $("#btn-bulletin-pdf").addEventListener("click", () => {
-  const id = $("#b-eleve").value;
-  if (id) ouvrirFichier(`/eleves/${id}/bulletin.pdf?trimestre=${$("#b-trimestre").value}`, "bulletin.pdf");
+  const id = $("#n-eleve").value;
+  if (id) ouvrirFichier(`/eleves/${id}/bulletin.pdf?trimestre=${$("#n-trimestre").value}`, "bulletin.pdf");
 });
 $("#btn-bulletins-classe").addEventListener("click", () => {
   const id = $("#bc-classe").value;
   if (id) ouvrirFichier(`/classes/${id}/bulletins.pdf?trimestre=${$("#bc-trimestre").value}`, "bulletins_classe.pdf");
 });
-$("#t-notes").addEventListener("click", async (ev) => {
-  const id = ev.target.dataset.supprNote;
-  if (!id) return;
-  try { await api(`/notes/${id}`, { method: "DELETE" }); toast("Note supprimée"); afficherBulletin(); }
-  catch (err) { toast(err.message, true); }
+
+// ---------- Matières et coefficients (directeur) ----------
+async function afficherMatieres() {
+  if (!peut("directeur")) return;
+  const liste = await api("/matieres");
+  table($("#t-matieres"),
+    ["Matière", { label: "Coef.", num: true }, ""],
+    liste.map((m) => `<tr data-matiere="${m.id}">
+      <td><input value="${esc(m.nom)}" data-champ="nom" aria-label="Nom"></td>
+      <td class="num"><input type="number" min="1" max="20" value="${m.coefficient}" data-champ="coefficient" aria-label="Coefficient"></td>
+      <td class="actions"><button class="link" data-enreg-matiere="${m.id}">Enregistrer</button><button class="link danger" data-suppr-matiere="${m.id}">Supprimer</button></td>
+    </tr>`),
+    "Aucune matière");
+}
+
+$("#f-matiere").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("/matieres", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    toast("Matière ajoutée ✔");
+    ev.target.elements.nom.value = ""; ev.target.elements.coefficient.value = 1;
+    if (await avantChangement()) chargerGrille();
+  } catch (err) { toast(err.message, true); }
+});
+$("#btn-matieres-defaut").addEventListener("click", async () => {
+  try {
+    await api("/matieres/defaut", { method: "POST" });
+    toast("Matières usuelles ajoutées ✔");
+    if (await avantChangement()) chargerGrille();
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-matieres").addEventListener("click", async (ev) => {
+  const enreg = ev.target.dataset.enregMatiere, suppr = ev.target.dataset.supprMatiere;
+  if (!enreg && !suppr) return;
+  try {
+    if (!(await avantChangement())) return;
+    if (enreg) {
+      const tr = ev.target.closest("tr");
+      await api(`/matieres/${enreg}`, { method: "PATCH", body: JSON.stringify({
+        nom: tr.querySelector("[data-champ=nom]").value,
+        coefficient: Number(tr.querySelector("[data-champ=coefficient]").value),
+      }) });
+      toast("Matière modifiée ✔ (les notes déjà saisies suivent)");
+    } else {
+      await api(`/matieres/${suppr}`, { method: "DELETE" });
+      toast("Matière supprimée");
+    }
+    chargerGrille();
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-matieres").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); ev.target.closest("tr").querySelector("[data-enreg-matiere]").click(); }
 });
 
 // ---------- Équipe ----------
@@ -904,12 +1107,13 @@ $("#f-ecole").addEventListener("submit", async (ev) => {
 // ---------- Navigation ----------
 const vues = {
   dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
-  paiements: afficherSuivi, notes: afficherBulletin, equipe: afficherEquipe,
+  paiements: afficherSuivi, notes: chargerGrille, equipe: afficherEquipe,
   parametres: afficherParametres,
 };
 let vueActive = null;
 
 function ouvrirOnglet(nom) {
+  if (vueActive === "notes" && nom !== "notes" && grilleModifiee) enregistrerGrille({ silencieux: true });
   vueActive = nom;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === nom));
   document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("active", s.id === nom));
@@ -943,11 +1147,6 @@ function brancherFormulaire(selector, path, message, apres) {
   });
 }
 brancherFormulaire("#f-classe", "/classes", "Classe créée ✔");
-brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔", (n) => {
-  $("#b-classe").value = $("#n-classe").value;
-  remplirEleves($("#b-classe"), $("#b-eleve"), n.eleve_id);
-  $("#n-eleve").value = String(n.eleve_id);
-});
 brancherFormulaire("#f-user", "/utilisateurs", "Compte créé ✔ Donne-lui son e-mail et son mot de passe.");
 brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔", (p) => {
   $("#f-paiement").elements.montant.placeholder = "";
@@ -963,22 +1162,6 @@ $("#q-eleve").addEventListener("input", () => {
   rechercheTimer = setTimeout(afficherEleves, 250);
 });
 $("#filtre-classe").addEventListener("change", afficherEleves);
-$("#b-eleve").addEventListener("change", afficherBulletin);
-$("#b-classe").addEventListener("change", () => { remplirEleves($("#b-classe"), $("#b-eleve")); afficherBulletin(); });
-$("#n-classe").addEventListener("change", () => {
-  remplirEleves($("#n-classe"), $("#n-eleve"));
-  $("#b-classe").value = $("#n-classe").value;          // le bulletin suit la classe
-  $("#bc-classe").value = $("#n-classe").value;
-  remplirEleves($("#b-classe"), $("#b-eleve"));
-  afficherBulletin();
-});
-$("#n-eleve").addEventListener("change", () => {
-  // Le bulletin affiche l'élève choisi : on voit ses notes en les saisissant
-  $("#b-classe").value = $("#n-classe").value;
-  remplirEleves($("#b-classe"), $("#b-eleve"), $("#n-eleve").value);
-  afficherBulletin();
-});
-$("#b-trimestre").addEventListener("change", afficherBulletin);
 document.addEventListener("click", (ev) => {
   const id = ev.target.dataset.recu;
   if (id) ouvrirFichier(`/paiements/${id}/recu.pdf`, "recu.pdf");
@@ -997,7 +1180,7 @@ async function demarrer(ongletDemande) {
   document.querySelectorAll("[data-roles]").forEach((el) =>
     (el.hidden = !el.dataset.roles.split(" ").includes(moi.utilisateur.role)));
   // La liste prend toute la largeur quand le formulaire est caché
-  for (const id of ["card-classes", "card-eleves"]) {
+  for (const id of ["card-classes", "card-eleves", "card-bc"]) {
     const card = $("#" + id);
     card.style.gridColumn = card.previousElementSibling.hidden ? "1 / -1" : "";
   }

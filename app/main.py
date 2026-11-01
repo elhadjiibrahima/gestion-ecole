@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.database import init_db
-from app.routers import auth, classes, eleves, notes, paiements, stats
+from app.routers import auth, classes, eleves, matieres, notes, paiements, stats
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -27,6 +27,7 @@ app.include_router(auth.router)
 app.include_router(classes.router)
 app.include_router(eleves.router)
 app.include_router(paiements.router)
+app.include_router(matieres.router)
 app.include_router(notes.router)
 app.include_router(stats.router)
 

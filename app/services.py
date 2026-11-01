@@ -91,12 +91,13 @@ def appreciation(moyenne: float | None) -> str:
     return "Résultats très insuffisants, avertissement"
 
 
-def _moyennes(notes: list[Note]) -> tuple[list[LigneBulletin], float | None]:
+def _moyennes(notes: list[Note], ordre: dict[str, int] | None = None) -> tuple[list[LigneBulletin], float | None]:
     par_matiere: dict[str, list[Note]] = {}
     for n in notes:
         par_matiere.setdefault(n.matiere, []).append(n)
+    ordre = ordre or {}
     lignes = []
-    for matiere, ns in sorted(par_matiere.items()):
+    for matiere, ns in sorted(par_matiere.items(), key=lambda kv: (ordre.get(kv[0].lower(), 999), kv[0])):
         moy = sum(n.valeur for n in ns) / len(ns)
         coef = max(n.coefficient for n in ns)
         lignes.append(LigneBulletin(matiere=matiere, moyenne=round(moy, 2), coefficient=coef))
@@ -118,9 +119,11 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int) -> list[B
     for n in notes:
         notes_par_eleve.setdefault(n.eleve_id, []).append(n)
 
+    from app.routers.matieres import matieres_ecole  # import local : évite une boucle d'imports
+    ordre = {m.nom.lower(): i for i, m in enumerate(matieres_ecole(session, classe.ecole_id))}
     resultats = []
     for e in eleves:
-        lignes, generale = _moyennes(notes_par_eleve.get(e.id, []))
+        lignes, generale = _moyennes(notes_par_eleve.get(e.id, []), ordre)
         resultats.append((e, lignes, generale))
 
     # Rang : ex-æquo partagent le même rang (1, 2, 2, 4…)

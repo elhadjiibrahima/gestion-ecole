@@ -14,7 +14,9 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - Un paiement ne peut pas dépasser le reste à payer (évite les erreurs de saisie)
 - **Suivi des paiements par classe** (à jour / partiel / rien payé), état PDF par classe
 - **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
-- **Notes** (/20, coefficient, trimestre) et **bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
+- **Matières et coefficients** gérés par le directeur (liste usuelle créée automatiquement)
+- **Saisie des notes en grille** : une case par matière, Entrée pour passer à la suivante, moyenne en direct, enregistrement automatique en changeant d'élève
+- **Bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
 
 ## Installation
 
@@ -75,6 +77,9 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | GET | `/impayes` | Élèves qui doivent encore de l'argent | gestion |
 | GET | `/stats` | Chiffres du tableau de bord | gestion |
 | GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
+| GET/PUT | `/notes/grille?eleve_id=&trimestre=` | Grille de notes d'un élève (une case par matière) | tous / pédagogie |
+| GET/POST/PATCH/DELETE | `/matieres` | Matières et coefficients | tous / directeur |
+| POST | `/matieres/defaut` | Ajouter les matières usuelles manquantes | directeur |
 
 *gestion* = directeur + comptable · *pédagogie* = directeur + enseignant
 
@@ -89,7 +94,7 @@ app/
   services.py        soldes, bulletins, rangs
   pdf.py             reçus et bulletins (ReportLab)
   excel.py           modèle et import Excel (openpyxl)
-  routers/           auth, classes, eleves, paiements, notes, stats
+  routers/           auth, classes, eleves, matieres, paiements, notes, stats
   static/index.html  interface web
 tests/               tests automatiques (pytest)
 ```
