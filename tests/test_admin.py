@@ -139,3 +139,19 @@ def test_production_refuse_sans_cle(tmp_path):
     r = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, env={**env, "PYTHONPATH": racine},
                        capture_output=True, text=True)
     assert r.returncode != 0 and "SECRET_KEY manquante" in r.stderr
+
+
+def test_modeles_compatibles_python_314_et_plus():
+    """Python 3.14+ évalue les annotations après coup : dans une classe, un champ ne doit pas porter
+    le nom d'un type utilisé par un autre champ (ex. champ « date » + champ de type « date »)."""
+    import ast
+    import pathlib
+    for fichier in (pathlib.Path(__file__).resolve().parent.parent / "app").rglob("*.py"):
+        arbre = ast.parse(fichier.read_text(encoding="utf-8"))
+        for classe in (n for n in ast.walk(arbre) if isinstance(n, ast.ClassDef)):
+            champs = [n for n in classe.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)]
+            noms_champs = {c.target.id for c in champs}
+            for c in champs:
+                types = {n.id for n in ast.walk(c.annotation) if isinstance(n, ast.Name)}
+                conflit = (types & noms_champs) - {c.target.id} | ({c.target.id} & types if c.target.id in types else set())
+                assert not conflit, f"{fichier.name}, classe {classe.name} : le champ {conflit} cache un type"

@@ -1,4 +1,6 @@
-from datetime import date, datetime, timezone
+# « Date » plutôt que « date » : certains modèles ont un champ nommé « date », et Python 3.14+
+# lirait alors le champ à la place du type (annotations évaluées après coup).
+from datetime import date as Date, datetime, timezone
 from enum import Enum
 from typing import Literal, Optional
 
@@ -25,7 +27,7 @@ class Ecole(EcoleBase, table=True):
     cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     # Abonnement (géré uniquement par le super admin)
     abonnement_statut: str = "essai"         # essai / actif / suspendu
-    abonnement_fin: Optional[date] = None    # dernier jour d'accès
+    abonnement_fin: Optional[Date] = None    # dernier jour d'accès
     plan: Optional[str] = None
     motif_suspension: Optional[str] = None
 
@@ -109,7 +111,7 @@ class Token(SQLModel):
 
 class AbonnementInfo(SQLModel):
     statut: str                              # essai / actif / expire / suspendu
-    fin: Optional[date]
+    fin: Optional[Date]
     jours_restants: Optional[int]
     message: Optional[str] = None
     contact: Optional[str] = None
@@ -141,7 +143,7 @@ class ClasseCreate(ClasseBase):
 class EleveBase(SQLModel):
     nom: str = Field(index=True)
     prenom: str
-    date_naissance: Optional[date] = None
+    date_naissance: Optional[Date] = None
     telephone_parent: Optional[str] = None
     classe_id: int = Field(foreign_key="classe.id")
 
@@ -161,7 +163,7 @@ class Eleve(EleveBase, table=True):
 class EleveUpdate(SQLModel):
     nom: Optional[str] = None
     prenom: Optional[str] = None
-    date_naissance: Optional[date] = None
+    date_naissance: Optional[Date] = None
     telephone_parent: Optional[str] = None
     classe_id: Optional[int] = None
 
@@ -184,7 +186,7 @@ class PaiementBase(SQLModel):
     montant: int = Field(gt=0)
     mode: ModePaiement = ModePaiement.especes
     reference: Optional[str] = None          # n° de transaction Orange Money, etc.
-    date_paiement: date = Field(default_factory=date.today)
+    date_paiement: Date = Field(default_factory=Date.today)
 
 
 class Paiement(PaiementBase, table=True):
@@ -212,7 +214,7 @@ class PaiementDetail(SQLModel):
     montant: int
     mode: ModePaiement
     reference: Optional[str]
-    date_paiement: date
+    date_paiement: Date
     annee_scolaire: Optional[str]
     enregistre_par: Optional[str]
     annule: bool
@@ -351,7 +353,7 @@ class StatutPaiement(str, Enum):
 
 class Echeance(SQLModel):
     nom: str
-    date_limite: date
+    date_limite: Date
     montant: int
     paye: int                                # part de cette tranche déjà couverte
     reste: int
@@ -368,12 +370,12 @@ class Solde(SQLModel):
     total_paye: int
     reste_a_payer: int
     nb_paiements: int = 0
-    dernier_paiement: Optional[date] = None
+    dernier_paiement: Optional[Date] = None
     statut: StatutPaiement
     # Échéancier : ce qui devait déjà être payé à ce jour
     montant_exigible: int = 0
     retard: int = 0
-    prochaine_echeance: Optional[date] = None
+    prochaine_echeance: Optional[Date] = None
     prochain_montant: int = 0
     echeances: list[Echeance] = []
     frais_classe: int = 0                    # frais de la classe avant réduction
@@ -445,7 +447,7 @@ class Absence(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     ecole_id: int = Field(foreign_key="ecole.id", index=True)
     eleve_id: int = Field(foreign_key="eleve.id", index=True)
-    jour: date = Field(index=True)
+    jour: Date = Field(index=True)
     type: TypeAbsence = TypeAbsence.absence
     trimestre: int = Field(ge=1, le=3)
     justifiee: bool = False
@@ -457,7 +459,7 @@ class Absence(SQLModel, table=True):
 class Appel(SQLModel):
     """Appel d'une classe pour un jour : la liste des absents et des retardataires."""
     classe_id: int
-    jour: date
+    jour: Date
     trimestre: int = Field(ge=1, le=3)
     absents: list[int] = []
     retards: list[int] = []
@@ -473,7 +475,7 @@ class AbsenceDetail(SQLModel):
     eleve_id: int
     eleve: str
     classe: str
-    jour: date
+    jour: Date
     type: TypeAbsence
     trimestre: int
     justifiee: bool
@@ -545,13 +547,13 @@ class Tranche(SQLModel, table=True):
     annee_scolaire: str = Field(index=True)
     ordre: int = 0
     nom: str
-    date_limite: date
+    date_limite: Date
     pourcentage: float                       # part des frais annuels de la classe
 
 
 class TrancheSaisie(SQLModel):
     nom: str = Field(min_length=1, max_length=40)
-    date_limite: date
+    date_limite: Date
     pourcentage: float = Field(gt=0, le=100)
 
 
@@ -568,7 +570,7 @@ class CategorieDepense(str, Enum):
 
 
 class DepenseCreate(SQLModel):
-    jour: date = Field(default_factory=date.today)
+    jour: Date = Field(default_factory=Date.today)
     categorie: CategorieDepense
     libelle: str = Field(min_length=2, max_length=120)
     montant: int = Field(gt=0)
@@ -580,7 +582,7 @@ class Depense(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     ecole_id: int = Field(foreign_key="ecole.id", index=True)
     annee_scolaire: str = Field(index=True)
-    jour: date = Field(index=True)
+    jour: Date = Field(index=True)
     categorie: CategorieDepense
     libelle: str
     montant: int
@@ -595,7 +597,7 @@ class Depense(SQLModel, table=True):
 
 class DepenseDetail(SQLModel):
     id: int
-    jour: date
+    jour: Date
     categorie: CategorieDepense
     libelle: str
     montant: int
@@ -650,7 +652,7 @@ class CodeParent(SQLModel):
 
 
 class AbsenceParent(SQLModel):
-    jour: date
+    jour: Date
     type: TypeAbsence
     justifiee: bool
     motif: Optional[str]
@@ -659,7 +661,7 @@ class AbsenceParent(SQLModel):
 class PaiementParent(SQLModel):
     id: int
     numero_recu: Optional[str]
-    date_paiement: date
+    date_paiement: Date
     montant: int
     mode: ModePaiement
     annule: bool
@@ -723,8 +725,8 @@ class PaiementAbonnement(SQLModel, table=True):
     montant: int = Field(ge=0)
     devise: str = "FCFA"
     mois: int = Field(ge=0)
-    debut: date
-    fin: date
+    debut: Date
+    fin: Date
     mode: str = "especes"
     reference: Optional[str] = None
     note: Optional[str] = None
@@ -743,7 +745,7 @@ class ProlongationAbonnement(SQLModel):
 
 
 class CorrectionAbonnement(SQLModel):
-    fin: Optional[date] = None
+    fin: Optional[Date] = None
     statut: Optional[Literal["essai", "actif"]] = None
     plan: Optional[str] = Field(default=None, max_length=40)
 
