@@ -6,7 +6,7 @@ from datetime import date
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-from reportlab.lib.pagesizes import A4, A5
+from reportlab.lib.pagesizes import A4, A5, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
@@ -262,5 +262,76 @@ def pdf_bulletins(ecole: Ecole, bulletins: list[Bulletin]) -> bytes:
         if i:
             elems.append(PageBreak())
         elems += _page_bulletin(ecole, b, largeur)
+    doc.build(elems)
+    return buf.getvalue()
+
+
+# ---------- État des paiements d'une classe ----------
+STATUTS = {"a_jour": "À jour", "partiel": "Partiel", "rien_paye": "Rien payé"}
+COULEURS_STATUT = {"a_jour": "#059669", "partiel": "#d97706", "rien_paye": "#dc2626"}
+
+
+def pdf_etat_paiements(ecole: Ecole, classe: Classe, soldes: list[Solde]) -> bytes:
+    buf = io.BytesIO()
+    marge = 14 * mm
+    page = landscape(A4)
+    doc = SimpleDocTemplate(buf, pagesize=page, leftMargin=marge, rightMargin=marge,
+                            topMargin=marge, bottomMargin=marge,
+                            title=f"État des paiements — {classe.nom}", author=ecole.nom)
+    largeur = page[0] - 2 * marge
+    d = ecole.devise
+
+    entetes = ["N°", "Matricule", "Élève", "Frais annuels", "Payé", "Reste à payer", "Paiements", "Dernier", "Statut"]
+    lignes = []
+    for i, s in enumerate(soldes, start=1):
+        lignes.append([
+            str(i), s.matricule or "–", s.nom_complet, argent(s.frais_annuels, d), argent(s.total_paye, d),
+            argent(s.reste_a_payer, d), str(s.nb_paiements),
+            date_fr(s.dernier_paiement) if s.dernier_paiement else "–", STATUTS[s.statut.value],
+        ])
+    if not lignes:
+        lignes = [["", "", "Aucun élève dans cette classe", "", "", "", "", "", ""]]
+    attendu = sum(s.frais_annuels for s in soldes)
+    paye = sum(s.total_paye for s in soldes)
+    reste = sum(s.reste_a_payer for s in soldes)
+    pied = ["", "", f"TOTAL ({len(soldes)} élèves)", argent(attendu, d), argent(paye, d), argent(reste, d), "", "", ""]
+
+    fr = [0.04, 0.1, 0.22, 0.12, 0.12, 0.12, 0.08, 0.09, 0.11]
+    t = Table([entetes] + lignes + [pied], colWidths=[largeur * f for f in fr], repeatRows=1)
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), BLEU),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), FOND),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (3, 0), (6, -1), "RIGHT"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (7, 0), (8, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f8fafc")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for i, s in enumerate(soldes, start=1):
+        c = colors.HexColor(COULEURS_STATUT[s.statut.value])
+        style += [("TEXTCOLOR", (8, i), (8, i), c), ("FONTNAME", (8, i), (8, i), "Helvetica-Bold")]
+        if s.reste_a_payer:
+            style.append(("TEXTCOLOR", (5, i), (5, i), colors.HexColor("#dc2626")))
+    t.setStyle(TableStyle(style))
+
+    nb = {k: sum(1 for s in soldes if s.statut.value == k) for k in STATUTS}
+    taux = round(100 * paye / attendu, 1) if attendu else 0
+    resume = Paragraph(
+        f"<b>{nb['a_jour']}</b> à jour · <b>{nb['partiel']}</b> partiel · <b>{nb['rien_paye']}</b> rien payé"
+        f" — taux de recouvrement <b>{taux} %</b>", S_NORMAL)
+
+    elems = _entete_ecole(ecole) + [
+        Paragraph(f"ÉTAT DES PAIEMENTS — {classe.nom}", S_TITRE),
+        Paragraph(f"Frais annuels : {argent(classe.frais_annuels, d)} par élève · "
+                  f"situation au {date_fr(date.today())}", S_INFO),
+        Spacer(1, 8), resume, Spacer(1, 6), t, Spacer(1, 18),
+        _signatures("Le comptable", "Le directeur", largeur),
+    ]
     doc.build(elems)
     return buf.getvalue()

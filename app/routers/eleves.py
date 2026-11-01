@@ -11,7 +11,7 @@ from app.models import (
 )
 from app.pdf import en_tete_pdf, pdf_bulletins
 from app.security import GESTION, TOUS, exiger_role
-from app.services import bulletin_eleve, calculer_solde, get_classe, get_eleve
+from app.services import bulletin_eleve, calculer_solde, get_classe, get_eleve, soldes_ecole
 
 router = APIRouter(prefix="/eleves", tags=["Élèves"])
 
@@ -61,11 +61,10 @@ def soldes(
     user: Utilisateur = Depends(exiger_role(*GESTION)),
     session: Session = Depends(get_session),
 ):
-    """Solde de chaque élève (évite un appel par élève depuis l'interface)."""
-    stmt = select(Eleve).where(Eleve.ecole_id == user.ecole_id)
+    """Solde de chaque élève, trié par classe puis par nom."""
     if classe_id:
-        stmt = stmt.where(Eleve.classe_id == classe_id)
-    return [calculer_solde(session, e) for e in session.exec(stmt).all()]
+        get_classe(session, classe_id, user.ecole_id)
+    return soldes_ecole(session, user.ecole_id, classe_id)
 
 
 # ---------- Import Excel ----------

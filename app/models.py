@@ -174,13 +174,24 @@ class NoteCreate(NoteBase):
 
 
 # ---------- Réponses calculées ----------
+class StatutPaiement(str, Enum):
+    a_jour = "a_jour"            # tout payé
+    partiel = "partiel"          # a commencé à payer
+    rien_paye = "rien_paye"      # aucun paiement
+
+
 class Solde(SQLModel):
     eleve_id: int
+    matricule: Optional[str] = None
     nom_complet: str
+    classe_id: int
     classe: str
     frais_annuels: int
     total_paye: int
     reste_a_payer: int
+    nb_paiements: int = 0
+    dernier_paiement: Optional[date] = None
+    statut: StatutPaiement
 
 
 class LigneBulletin(SQLModel):

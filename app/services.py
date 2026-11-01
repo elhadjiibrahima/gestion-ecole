@@ -2,7 +2,7 @@
 from fastapi import HTTPException
 from sqlmodel import Session, func, select
 
-from app.models import Bulletin, Classe, Eleve, LigneBulletin, Note, Paiement, Solde
+from app.models import Bulletin, Classe, Eleve, LigneBulletin, Note, Paiement, Solde, StatutPaiement
 
 
 # ---------- Accès limité à l'école de l'utilisateur ----------
@@ -23,17 +23,36 @@ def get_eleve(session: Session, eleve_id: int, ecole_id: int, code: int = 404) -
 # ---------- Soldes ----------
 def calculer_solde(session: Session, eleve: Eleve) -> Solde:
     classe = session.get(Classe, eleve.classe_id)
-    total = session.exec(
-        select(func.coalesce(func.sum(Paiement.montant), 0)).where(Paiement.eleve_id == eleve.id)
+    total, nb, dernier = session.exec(
+        select(func.coalesce(func.sum(Paiement.montant), 0), func.count(Paiement.id),
+               func.max(Paiement.date_paiement))
+        .where(Paiement.eleve_id == eleve.id)
     ).one()
+    reste = max(classe.frais_annuels - total, 0)
+    statut = (StatutPaiement.a_jour if reste == 0
+              else StatutPaiement.partiel if total > 0 else StatutPaiement.rien_paye)
     return Solde(
         eleve_id=eleve.id,
+        matricule=eleve.matricule,
         nom_complet=f"{eleve.prenom} {eleve.nom}",
+        classe_id=classe.id,
         classe=classe.nom,
         frais_annuels=classe.frais_annuels,
         total_paye=total,
-        reste_a_payer=max(classe.frais_annuels - total, 0),
+        reste_a_payer=reste,
+        nb_paiements=nb,
+        dernier_paiement=dernier,
+        statut=statut,
     )
+
+
+def soldes_ecole(session: Session, ecole_id: int, classe_id: int | None = None) -> list[Solde]:
+    """Soldes des élèves de l'école (ou d'une classe), triés par classe puis par nom."""
+    stmt = select(Eleve).where(Eleve.ecole_id == ecole_id)
+    if classe_id:
+        stmt = stmt.where(Eleve.classe_id == classe_id)
+    soldes = [calculer_solde(session, e) for e in session.exec(stmt.order_by(Eleve.nom, Eleve.prenom)).all()]
+    return sorted(soldes, key=lambda s: s.classe.lower())
 
 
 # ---------- Bulletins ----------

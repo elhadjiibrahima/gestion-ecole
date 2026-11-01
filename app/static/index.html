@@ -57,7 +57,7 @@
   table { width: 100%; border-collapse: collapse; font-size: .92rem; }
   th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .table-wrap { overflow-x: auto; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
   .badge.ok { background: var(--ok-bg); color: var(--ok); }
@@ -78,6 +78,18 @@
   .erreurs { background: var(--bad-bg); color: var(--bad); border-radius: 6px; padding: 10px 12px;
              font-size: .85rem; margin: 10px 0 0; max-height: 200px; overflow: auto; }
   .erreurs ul { margin: 4px 0 0; padding-left: 18px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 5px 12px;
+          font-size: .85rem; cursor: pointer; color: var(--text); }
+  .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .chip b { margin-left: 4px; }
+  .badge.warn { background: #fef3c7; color: #b45309; }
+  tr.groupe td { background: var(--primary-light); color: var(--primary); font-weight: 700; font-size: .88rem; }
+  tr.sous-total td { background: #f8fafc; font-weight: 600; font-size: .88rem; }
+  td .sub { display: block; color: var(--muted); font-size: .78rem; }
+  tr.surligne td { background: #fffbeb; }
+  .actions { white-space: nowrap; text-align: right; }
+  .actions button + button { margin-left: 10px; }
   .recu-pret { background: var(--ok-bg); border-radius: 8px; padding: 10px 12px; display: flex;
                justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; font-size: .9rem; }
 
@@ -251,11 +263,14 @@
         <div id="dernier-recu"></div>
       </div>
       <div class="card">
-        <h2>Impayés</h2>
+        <h2>Suivi des paiements par classe</h2>
         <div class="toolbar">
-          <select id="filtre-impayes" class="sel-classes" data-all="Toutes les classes"></select>
+          <select id="suivi-classe" class="sel-classes" data-all="Toutes les classes"></select>
+          <input id="suivi-q" placeholder="Rechercher un élève…">
+          <button class="btn secondary" id="btn-etat-pdf" title="Choisis une classe">📄 État PDF</button>
         </div>
-        <div class="table-wrap"><table id="t-impayes"></table></div>
+        <div class="chips" id="suivi-chips"></div>
+        <div class="table-wrap"><table id="t-suivi"></table></div>
       </div>
     </div>
     <div class="card mt" id="historique-card" hidden>
@@ -506,7 +521,11 @@ async function chargerEleves() {
   document.querySelectorAll(".sel-eleves").forEach((sel) => {
     const keep = sel.value;
     sel.innerHTML = eleves.length
-      ? eleves.map((e) => `<option value="${e.id}">${esc(e.nom)} ${esc(e.prenom)} — ${esc(classeNom(e.classe_id))}</option>`).join("")
+      ? classes.map((c) => {
+          const ec = eleves.filter((e) => e.classe_id === c.id);
+          return ec.length ? `<optgroup label="${esc(c.nom)}">` +
+            ec.map((e) => `<option value="${e.id}">${esc(e.nom)} ${esc(e.prenom)}</option>`).join("") + "</optgroup>" : "";
+        }).join("")
       : `<option value="">Aucun élève</option>`;
     if (keep) sel.value = keep;
   });
@@ -595,17 +614,87 @@ $("#f-import").addEventListener("submit", async (ev) => {
 });
 
 // ---------- Paiements ----------
-async function afficherImpayes() {
-  const classeId = $("#filtre-impayes").value;
-  const imp = await api("/impayes" + (classeId ? "?classe_id=" + classeId : ""));
-  table($("#t-impayes"),
-    ["Élève", "Classe", { label: "Payé", num: true }, { label: "Reste", num: true }, ""],
-    imp.map((s) => `<tr><td>${esc(s.nom_complet)}</td><td>${esc(s.classe)}</td>
-      <td class="num">${argent(s.total_paye)}</td>
-      <td class="num"><span class="badge bad">${argent(s.reste_a_payer)}</span></td>
-      <td><button class="link" data-historique="${s.eleve_id}">Historique</button></td></tr>`),
-    eleves.length ? "Aucun impayé 🎉" : "Aucun élève");
+const STATUTS = {
+  a_jour: ["À jour", "ok"], partiel: ["Partiel", "warn"], rien_paye: ["Rien payé", "bad"],
+};
+let suiviFiltre = "tous";
+let suiviSoldes = [];
+
+async function afficherSuivi() {
+  const classeId = $("#suivi-classe").value;
+  suiviSoldes = await api("/eleves/soldes" + (classeId ? "?classe_id=" + classeId : ""));
+  $("#btn-etat-pdf").disabled = !classeId;
+  dessinerSuivi();
 }
+
+function dessinerSuivi() {
+  const q = $("#suivi-q").value.trim().toLowerCase();
+  const tous = suiviSoldes.filter((s) => !q || s.nom_complet.toLowerCase().includes(q) || (s.matricule || "").toLowerCase().includes(q));
+
+  // Pastilles de filtre avec compteurs
+  const compte = (k) => tous.filter((s) => k === "tous" || (k === "en_retard" ? s.statut !== "a_jour" : s.statut === k)).length;
+  const filtres = [["tous", "Tous"], ["a_jour", "À jour"], ["partiel", "Partiel"], ["rien_paye", "Rien payé"], ["en_retard", "Tous les retards"]];
+  $("#suivi-chips").innerHTML = filtres.map(([k, l]) =>
+    `<button class="chip ${suiviFiltre === k ? "active" : ""}" data-filtre="${k}">${l}<b>${compte(k)}</b></button>`).join("");
+
+  const liste = tous.filter((s) => suiviFiltre === "tous" ||
+    (suiviFiltre === "en_retard" ? s.statut !== "a_jour" : s.statut === suiviFiltre));
+
+  // Regroupement par classe, avec sous-totaux
+  const groupes = new Map();
+  liste.forEach((s) => { if (!groupes.has(s.classe)) groupes.set(s.classe, []); groupes.get(s.classe).push(s); });
+  const plusieurs = groupes.size > 1 || !$("#suivi-classe").value;
+  const lignes = [];
+  for (const [classe, elevesClasse] of groupes) {
+    const frais = elevesClasse[0].frais_annuels;
+    if (plusieurs) lignes.push(`<tr class="groupe"><td colspan="6">${esc(classe)} — ${elevesClasse.length} élève(s) · frais ${argent(frais)}</td></tr>`);
+    elevesClasse.forEach((s, i) => {
+      const [label, cls] = STATUTS[s.statut];
+      lignes.push(`<tr data-ligne="${s.eleve_id}">
+        <td>${i + 1}</td>
+        <td>${esc(s.nom_complet)}<span class="sub">${esc(s.matricule || "")}${s.dernier_paiement ? " · dernier : " + new Date(s.dernier_paiement).toLocaleDateString("fr-FR") : ""}</span></td>
+        <td class="num">${argent(s.total_paye)}<span class="sub">${s.nb_paiements} paiement(s)</span></td>
+        <td class="num">${s.reste_a_payer ? `<b style="color:var(--bad)">${argent(s.reste_a_payer)}</b>` : "–"}</td>
+        <td><span class="badge ${cls}">${label}</span></td>
+        <td class="actions">${s.reste_a_payer ? `<button class="link" data-payer="${s.eleve_id}">Payer</button>` : ""}<button class="link" data-historique="${s.eleve_id}">Historique</button></td>
+      </tr>`);
+    });
+    const paye = elevesClasse.reduce((t, s) => t + s.total_paye, 0);
+    const reste = elevesClasse.reduce((t, s) => t + s.reste_a_payer, 0);
+    lignes.push(`<tr class="sous-total"><td></td><td>Total ${plusieurs ? esc(classe) : ""}</td>
+      <td class="num">${argent(paye)}</td><td class="num" style="color:${reste ? "var(--bad)" : "var(--ok)"}">${argent(reste)}</td><td colspan="2"></td></tr>`);
+  }
+  table($("#t-suivi"),
+    ["N°", "Élève", { label: "Payé", num: true }, { label: "Reste", num: true }, "Statut", ""],
+    lignes, suiviSoldes.length ? "Aucun élève pour ce filtre" : "Aucun élève dans cette sélection");
+}
+
+$("#suivi-classe").addEventListener("change", afficherSuivi);
+$("#suivi-q").addEventListener("input", dessinerSuivi);
+$("#suivi-chips").addEventListener("click", (ev) => {
+  const f = ev.target.closest("[data-filtre]")?.dataset.filtre;
+  if (f) { suiviFiltre = f; dessinerSuivi(); }
+});
+$("#btn-etat-pdf").addEventListener("click", () => {
+  const id = $("#suivi-classe").value;
+  if (id) ouvrirFichier(`/classes/${id}/paiements.pdf`, "etat_paiements.pdf");
+});
+$("#t-suivi").addEventListener("click", (ev) => {
+  const payer = ev.target.dataset.payer;
+  const hist = ev.target.dataset.historique;
+  if (hist) afficherHistorique(Number(hist));
+  if (payer) {
+    const s = suiviSoldes.find((x) => x.eleve_id === Number(payer));
+    const f = $("#f-paiement");
+    f.elements.eleve_id.value = payer;
+    f.elements.montant.value = "";
+    f.elements.montant.placeholder = "Reste à payer : " + argent(s.reste_a_payer);
+    document.querySelectorAll("#t-suivi tr.surligne").forEach((tr) => tr.classList.remove("surligne"));
+    ev.target.closest("tr").classList.add("surligne");
+    f.scrollIntoView({ behavior: "smooth", block: "start" });
+    f.elements.montant.focus({ preventScroll: true });
+  }
+});
 
 async function afficherHistorique(eleveId) {
   const e = eleves.find((x) => x.id === eleveId);
@@ -718,7 +807,7 @@ $("#f-ecole").addEventListener("submit", async (ev) => {
 // ---------- Navigation ----------
 const vues = {
   dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
-  paiements: afficherImpayes, notes: afficherBulletin, equipe: afficherEquipe,
+  paiements: afficherSuivi, notes: afficherBulletin, equipe: afficherEquipe,
   parametres: afficherParametres,
 };
 let vueActive = null;
@@ -761,6 +850,7 @@ brancherFormulaire("#f-eleve", "/eleves", "Élève inscrit ✔");
 brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔");
 brancherFormulaire("#f-user", "/utilisateurs", "Compte créé ✔ Donne-lui son e-mail et son mot de passe.");
 brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔", (p) => {
+  $("#f-paiement").elements.montant.placeholder = "";
   $("#dernier-recu").innerHTML = `<div class="recu-pret">
     <span>Reçu <b>${esc(p.numero_recu)}</b> — ${argent(p.montant)}</span>
     <button class="btn" data-recu="${p.id}">📄 Imprimer le reçu</button></div>`;
@@ -772,13 +862,8 @@ $("#q-eleve").addEventListener("input", () => {
   rechercheTimer = setTimeout(afficherEleves, 250);
 });
 $("#filtre-classe").addEventListener("change", afficherEleves);
-$("#filtre-impayes").addEventListener("change", afficherImpayes);
 $("#b-eleve").addEventListener("change", afficherBulletin);
 $("#b-trimestre").addEventListener("change", afficherBulletin);
-$("#t-impayes").addEventListener("click", (ev) => {
-  const id = ev.target.dataset.historique;
-  if (id) afficherHistorique(Number(id));
-});
 document.addEventListener("click", (ev) => {
   const id = ev.target.dataset.recu;
   if (id) ouvrirFichier(`/paiements/${id}/recu.pdf`, "recu.pdf");

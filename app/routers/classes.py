@@ -3,9 +3,9 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import Classe, ClasseCreate, Ecole, Eleve, Role, Utilisateur
-from app.pdf import en_tete_pdf, pdf_bulletins
-from app.security import TOUS, exiger_role
-from app.services import bulletins_classe, get_classe
+from app.pdf import en_tete_pdf, pdf_bulletins, pdf_etat_paiements
+from app.security import GESTION, TOUS, exiger_role
+from app.services import bulletins_classe, get_classe, soldes_ecole
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 
@@ -77,3 +77,17 @@ def bulletins_pdf(
     pdf = pdf_bulletins(session.get(Ecole, user.ecole_id), bulletins)
     return Response(pdf, media_type="application/pdf",
                     headers=en_tete_pdf(f"bulletins_{classe.nom}_T{trimestre}.pdf"))
+
+
+@router.get("/{classe_id}/paiements.pdf", response_class=Response)
+def etat_paiements_pdf(
+    classe_id: int,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    """État des paiements de la classe : chaque élève, payé, reste, statut, totaux."""
+    classe = get_classe(session, classe_id, user.ecole_id)
+    soldes = soldes_ecole(session, user.ecole_id, classe_id)
+    pdf = pdf_etat_paiements(session.get(Ecole, user.ecole_id), classe, soldes)
+    return Response(pdf, media_type="application/pdf",
+                    headers=en_tete_pdf(f"paiements_{classe.nom}.pdf"))

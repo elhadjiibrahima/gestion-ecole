@@ -1,4 +1,5 @@
 import io
+from tests.conftest import creer_compte
 from datetime import date
 
 from openpyxl import Workbook, load_workbook
@@ -91,3 +92,19 @@ def test_import_mauvais_fichier(client, dir_headers):
     assert _importer(client, dir_headers, b"pas un excel", "eleves.csv").status_code == 400
     r = _importer(client, dir_headers, b"pas un excel").json()
     assert r["importes"] == 0 and "Impossible de lire" in r["erreurs"][0]
+
+
+def test_soldes_statuts_et_etat_pdf(client, dir_headers, setup):
+    classe, eleve = setup
+    b = client.post("/eleves", headers=dir_headers, json={"nom": "Bah", "prenom": "Ali", "classe_id": classe["id"]}).json()
+    c = client.post("/eleves", headers=dir_headers, json={"nom": "Sow", "prenom": "Awa", "classe_id": classe["id"]}).json()
+    client.post("/paiements", headers=dir_headers, json={"eleve_id": eleve["id"], "montant": 500000})
+    client.post("/paiements", headers=dir_headers, json={"eleve_id": b["id"], "montant": 100000})
+    soldes = client.get(f"/eleves/soldes?classe_id={classe['id']}", headers=dir_headers).json()
+    assert [s["nom_complet"] for s in soldes] == ["Ali Bah", "Aminata Diallo", "Awa Sow"]   # tri par nom
+    statuts = {s["nom_complet"]: (s["statut"], s["nb_paiements"]) for s in soldes}
+    assert statuts == {"Aminata Diallo": ("a_jour", 1), "Ali Bah": ("partiel", 1), "Awa Sow": ("rien_paye", 0)}
+    r = client.get(f"/classes/{classe['id']}/paiements.pdf", headers=dir_headers)
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+    prof = creer_compte(client, dir_headers, "enseignant", "p@test.gn")
+    assert client.get(f"/classes/{classe['id']}/paiements.pdf", headers=prof).status_code == 403
