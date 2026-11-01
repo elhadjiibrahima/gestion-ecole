@@ -113,10 +113,6 @@ class Eleve(EleveBase, table=True):
     matricule: Optional[str] = Field(default=None, unique=True, index=True)
 
 
-class EleveCreate(EleveBase):
-    pass
-
-
 class EleveUpdate(SQLModel):
     nom: Optional[str] = None
     prenom: Optional[str] = None
@@ -154,6 +150,24 @@ class Paiement(PaiementBase, table=True):
 
 class PaiementCreate(PaiementBase):
     pass
+
+
+# ---------- Inscription (élève + premier paiement) ----------
+class PaiementInitial(SQLModel):
+    """Premier versement, obligatoire à l'inscription."""
+    montant: int = Field(gt=0)
+    mode: ModePaiement = ModePaiement.especes
+    reference: Optional[str] = None
+
+
+class EleveCreate(EleveBase):
+    paiement: PaiementInitial
+
+
+class EleveInscrit(SQLModel):
+    eleve: Eleve
+    paiement: Paiement
+
 
 
 # ---------- Notes ----------

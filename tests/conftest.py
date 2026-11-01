@@ -51,12 +51,20 @@ def dir_headers(client):
     return creer_ecole(client)
 
 
+def inscrire(client, headers, classe_id, nom, prenom, montant=50000, **extra):
+    """Inscrit un élève avec son premier paiement ; renvoie l'élève."""
+    r = client.post("/eleves", headers=headers, json={
+        "nom": nom, "prenom": prenom, "classe_id": classe_id,
+        "paiement": {"montant": montant}, **extra})
+    assert r.status_code == 201, r.text
+    return r.json()["eleve"]
+
+
 @pytest.fixture
 def setup(client, dir_headers):
-    """Une classe + un élève dans l'école du directeur."""
+    """Une classe (500 000) + un élève inscrit avec un premier paiement de 50 000."""
     classe = client.post("/classes", headers=dir_headers, json={
         "nom": "6ème A", "niveau": "Collège", "frais_annuels": 500000}).json()
-    eleve = client.post("/eleves", headers=dir_headers, json={
-        "nom": "Diallo", "prenom": "Aminata", "classe_id": classe["id"],
-        "telephone_parent": "+224620000000"}).json()
+    eleve = inscrire(client, dir_headers, classe["id"], "Diallo", "Aminata",
+                     telephone_parent="+224620000000")
     return classe, eleve

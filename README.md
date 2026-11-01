@@ -9,8 +9,10 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
   - *Directeur* : tout, plus la gestion de l'équipe et des paramètres de l'école
   - *Comptable* : élèves, paiements, impayés, tableau de bord
   - *Enseignant* : notes et bulletins
-- **Élèves** : inscription, matricule automatique, recherche, **import depuis Excel** (modèle fourni)
+- **Élèves** : inscription avec **premier paiement obligatoire** (reçu immédiat), matricule automatique, recherche, **import depuis Excel** (modèle fourni, sans paiement : pour reprendre des élèves existants)
 - **Paiements** : espèces, Orange Money, MTN MoMo, virement — **reçu PDF numéroté** avec montant en lettres
+- Un paiement ne peut pas dépasser le reste à payer (évite les erreurs de saisie)
+- **Suivi des paiements par classe** (à jour / partiel / rien payé), état PDF par classe
 - **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
 - **Notes** (/20, coefficient, trimestre) et **bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
 
@@ -63,7 +65,7 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | PATCH | `/utilisateurs/{id}/actif` | Activer / désactiver un compte | directeur |
 | GET/POST | `/classes` | Lister / créer des classes | tous / directeur |
 | GET | `/classes/{id}/bulletins.pdf?trimestre=1` | Bulletins de toute la classe | tous |
-| GET/POST | `/eleves` | Lister / inscrire des élèves | tous / gestion |
+| GET/POST | `/eleves` | Lister / inscrire un élève (avec `paiement` : montant, mode, référence) | tous / gestion |
 | GET | `/eleves/modele-import.xlsx` | Modèle Excel d'import | gestion |
 | POST | `/eleves/import` | Importer un fichier Excel | gestion |
 | GET | `/eleves/{id}/bulletin?trimestre=1` | Bulletin (JSON) | tous |

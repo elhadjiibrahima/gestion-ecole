@@ -6,12 +6,14 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.excel import lire_import_eleves, modele_import_eleves
 from app.models import (
-    Bulletin, Classe, Ecole, Eleve, EleveCreate, EleveUpdate, ResultatImport,
+    Bulletin, Classe, Ecole, Eleve, EleveCreate, EleveInscrit, EleveUpdate, ResultatImport,
     Solde, Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_bulletins
 from app.security import GESTION, TOUS, exiger_role
-from app.services import bulletin_eleve, calculer_solde, get_classe, get_eleve, soldes_ecole
+from app.services import (
+    bulletin_eleve, calculer_solde, creer_paiement, get_classe, get_eleve, soldes_ecole,
+)
 
 router = APIRouter(prefix="/eleves", tags=["Élèves"])
 
@@ -21,19 +23,23 @@ def _attribuer_matricule(session: Session, eleve: Eleve) -> None:
     eleve.matricule = f"{date.today().year}-{eleve.id:05d}"
 
 
-@router.post("", response_model=Eleve, status_code=201)
+@router.post("", response_model=EleveInscrit, status_code=201)
 def inscrire_eleve(
     data: EleveCreate,
     user: Utilisateur = Depends(exiger_role(*GESTION)),
     session: Session = Depends(get_session),
 ):
+    """Inscrit un élève avec son premier paiement (obligatoire). Tout ou rien."""
     get_classe(session, data.classe_id, user.ecole_id, code=400)
-    eleve = Eleve.model_validate(data, update={"ecole_id": user.ecole_id})
+    eleve = Eleve.model_validate(data.model_dump(exclude={"paiement"}), update={"ecole_id": user.ecole_id})
     session.add(eleve)
     _attribuer_matricule(session, eleve)
-    session.commit()
+    p = data.paiement
+    paiement = creer_paiement(session, eleve, p.montant, p.mode, p.reference, None, user.id)
+    session.commit()  # si le paiement est refusé, rien n'est enregistré
     session.refresh(eleve)
-    return eleve
+    session.refresh(paiement)
+    return EleveInscrit(eleve=eleve, paiement=paiement)
 
 
 @router.get("", response_model=list[Eleve])

@@ -37,7 +37,8 @@ def test_isolation_entre_ecoles(client, dir_headers, setup):
     assert client.get(f"/eleves/{eleve['id']}/bulletin.pdf?trimestre=1", headers=autre).status_code == 404
     r = client.post("/paiements", headers=autre, json={"eleve_id": eleve["id"], "montant": 1000})
     assert r.status_code == 400
-    r = client.post("/eleves", headers=autre, json={"nom": "X", "prenom": "Y", "classe_id": classe["id"]})
+    r = client.post("/eleves", headers=autre, json={
+        "nom": "X", "prenom": "Y", "classe_id": classe["id"], "paiement": {"montant": 1000}})
     assert r.status_code == 400
     assert client.get("/stats", headers=autre).json()["nb_eleves"] == 0
 

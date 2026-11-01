@@ -7,7 +7,7 @@ from app.database import get_session
 from app.models import Classe, Ecole, Eleve, Paiement, PaiementCreate, Solde, Utilisateur
 from app.pdf import en_tete_pdf, pdf_recu
 from app.security import GESTION, exiger_role
-from app.services import calculer_solde, get_eleve
+from app.services import calculer_solde, creer_paiement, get_eleve
 
 router = APIRouter(tags=["Paiements"])
 
@@ -18,11 +18,9 @@ def enregistrer_paiement(
     user: Utilisateur = Depends(exiger_role(*GESTION)),
     session: Session = Depends(get_session),
 ):
-    get_eleve(session, data.eleve_id, user.ecole_id, code=400)
-    paiement = Paiement.model_validate(data, update={"enregistre_par_id": user.id})
-    session.add(paiement)
-    session.flush()
-    paiement.numero_recu = f"R{date.today().year}-{paiement.id:06d}"
+    eleve = get_eleve(session, data.eleve_id, user.ecole_id, code=400)
+    paiement = creer_paiement(session, eleve, data.montant, data.mode, data.reference,
+                              data.date_paiement, user.id)
     session.commit()
     session.refresh(paiement)
     return paiement

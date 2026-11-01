@@ -1,4 +1,6 @@
 """Logique métier partagée : accès limité à l'école, soldes, bulletins."""
+from datetime import date
+
 from fastapi import HTTPException
 from sqlmodel import Session, func, select
 
@@ -18,6 +20,23 @@ def get_eleve(session: Session, eleve_id: int, ecole_id: int, code: int = 404) -
     if not eleve or eleve.ecole_id != ecole_id:
         raise HTTPException(code, "Élève introuvable")
     return eleve
+
+
+# ---------- Paiements ----------
+def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference, date_paiement,
+                   utilisateur_id: int) -> Paiement:
+    """Enregistre un paiement (sans commit). Refuse un montant supérieur au reste à payer."""
+    reste = calculer_solde(session, eleve).reste_a_payer
+    if reste == 0:
+        raise HTTPException(400, "Cet élève a déjà payé la totalité de ses frais")
+    if montant > reste:
+        raise HTTPException(400, f"Montant trop élevé : il ne reste que {reste:,} à payer".replace(",", " "))
+    paiement = Paiement(eleve_id=eleve.id, montant=montant, mode=mode, reference=reference,
+                        date_paiement=date_paiement or date.today(), enregistre_par_id=utilisateur_id)
+    session.add(paiement)
+    session.flush()
+    paiement.numero_recu = f"R{date.today().year}-{paiement.id:06d}"
+    return paiement
 
 
 # ---------- Soldes ----------

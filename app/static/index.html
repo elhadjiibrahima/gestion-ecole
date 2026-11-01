@@ -214,9 +214,26 @@
             <label>Prénom<input name="prenom" required></label>
             <label>Date de naissance<input name="date_naissance" type="date"></label>
             <label>Téléphone du parent<input name="telephone_parent" placeholder="+224 6.."></label>
-            <label>Classe<select name="classe_id" class="sel-classes" required></select></label>
-            <button class="btn">Inscrire</button>
+            <label>Classe<select name="classe_id" id="i-classe" class="sel-classes" required></select></label>
+            <fieldset style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;gap:10px;margin:0">
+              <legend style="font-size:.85rem;font-weight:600;padding:0 4px">Premier paiement (obligatoire)</legend>
+              <div id="i-frais" class="hint" style="font-size:.85rem;margin:0"></div>
+              <label>Montant versé<input name="montant" type="number" min="1" required></label>
+              <div class="row">
+                <label>Mode
+                  <select name="mode">
+                    <option value="especes">Espèces</option>
+                    <option value="orange_money">Orange Money</option>
+                    <option value="mtn_momo">MTN MoMo</option>
+                    <option value="virement">Virement</option>
+                  </select>
+                </label>
+                <label>Référence<input name="reference" placeholder="n° transaction"></label>
+              </div>
+            </fieldset>
+            <button class="btn">Inscrire et encaisser</button>
           </form>
+          <div id="i-recu"></div>
         </div>
         <div class="card">
           <h2>Importer depuis Excel</h2>
@@ -288,7 +305,8 @@
         <div class="card">
           <h2>Ajouter une note</h2>
           <form id="f-note">
-            <label>Élève<select name="eleve_id" class="sel-eleves" required></select></label>
+            <label>1. Classe<select id="n-classe" class="sel-classes"></select></label>
+            <label>2. Élève<select name="eleve_id" id="n-eleve" required></select></label>
             <label>Matière<input name="matiere" list="matieres" required></label>
             <datalist id="matieres">
               <option>Mathématiques</option><option>Français</option><option>Anglais</option>
@@ -317,7 +335,8 @@
       <div class="card">
         <h2>Bulletin</h2>
         <div class="toolbar">
-          <select id="b-eleve" class="sel-eleves"></select>
+          <select id="b-classe" class="sel-classes"></select>
+          <select id="b-eleve"></select>
           <select id="b-trimestre"><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
           <button class="btn secondary" id="btn-bulletin-pdf">📄 PDF</button>
         </div>
@@ -565,6 +584,7 @@ async function afficherClasses() {
 
 // ---------- Élèves ----------
 async function afficherEleves() {
+  afficherFraisInscription();
   const q = $("#q-eleve").value.trim();
   const classeId = $("#filtre-classe").value;
   const params = new URLSearchParams();
@@ -614,6 +634,46 @@ $("#f-import").addEventListener("submit", async (ev) => {
   } catch (err) { toast(err.message, true); }
   finally { btn.disabled = false; }
 });
+
+// ---------- Inscription (élève + premier paiement) ----------
+function afficherFraisInscription() {
+  const c = classes.find((x) => x.id === Number($("#i-classe").value));
+  const montant = $("#f-eleve").elements.montant;
+  $("#i-frais").textContent = c ? `Frais annuels de ${c.nom} : ${argent(c.frais_annuels)}` : "";
+  montant.max = c ? c.frais_annuels : "";
+  montant.placeholder = c ? "Maximum " + argent(c.frais_annuels) : "";
+}
+$("#i-classe").addEventListener("change", afficherFraisInscription);
+
+$("#f-eleve").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = formData(ev.target);
+  const corps = {
+    nom: d.nom, prenom: d.prenom, classe_id: d.classe_id,
+    date_naissance: d.date_naissance, telephone_parent: d.telephone_parent,
+    paiement: { montant: d.montant, mode: d.mode, reference: d.reference },
+  };
+  try {
+    const r = await api("/eleves", { method: "POST", body: JSON.stringify(corps) });
+    toast(`${r.eleve.prenom} ${r.eleve.nom} inscrit(e) ✔ Matricule ${r.eleve.matricule}`);
+    $("#i-recu").innerHTML = `<div class="recu-pret">
+      <span>${esc(r.eleve.prenom)} ${esc(r.eleve.nom)} — reçu <b>${esc(r.paiement.numero_recu)}</b> · ${argent(r.paiement.montant)}</span>
+      <button class="btn" data-recu="${r.paiement.id}">📄 Reçu</button></div>`;
+    [...ev.target.elements].forEach((el) => { if (el.tagName === "INPUT") el.value = ""; });
+    rafraichir();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Choix « classe puis élève » (notes, bulletins) ----------
+function remplirEleves(selClasse, selEleve, eleveId, invite = "— Choisir un élève —") {
+  const classeId = Number(selClasse.value);
+  const ec = eleves.filter((e) => e.classe_id === classeId);
+  selEleve.innerHTML = ec.length
+    ? `<option value="">${invite} (${ec.length})</option>` +
+      ec.map((e) => `<option value="${e.id}">${esc(e.nom)} ${esc(e.prenom)}</option>`).join("")
+    : `<option value="">Aucun élève dans cette classe</option>`;
+  if (eleveId && ec.some((e) => e.id === Number(eleveId))) selEleve.value = String(eleveId);
+}
 
 // ---------- Paiements ----------
 function remplirElevesPaiement(eleveId) {
@@ -749,9 +809,11 @@ async function afficherHistorique(eleveId) {
 
 // ---------- Notes & bulletins ----------
 async function afficherBulletin() {
+  remplirEleves($("#n-classe"), $("#n-eleve"), $("#n-eleve").value);
+  remplirEleves($("#b-classe"), $("#b-eleve"), $("#b-eleve").value);
   const id = $("#b-eleve").value;
   if (!id) {
-    $("#bulletin").innerHTML = `<p class="empty">Aucun élève</p>`;
+    $("#bulletin").innerHTML = `<p class="empty">Choisis une classe puis un élève</p>`;
     $("#t-notes").innerHTML = "";
     return;
   }
@@ -881,8 +943,11 @@ function brancherFormulaire(selector, path, message, apres) {
   });
 }
 brancherFormulaire("#f-classe", "/classes", "Classe créée ✔");
-brancherFormulaire("#f-eleve", "/eleves", "Élève inscrit ✔");
-brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔");
+brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔", (n) => {
+  $("#b-classe").value = $("#n-classe").value;
+  remplirEleves($("#b-classe"), $("#b-eleve"), n.eleve_id);
+  $("#n-eleve").value = String(n.eleve_id);
+});
 brancherFormulaire("#f-user", "/utilisateurs", "Compte créé ✔ Donne-lui son e-mail et son mot de passe.");
 brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔", (p) => {
   $("#f-paiement").elements.montant.placeholder = "";
@@ -899,6 +964,20 @@ $("#q-eleve").addEventListener("input", () => {
 });
 $("#filtre-classe").addEventListener("change", afficherEleves);
 $("#b-eleve").addEventListener("change", afficherBulletin);
+$("#b-classe").addEventListener("change", () => { remplirEleves($("#b-classe"), $("#b-eleve")); afficherBulletin(); });
+$("#n-classe").addEventListener("change", () => {
+  remplirEleves($("#n-classe"), $("#n-eleve"));
+  $("#b-classe").value = $("#n-classe").value;          // le bulletin suit la classe
+  $("#bc-classe").value = $("#n-classe").value;
+  remplirEleves($("#b-classe"), $("#b-eleve"));
+  afficherBulletin();
+});
+$("#n-eleve").addEventListener("change", () => {
+  // Le bulletin affiche l'élève choisi : on voit ses notes en les saisissant
+  $("#b-classe").value = $("#n-classe").value;
+  remplirEleves($("#b-classe"), $("#b-eleve"), $("#n-eleve").value);
+  afficherBulletin();
+});
 $("#b-trimestre").addEventListener("change", afficherBulletin);
 document.addEventListener("click", (ev) => {
   const id = ev.target.dataset.recu;
