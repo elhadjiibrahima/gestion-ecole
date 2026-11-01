@@ -87,3 +87,16 @@ def test_note_hors_bareme(client):
     r = client.post("/notes", json={"eleve_id": eleve["id"], "matiere": "Maths",
                                     "valeur": 25, "trimestre": 1})
     assert r.status_code == 422
+
+
+def test_stats(client):
+    _, eleve = _setup(client)
+    client.post("/paiements", json={"eleve_id": eleve["id"], "montant": 125000})
+    s = client.get("/stats").json()
+    assert s["nb_eleves"] == 1 and s["total_encaisse"] == 125000
+    assert s["total_impaye"] == 375000 and s["taux_recouvrement"] == 25.0
+
+
+def test_page_html(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "Gestion École" in r.text

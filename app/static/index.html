@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gestion École</title>
+<style>
+  :root {
+    --bg: #f5f6fa; --card: #fff; --text: #1f2937; --muted: #6b7280;
+    --primary: #1d4ed8; --primary-light: #e0e7ff; --border: #e5e7eb;
+    --ok: #059669; --ok-bg: #d1fae5; --bad: #dc2626; --bad-bg: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { background: var(--primary); color: #fff; padding: 14px 20px;
+           display: flex; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 1.2rem; }
+  header a { color: #c7d2fe; font-size: .85rem; }
+  nav { display: flex; gap: 4px; padding: 0 12px; background: #fff;
+        border-bottom: 1px solid var(--border); overflow-x: auto; }
+  nav button { background: none; border: none; padding: 14px 14px; cursor: pointer;
+               font-size: .95rem; color: var(--muted); border-bottom: 3px solid transparent;
+               white-space: nowrap; }
+  nav button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  section { display: none; }
+  section.active { display: block; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  .kpi .label { color: var(--muted); font-size: .85rem; }
+  .kpi .value { font-size: clamp(1.15rem, 4vw, 1.6rem); font-weight: 700; margin-top: 4px; }
+  .kpi.bad .value { color: var(--bad); }
+  .kpi.ok .value { color: var(--ok); }
+  .bar { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin-top: 10px; }
+  .bar > div { height: 100%; background: var(--ok); }
+  .two { display: grid; gap: 16px; grid-template-columns: 1fr 2fr; margin-top: 16px; }
+  @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
+  form { display: grid; gap: 10px; }
+  label { font-size: .85rem; color: var(--muted); display: grid; gap: 4px; }
+  input, select { padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px;
+                  font-size: .95rem; background: #fff; width: 100%; }
+  button.btn { background: var(--primary); color: #fff; border: none; padding: 10px 14px;
+               border-radius: 6px; font-size: .95rem; cursor: pointer; }
+  button.btn:hover { opacity: .9; }
+  button.link { background: none; border: none; color: var(--primary); cursor: pointer; padding: 0; font-size: .9rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .empty { color: var(--muted); text-align: center; padding: 20px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { max-width: 260px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+           background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px;
+           opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
+  #toast.show { opacity: 1; }
+  #toast.error { background: var(--bad); }
+  .bulletin-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .moyenne { font-size: 1.3rem; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏫 Gestion École</h1>
+  <a href="/docs" target="_blank">Documentation API</a>
+</header>
+
+<nav>
+  <button data-tab="dashboard" class="active">Tableau de bord</button>
+  <button data-tab="classes">Classes</button>
+  <button data-tab="eleves">Élèves</button>
+  <button data-tab="paiements">Paiements</button>
+  <button data-tab="notes">Notes & bulletins</button>
+</nav>
+
+<main>
+  <!-- ===== Tableau de bord ===== -->
+  <section id="dashboard" class="active">
+    <div class="grid">
+      <div class="card kpi"><div class="label">Élèves</div><div class="value" id="k-eleves">–</div></div>
+      <div class="card kpi"><div class="label">Classes</div><div class="value" id="k-classes">–</div></div>
+      <div class="card kpi ok"><div class="label">Encaissé</div><div class="value" id="k-encaisse">–</div></div>
+      <div class="card kpi bad"><div class="label">Reste à encaisser</div><div class="value" id="k-impaye">–</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Taux de recouvrement : <span id="k-taux">–</span></h2>
+      <div class="bar"><div id="k-bar" style="width:0"></div></div>
+      <p style="color:var(--muted);font-size:.85rem;margin:8px 0 0">
+        <span id="k-retard">–</span> élève(s) n'ont pas encore tout payé.
+      </p>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Plus gros impayés</h2>
+      <div class="table-wrap"><table id="t-top-impayes"></table></div>
+    </div>
+  </section>
+
+  <!-- ===== Classes ===== -->
+  <section id="classes">
+    <div class="two">
+      <div class="card">
+        <h2>Nouvelle classe</h2>
+        <form id="f-classe">
+          <label>Nom<input name="nom" placeholder="6ème A" required></label>
+          <label>Niveau<input name="niveau" placeholder="Collège" required></label>
+          <label>Frais annuels<input name="frais_annuels" type="number" min="0" required></label>
+          <button class="btn">Créer la classe</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Liste des classes</h2>
+        <div class="table-wrap"><table id="t-classes"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Élèves ===== -->
+  <section id="eleves">
+    <div class="two">
+      <div class="card">
+        <h2>Inscrire un élève</h2>
+        <form id="f-eleve">
+          <label>Nom<input name="nom" required></label>
+          <label>Prénom<input name="prenom" required></label>
+          <label>Date de naissance<input name="date_naissance" type="date"></label>
+          <label>Téléphone du parent<input name="telephone_parent" placeholder="+224 6.."></label>
+          <label>Classe<select name="classe_id" class="sel-classes" required></select></label>
+          <button class="btn">Inscrire</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Élèves inscrits</h2>
+        <div class="toolbar">
+          <input id="q-eleve" placeholder="Rechercher nom, prénom, matricule…">
+          <select id="filtre-classe" class="sel-classes" data-all="Toutes les classes"></select>
+        </div>
+        <div class="table-wrap"><table id="t-eleves"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Paiements ===== -->
+  <section id="paiements">
+    <div class="two">
+      <div class="card">
+        <h2>Enregistrer un paiement</h2>
+        <form id="f-paiement">
+          <label>Élève<select name="eleve_id" class="sel-eleves" required></select></label>
+          <label>Montant<input name="montant" type="number" min="1" required></label>
+          <label>Mode
+            <select name="mode">
+              <option value="especes">Espèces</option>
+              <option value="orange_money">Orange Money</option>
+              <option value="mtn_momo">MTN MoMo</option>
+              <option value="virement">Virement</option>
+            </select>
+          </label>
+          <label>Référence (n° de transaction)<input name="reference"></label>
+          <label>Date<input name="date_paiement" type="date"></label>
+          <button class="btn">Enregistrer</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Impayés</h2>
+        <div class="toolbar">
+          <select id="filtre-impayes" class="sel-classes" data-all="Toutes les classes"></select>
+        </div>
+        <div class="table-wrap"><table id="t-impayes"></table></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px" id="historique-card" hidden>
+      <h2>Historique — <span id="historique-nom"></span></h2>
+      <div class="table-wrap"><table id="t-historique"></table></div>
+    </div>
+  </section>
+
+  <!-- ===== Notes ===== -->
+  <section id="notes">
+    <div class="two">
+      <div class="card">
+        <h2>Ajouter une note</h2>
+        <form id="f-note">
+          <label>Élève<select name="eleve_id" class="sel-eleves" required></select></label>
+          <label>Matière<input name="matiere" list="matieres" required></label>
+          <datalist id="matieres">
+            <option>Mathématiques</option><option>Français</option><option>Anglais</option>
+            <option>Physique-Chimie</option><option>SVT</option><option>Histoire-Géographie</option>
+          </datalist>
+          <label>Note /20<input name="valeur" type="number" min="0" max="20" step="0.25" required></label>
+          <label>Coefficient<input name="coefficient" type="number" min="1" value="1" required></label>
+          <label>Trimestre
+            <select name="trimestre"><option>1</option><option>2</option><option>3</option></select>
+          </label>
+          <button class="btn">Ajouter</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Bulletin</h2>
+        <div class="toolbar">
+          <select id="b-eleve" class="sel-eleves"></select>
+          <select id="b-trimestre"><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
+        </div>
+        <div id="bulletin"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const DEVISE = "FCFA";  // change en "GNF" si besoin
+const MODES = { especes: "Espèces", orange_money: "Orange Money", mtn_momo: "MTN MoMo", virement: "Virement" };
+
+// ---------- Utilitaires ----------
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + DEVISE;
+
+function toast(msg, error = false) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "show" + (error ? " error" : "");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => (t.className = ""), 2500);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" }, ...options,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = Array.isArray(body.detail)
+        ? body.detail.map((d) => `${d.loc.at(-1)} : ${d.msg}`).join(", ")
+        : body.detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function formData(form) {
+  const data = {};
+  for (const [k, v] of new FormData(form)) {
+    if (v === "") continue;  // champs optionnels vides ignorés
+    data[k] = form.elements[k].type === "number" || k.endsWith("_id") || k === "trimestre" ? Number(v) : v;
+  }
+  return data;
+}
+
+function table(el, headers, rows, emptyMsg = "Aucune donnée") {
+  const head = "<tr>" + headers.map((h) => `<th class="${h.num ? "num" : ""}">${h.label ?? h}</th>`).join("") + "</tr>";
+  el.innerHTML = rows.length
+    ? head + rows.join("")
+    : head + `<tr><td colspan="${headers.length}" class="empty">${emptyMsg}</td></tr>`;
+}
+
+// ---------- Données en cache ----------
+let classes = [], eleves = [];
+const classeNom = (id) => classes.find((c) => c.id === id)?.nom ?? "?";
+
+async function chargerClasses() {
+  classes = await api("/classes");
+  document.querySelectorAll(".sel-classes").forEach((sel) => {
+    const keep = sel.value;
+    const first = sel.dataset.all ? `<option value="">${sel.dataset.all}</option>` : "";
+    sel.innerHTML = first + classes.map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join("");
+    if (keep) sel.value = keep;
+  });
+}
+
+async function chargerEleves() {
+  eleves = await api("/eleves");
+  document.querySelectorAll(".sel-eleves").forEach((sel) => {
+    const keep = sel.value;
+    sel.innerHTML = eleves.length
+      ? eleves.map((e) => `<option value="${e.id}">${esc(e.nom)} ${esc(e.prenom)} — ${esc(classeNom(e.classe_id))}</option>`).join("")
+      : `<option value="">Aucun élève</option>`;
+    if (keep) sel.value = keep;
+  });
+}
+
+// ---------- Tableau de bord ----------
+async function afficherDashboard() {
+  const s = await api("/stats");
+  $("#k-eleves").textContent = s.nb_eleves;
+  $("#k-classes").textContent = s.nb_classes;
+  $("#k-encaisse").textContent = argent(s.total_encaisse);
+  $("#k-impaye").textContent = argent(s.total_impaye);
+  $("#k-taux").textContent = s.taux_recouvrement + " %";
+  $("#k-bar").style.width = s.taux_recouvrement + "%";
+  $("#k-retard").textContent = s.nb_eleves_en_retard;
+
+  const imp = (await api("/impayes")).slice(0, 5);
+  table($("#t-top-impayes"),
+    ["Élève", "Classe", { label: "Reste à payer", num: true }],
+    imp.map((s) => `<tr><td>${esc(s.nom_complet)}</td><td>${esc(s.classe)}</td>
+      <td class="num"><span class="badge bad">${argent(s.reste_a_payer)}</span></td></tr>`),
+    "Aucun impayé 🎉");
+}
+
+// ---------- Classes ----------
+async function afficherClasses() {
+  const counts = {};
+  eleves.forEach((e) => (counts[e.classe_id] = (counts[e.classe_id] || 0) + 1));
+  table($("#t-classes"),
+    ["Classe", "Niveau", { label: "Élèves", num: true }, { label: "Frais annuels", num: true }],
+    classes.map((c) => `<tr><td>${esc(c.nom)}</td><td>${esc(c.niveau)}</td>
+      <td class="num">${counts[c.id] || 0}</td><td class="num">${argent(c.frais_annuels)}</td></tr>`),
+    "Crée ta première classe à gauche");
+}
+
+// ---------- Élèves ----------
+async function afficherEleves() {
+  const q = $("#q-eleve").value.trim();
+  const classeId = Number($("#filtre-classe").value) || null;
+  let liste = await api("/eleves" + (q ? "?q=" + encodeURIComponent(q) : ""));
+  if (classeId) liste = liste.filter((e) => e.classe_id === classeId);
+  const soldes = await Promise.all(liste.map((e) => api(`/eleves/${e.id}/solde`)));
+  table($("#t-eleves"),
+    ["Matricule", "Nom", "Classe", "Parent", { label: "Frais", num: true }],
+    liste.map((e, i) => {
+      const s = soldes[i];
+      const badge = s.reste_a_payer > 0
+        ? `<span class="badge bad">Doit ${argent(s.reste_a_payer)}</span>`
+        : `<span class="badge ok">À jour</span>`;
+      return `<tr><td>${esc(e.matricule)}</td><td>${esc(e.nom)} ${esc(e.prenom)}</td>
+        <td>${esc(classeNom(e.classe_id))}</td><td>${esc(e.telephone_parent || "–")}</td>
+        <td class="num">${badge}</td></tr>`;
+    }),
+    q || classeId ? "Aucun résultat" : "Aucun élève inscrit");
+}
+
+// ---------- Paiements ----------
+async function afficherImpayes() {
+  const classeId = $("#filtre-impayes").value;
+  const imp = await api("/impayes" + (classeId ? "?classe_id=" + classeId : ""));
+  table($("#t-impayes"),
+    ["Élève", "Classe", { label: "Payé", num: true }, { label: "Reste", num: true }, ""],
+    imp.map((s) => `<tr><td>${esc(s.nom_complet)}</td><td>${esc(s.classe)}</td>
+      <td class="num">${argent(s.total_paye)}</td>
+      <td class="num"><span class="badge bad">${argent(s.reste_a_payer)}</span></td>
+      <td><button class="link" data-historique="${s.eleve_id}">Historique</button></td></tr>`),
+    "Aucun impayé 🎉");
+}
+
+async function afficherHistorique(eleveId) {
+  const e = eleves.find((x) => x.id === eleveId);
+  const p = await api(`/eleves/${eleveId}/paiements`);
+  $("#historique-nom").textContent = e ? `${e.prenom} ${e.nom}` : "";
+  table($("#t-historique"),
+    ["Date", "Mode", "Référence", { label: "Montant", num: true }],
+    p.map((x) => `<tr><td>${esc(new Date(x.date_paiement).toLocaleDateString("fr-FR"))}</td>
+      <td>${esc(MODES[x.mode] || x.mode)}</td><td>${esc(x.reference || "–")}</td>
+      <td class="num">${argent(x.montant)}</td></tr>`),
+    "Aucun paiement");
+  $("#historique-card").hidden = false;
+  $("#historique-card").scrollIntoView({ behavior: "smooth" });
+}
+
+// ---------- Bulletin ----------
+async function afficherBulletin() {
+  const id = $("#b-eleve").value;
+  if (!id) { $("#bulletin").innerHTML = `<p class="empty">Aucun élève</p>`; return; }
+  const b = await api(`/eleves/${id}/bulletin?trimestre=${$("#b-trimestre").value}`);
+  const moy = b.moyenne_generale;
+  $("#bulletin").innerHTML = `
+    <div class="bulletin-head">
+      <div><strong>${esc(b.nom_complet)}</strong><br><span style="color:var(--muted)">${esc(b.classe)} — Trimestre ${b.trimestre}</span></div>
+      <div>Moyenne générale<br><span class="moyenne" style="color:${moy == null ? "inherit" : moy >= 10 ? "var(--ok)" : "var(--bad)"}">
+        ${moy == null ? "–" : moy.toFixed(2) + " / 20"}</span></div>
+    </div>
+    <div class="table-wrap"><table id="t-bulletin"></table></div>`;
+  table($("#t-bulletin"),
+    ["Matière", { label: "Coef.", num: true }, { label: "Moyenne", num: true }],
+    b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="num">${m.coefficient}</td>
+      <td class="num">${m.moyenne.toFixed(2)}</td></tr>`),
+    "Aucune note pour ce trimestre");
+}
+
+// ---------- Navigation ----------
+const vues = {
+  dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
+  paiements: afficherImpayes, notes: afficherBulletin,
+};
+let vueActive = "dashboard";
+
+async function rafraichir() {
+  try {
+    await chargerClasses();
+    await chargerEleves();
+    await vues[vueActive]();
+  } catch (err) { toast(err.message, true); }
+}
+
+document.querySelectorAll("nav button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav button, section").forEach((el) => el.classList.remove("active"));
+    btn.classList.add("active");
+    vueActive = btn.dataset.tab;
+    $("#" + vueActive).classList.add("active");
+    rafraichir();
+  }));
+
+// ---------- Formulaires ----------
+function brancherFormulaire(selector, path, message, reset = true) {
+  $(selector).addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try {
+      await api(path, { method: "POST", body: JSON.stringify(formData(ev.target)) });
+      toast(message);
+      if (reset) {
+        // garde les listes déroulantes, vide les champs texte
+        [...ev.target.elements].forEach((el) => {
+          if (el.tagName === "INPUT" && el.name !== "coefficient") el.value = "";
+        });
+      }
+      rafraichir();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+brancherFormulaire("#f-classe", "/classes", "Classe créée ✔");
+brancherFormulaire("#f-eleve", "/eleves", "Élève inscrit ✔");
+brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔");
+brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔");
+
+let rechercheTimer;
+$("#q-eleve").addEventListener("input", () => {
+  clearTimeout(rechercheTimer);
+  rechercheTimer = setTimeout(afficherEleves, 250);
+});
+$("#filtre-classe").addEventListener("change", afficherEleves);
+$("#filtre-impayes").addEventListener("change", afficherImpayes);
+$("#b-eleve").addEventListener("change", afficherBulletin);
+$("#b-trimestre").addEventListener("change", afficherBulletin);
+$("#t-impayes").addEventListener("click", (ev) => {
+  const id = ev.target.dataset.historique;
+  if (id) afficherHistorique(Number(id));
+});
+
+rafraichir();
+</script>
+</body>
+</html>

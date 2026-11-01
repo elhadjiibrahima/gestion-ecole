@@ -16,7 +16,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Ouvre ensuite **http://127.0.0.1:8000/docs** : tu peux tester toutes les routes depuis le navigateur.
+Ouvre ensuite :
+- **http://127.0.0.1:8000** : l'interface web (tableau de bord, classes, élèves, paiements, bulletins)
+- **http://127.0.0.1:8000/docs** : la documentation interactive de l'API
 La base `ecole.db` est créée automatiquement au premier lancement.
 
 ## Lancer les tests
@@ -39,6 +41,7 @@ pytest
 | GET | `/eleves/{id}/bulletin?trimestre=1` | Moyennes par matière et moyenne générale |
 | POST | `/paiements` | Enregistrer un paiement (espèces, Orange Money, MTN MoMo, virement) |
 | GET | `/eleves/{id}/paiements` | Historique des paiements |
+| GET | `/stats` | Chiffres du tableau de bord (encaissé, impayés, taux de recouvrement) |
 | GET | `/impayes?classe_id=...` | Élèves qui doivent encore de l'argent |
 | POST | `/notes` | Ajouter une note (/20, coefficient, trimestre) |
 | DELETE | `/notes/{id}` | Supprimer une note |
@@ -50,7 +53,8 @@ app/
   main.py          point d'entrée FastAPI
   database.py      connexion SQLite
   models.py        tables et schémas (SQLModel)
-  routers/         classes, eleves, paiements, notes
+  routers/         classes, eleves, paiements, notes, stats
+  static/index.html  interface web (HTML + JS, sans framework)
 tests/test_api.py  tests automatiques
 ```
 
@@ -59,5 +63,4 @@ tests/test_api.py  tests automatiques
 1. Authentification (directeur / comptable) avec JWT
 2. Reçus et bulletins en PDF
 3. Import des élèves depuis Excel
-4. Interface web
-5. Passage à PostgreSQL (Supabase) pour la production
+4. Passage à PostgreSQL (Supabase) pour la production
