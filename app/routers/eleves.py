@@ -95,7 +95,8 @@ async def importer_eleves(
 ):
     """Importe des élèves depuis un fichier Excel (.xlsx).
 
-    Colonnes : nom, prenom, classe, date_naissance (facultatif), telephone_parent (facultatif).
+    Colonnes : nom, prenom, classe, montant_paye (obligatoires), date_naissance, telephone_parent,
+    mode_paiement, reference_paiement (facultatifs). Un paiement + reçu est créé pour chaque élève.
     Si une ligne contient une erreur, rien n'est importé et la liste des erreurs est renvoyée.
     """
     if not (fichier.filename or "").lower().endswith(".xlsx"):
@@ -111,10 +112,12 @@ async def importer_eleves(
     lignes, erreurs = lire_import_eleves(contenu, classes)
     if erreurs:
         return ResultatImport(importes=0, erreurs=erreurs)
-    for data in lignes:
-        eleve = Eleve(**data, ecole_id=user.ecole_id)
+    for ligne in lignes:
+        eleve = Eleve(**ligne["eleve"], ecole_id=user.ecole_id)
         session.add(eleve)
         _attribuer_matricule(session, eleve)
+        p = ligne["paiement"]
+        creer_paiement(session, eleve, p["montant"], p["mode"], p["reference"], None, user.id)
     session.commit()
     return ResultatImport(importes=len(lignes), erreurs=[])
 
