@@ -363,6 +363,16 @@
         </div>
       </div>
     </div>
+    <div class="card mt">
+      <h2>Historique des notes <span class="sub" style="display:inline;font-weight:400" id="h-portee"></span></h2>
+      <div class="toolbar">
+        <select id="h-classe" class="sel-classes" data-all="Toutes les classes"></select>
+        <select id="h-user" data-roles="directeur"></select>
+        <label style="display:flex;gap:6px;align-items:center;color:var(--text)">
+          <input type="checkbox" id="h-eleve" style="width:auto"> Seulement l'élève affiché</label>
+      </div>
+      <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="t-historique-notes"></table></div>
+    </div>
   </section>
 
   <!-- ===== Équipe ===== -->
@@ -432,6 +442,12 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + (moi?.ecole.devise ?? "");
 const peut = (...roles) => moi && roles.includes(moi.utilisateur.role);
+const dateHeure = (d) => {
+  if (!d) return "";
+  const x = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(d) ? d : d + "Z");   // dates du serveur en UTC
+  return x.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + " " +
+         x.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+};
 
 function toast(msg, error = false) {
   const t = $("#toast");
@@ -508,6 +524,7 @@ function afficherAuth(mode = "login") {
 }
 
 function deconnexion() {
+  equipeChargee = false;
   store.set(null);
   moi = null;
   afficherAuth("login");
@@ -694,15 +711,32 @@ function remplirEleves(selClasse, selEleve, eleveId, invite = "— Choisir un é
 }
 
 // ---------- Paiements ----------
-function remplirElevesPaiement(eleveId) {
-  const classeId = Number($("#p-classe").value);
+// Seuls les élèves qui doivent encore de l'argent sont proposés
+let remplissagePaiement = 0;
+let infoListePaiement = "";
+async function remplirElevesPaiement(eleveId) {
+  const classeId = $("#p-classe").value;
   const sel = $("#p-eleve");
-  const ec = eleves.filter((e) => e.classe_id === classeId);
-  sel.innerHTML = ec.length
-    ? `<option value="">— Choisir un élève (${ec.length}) —</option>` +
-      ec.map((e) => `<option value="${e.id}">${esc(e.nom)} ${esc(e.prenom)}</option>`).join("")
-    : `<option value="">Aucun élève dans cette classe</option>`;
-  if (eleveId && ec.some((e) => e.id === Number(eleveId))) sel.value = eleveId;
+  const appel = ++remplissagePaiement;     // ignore les réponses d'un ancien choix de classe
+  if (!classeId) { sel.innerHTML = `<option value="">Choisis d'abord une classe</option>`; afficherSoldePaiement(); return; }
+  let soldes;
+  try { soldes = await api(`/eleves/soldes?classe_id=${classeId}`); }
+  catch (err) { toast(err.message, true); return; }
+  if (appel !== remplissagePaiement) return;
+  const nom = (s) => { const e = eleves.find((x) => x.id === s.eleve_id); return e ? `${e.nom} ${e.prenom}` : s.nom_complet; };
+  const doivent = soldes.filter((s) => s.reste_a_payer > 0)
+    .sort((a, b) => nom(a).localeCompare(nom(b), "fr"));
+  const payes = soldes.length - doivent.length;
+  sel.innerHTML = !soldes.length
+    ? `<option value="">Aucun élève dans cette classe</option>`
+    : !doivent.length
+      ? `<option value="">✔ Tous les élèves de cette classe ont tout payé</option>`
+      : `<option value="">— Choisir un élève (${doivent.length}) —</option>` +
+        doivent.map((s) => `<option value="${s.eleve_id}">${esc(nom(s))} — reste ${argent(s.reste_a_payer)}</option>`).join("");
+  infoListePaiement = !soldes.length ? "" : !doivent.length
+    ? `<b style="color:var(--ok)">✔ Toute la classe est à jour</b>`
+    : `${doivent.length} élève(s) doivent encore payer` + (payes ? ` · ${payes} à jour (masqués)` : "");
+  if (eleveId && doivent.some((s) => s.eleve_id === Number(eleveId))) sel.value = String(eleveId);
   afficherSoldePaiement();
 }
 
@@ -710,7 +744,7 @@ async function afficherSoldePaiement() {
   const id = $("#p-eleve").value;
   const zone = $("#p-solde");
   const montant = $("#f-paiement").elements.montant;
-  if (!id) { zone.innerHTML = ""; montant.placeholder = ""; return; }
+  if (!id) { zone.innerHTML = infoListePaiement; montant.placeholder = ""; return; }
   try {
     const s = await api(`/eleves/${id}/solde`);
     zone.innerHTML = s.reste_a_payer
@@ -792,7 +826,7 @@ $("#btn-etat-pdf").addEventListener("click", () => {
   const id = $("#suivi-classe").value;
   if (id) ouvrirFichier(`/classes/${id}/paiements.pdf`, "etat_paiements.pdf");
 });
-$("#t-suivi").addEventListener("click", (ev) => {
+$("#t-suivi").addEventListener("click", async (ev) => {
   const payer = ev.target.dataset.payer;
   const hist = ev.target.dataset.historique;
   if (hist) afficherHistorique(Number(hist));
@@ -800,7 +834,7 @@ $("#t-suivi").addEventListener("click", (ev) => {
     const s = suiviSoldes.find((x) => x.eleve_id === Number(payer));
     const f = $("#f-paiement");
     $("#p-classe").value = s.classe_id;
-    remplirElevesPaiement(payer);
+    await remplirElevesPaiement(payer);
     f.elements.montant.value = "";
     document.querySelectorAll("#t-suivi tr.surligne").forEach((tr) => tr.classList.remove("surligne"));
     ev.target.closest("tr").classList.add("surligne");
@@ -829,6 +863,7 @@ async function afficherHistorique(eleveId) {
 let grille = [];                 // cases renvoyées par le serveur
 let grilleCle = null;            // { eleve, trimestre } de la grille affichée
 let grilleModifiee = false;
+let chargementGrille = 0;
 
 const noteValide = (v) => v === "" || (!isNaN(v) && Number(v) >= 0 && Number(v) <= 20);
 
@@ -859,14 +894,18 @@ async function chargerGrille() {
     return;
   }
   const trimestre = $("#n-trimestre").value;
-  grille = await api(`/notes/grille?eleve_id=${id}&trimestre=${trimestre}`);
+  const jeton = ++chargementGrille;          // ignore une réponse arrivée après un changement d'élève
+  const reponse = await api(`/notes/grille?eleve_id=${id}&trimestre=${trimestre}`);
+  if (jeton !== chargementGrille) return;
+  grille = reponse;
   grilleCle = { eleve: id, trimestre };
   grilleModifiee = false;
   const lectureSeule = !peut("directeur", "enseignant");
   table($("#t-grille"),
     ["Matière", { label: "Coef.", num: true }, { label: "Note / 20", num: true }],
     grille.map((c, i) => `<tr>
-      <td>${esc(c.matiere)}${c.matiere_id ? "" : ' <span class="sub">matière retirée de la liste</span>'}</td>
+      <td>${esc(c.matiere)}${c.matiere_id ? "" : ' <span class="sub">matière retirée de la liste</span>'}${c.saisi_par
+        ? `<span class="sub">par ${esc(c.saisi_par)} · ${dateHeure(c.saisi_le)}</span>` : ""}</td>
       <td class="num">${c.coefficient}</td>
       <td class="num">${c.matiere_id && !lectureSeule
         ? `<input type="number" inputmode="decimal" min="0" max="20" step="0.25" data-i="${i}" value="${c.valeur ?? ""}" placeholder="–">`
@@ -875,6 +914,7 @@ async function chargerGrille() {
   majMoyenne();
   $("#n-etat").textContent = "";
   afficherBulletin();
+  afficherHistoriqueNotes();
 }
 
 function majMoyenne() {
@@ -912,6 +952,7 @@ async function enregistrerGrille({ silencieux = false } = {}) {
     grilleModifiee = false;
     grille.forEach((c, i) => { const inp = $(`#t-grille input[data-i="${i}"]`); if (inp) inp.value = c.valeur ?? ""; });
     majMoyenne();
+    if (vueActive === "notes") chargerGrille();   // met à jour « par … » et l'historique
     const e = eleves.find((x) => x.id === Number(grilleCle.eleve));
     $("#n-etat").textContent = "✔ Enregistré";
     if (!silencieux) toast(`Notes de ${e ? e.prenom + " " + e.nom : "l'élève"} enregistrées ✔`);
@@ -977,6 +1018,40 @@ for (const id of ["#n-classe", "#n-eleve", "#n-trimestre"]) {
     chargerGrille();
   });
 }
+
+// ---------- Historique des notes ----------
+const ACTIONS = { ajout: ["Ajout", "ok"], modification: ["Modification", "warn"], suppression: ["Suppression", "bad"] };
+let equipeChargee = false;
+
+async function afficherHistoriqueNotes() {
+  if (peut("directeur") && !equipeChargee) {
+    const users = await api("/utilisateurs");
+    $("#h-user").innerHTML = `<option value="">Tout le monde</option>` + users
+      .filter((u) => u.role !== "comptable")
+      .map((u) => `<option value="${u.id}">${esc(u.nom)} (${esc(ROLES[u.role])})</option>`).join("");
+    equipeChargee = true;
+  }
+  $("#h-portee").textContent = peut("directeur") ? "— qui a saisi quoi" : "— tes saisies";
+  const params = new URLSearchParams({ limite: 300 });
+  if ($("#h-classe").value) params.set("classe_id", $("#h-classe").value);
+  if (peut("directeur") && $("#h-user").value) params.set("utilisateur_id", $("#h-user").value);
+  if ($("#h-eleve").checked && $("#n-eleve").value) params.set("eleve_id", $("#n-eleve").value);
+  const lignes = await api("/notes/historique?" + params);
+  const v = (x) => (x == null ? "<span style='color:var(--muted)'>vide</span>" : x);
+  table($("#t-historique-notes"),
+    ["Date", "Par", "Élève", "Matière", "T.", "Changement", ""],
+    lignes.map((l) => {
+      const [label, cls] = ACTIONS[l.action];
+      return `<tr><td style="white-space:nowrap">${dateHeure(l.date)}</td>
+        <td>${esc(l.utilisateur)}<span class="sub">${esc(ROLES[l.role] || l.role)}</span></td>
+        <td>${esc(l.eleve)}<span class="sub">${esc(l.classe)}</span></td>
+        <td>${esc(l.matiere)}</td><td>${l.trimestre}</td>
+        <td style="white-space:nowrap">${v(l.ancienne_valeur)} → <b>${v(l.nouvelle_valeur)}</b></td>
+        <td><span class="badge ${cls}">${label}</span></td></tr>`;
+    }),
+    "Aucune saisie pour ce filtre");
+}
+for (const id of ["#h-classe", "#h-user", "#h-eleve"]) $(id).addEventListener("change", afficherHistoriqueNotes);
 
 // ---------- Bulletin de l'élève sélectionné ----------
 async function afficherBulletin() {

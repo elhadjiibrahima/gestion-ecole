@@ -87,3 +87,40 @@ def test_changer_coefficient_met_a_jour_les_notes(client, dir_headers, setup):
     assert b["moyenne_generale"] == 13 and "Anglais LV1" in [l["matiere"] for l in b["matieres"]]
     # Suppression refusée tant que des notes existent
     assert client.delete(f"/matieres/{m['Anglais']['id']}", headers=dir_headers).status_code == 400
+
+
+def test_historique_qui_a_saisi_quoi(client, dir_headers, setup):
+    classe, eleve = setup
+    m = _matieres(client, dir_headers)
+    prof = creer_compte(client, dir_headers, "enseignant", "prof@test.gn")
+    prof2 = creer_compte(client, dir_headers, "enseignant", "prof2@test.gn")
+    url = f"/notes/grille?eleve_id={eleve['id']}&trimestre=1"
+    maths, fr = m["Mathématiques"]["id"], m["Français"]["id"]
+
+    client.put(url, headers=prof, json=[{"matiere_id": maths, "valeur": 12}, {"matiere_id": fr, "valeur": 10}])
+    # Ré-enregistrer sans rien changer : pas de nouvelle trace
+    client.put(url, headers=prof, json=[{"matiere_id": maths, "valeur": 12}, {"matiere_id": fr, "valeur": 10}])
+    client.put(url, headers=prof2, json=[{"matiere_id": maths, "valeur": 15}, {"matiere_id": fr, "valeur": None}])
+
+    h = client.get("/notes/historique", headers=dir_headers).json()
+    resume = [(l["utilisateur"], l["matiere"], l["ancienne_valeur"], l["nouvelle_valeur"], l["action"]) for l in h]
+    assert len(h) == 4
+    assert ("Enseignant", "Mathématiques", None, 12, "ajout") in resume
+    assert ("Enseignant", "Mathématiques", 12, 15, "modification") in resume
+    assert ("Enseignant", "Français", 10, None, "suppression") in resume
+    assert h[0]["eleve"] == "Aminata Diallo" and h[0]["classe"] == "6ème A"
+
+    # La grille indique qui a rempli chaque case
+    g = {c["matiere"]: c for c in client.get(url, headers=dir_headers).json()}
+    uid2 = next(u for u in client.get("/utilisateurs", headers=dir_headers).json() if u["email"] == "prof2@test.gn")
+    assert g["Mathématiques"]["saisi_par"] == uid2["nom"] and g["Mathématiques"]["saisi_le"]
+    assert g["Français"]["saisi_par"] is None
+
+    # Filtre par enseignant (directeur) ; un enseignant ne voit que ses saisies
+    assert len(client.get(f"/notes/historique?utilisateur_id={uid2['id']}", headers=dir_headers).json()) == 2
+    assert len(client.get("/notes/historique", headers=prof).json()) == 2
+    assert len(client.get(f"/notes/historique?utilisateur_id={uid2['id']}", headers=prof).json()) == 2  # ignoré : ses propres
+    compta = creer_compte(client, dir_headers, "comptable", "c@test.gn")
+    assert client.get("/notes/historique", headers=compta).status_code == 403
+    autre = creer_ecole(client, nom="Autre", email="autre@test.gn")
+    assert client.get("/notes/historique", headers=autre).json() == []

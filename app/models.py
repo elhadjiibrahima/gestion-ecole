@@ -220,6 +220,36 @@ class CaseNote(SQLModel):
     matiere: str
     coefficient: int
     valeur: Optional[float] = None
+    saisi_par: Optional[str] = None          # dernière personne à avoir modifié la case
+    saisi_le: Optional[datetime] = None
+
+
+# ---------- Historique des notes (qui a saisi quoi) ----------
+class NoteHistorique(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    eleve_id: int = Field(foreign_key="eleve.id", index=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True)
+    matiere: str
+    trimestre: int
+    ancienne_valeur: Optional[float] = None  # None : la case était vide
+    nouvelle_valeur: Optional[float] = None  # None : la note a été effacée
+    date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+
+
+class LigneHistorique(SQLModel):
+    id: int
+    date: datetime
+    utilisateur: str
+    role: str
+    eleve_id: int
+    eleve: str
+    classe: str
+    matiere: str
+    trimestre: int
+    ancienne_valeur: Optional[float]
+    nouvelle_valeur: Optional[float]
+    action: str                              # ajout / modification / suppression
 
 
 class SaisieNote(SQLModel):

@@ -12,10 +12,12 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Élèves** : inscription avec **premier paiement obligatoire** (reçu immédiat), matricule automatique, recherche, **import depuis Excel** (modèle fourni, sans paiement : pour reprendre des élèves existants)
 - **Paiements** : espèces, Orange Money, MTN MoMo, virement — **reçu PDF numéroté** avec montant en lettres
 - Un paiement ne peut pas dépasser le reste à payer (évite les erreurs de saisie)
+- Formulaire de paiement : classe puis élève, seuls les élèves qui doivent encore sont proposés
 - **Suivi des paiements par classe** (à jour / partiel / rien payé), état PDF par classe
 - **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
 - **Matières et coefficients** gérés par le directeur (liste usuelle créée automatiquement)
 - **Saisie des notes en grille** : une case par matière, Entrée pour passer à la suivante, moyenne en direct, enregistrement automatique en changeant d'élève
+- **Historique des notes** : qui a ajouté, modifié ou effacé chaque note, et quand (le directeur voit tout, l'enseignant ses saisies) ; la grille indique qui a rempli chaque case
 - **Bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
 
 ## Installation
@@ -77,6 +79,7 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | GET | `/impayes` | Élèves qui doivent encore de l'argent | gestion |
 | GET | `/stats` | Chiffres du tableau de bord | gestion |
 | GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
+| GET | `/notes/historique?classe_id=&eleve_id=&utilisateur_id=` | Qui a saisi quoi | pédagogie |
 | GET/PUT | `/notes/grille?eleve_id=&trimestre=` | Grille de notes d'un élève (une case par matière) | tous / pédagogie |
 | GET/POST/PATCH/DELETE | `/matieres` | Matières et coefficients | tous / directeur |
 | POST | `/matieres/defaut` | Ajouter les matières usuelles manquantes | directeur |
