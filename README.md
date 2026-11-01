@@ -15,6 +15,8 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - Formulaire de paiement : classe puis élève, seuls les élèves qui doivent encore sont proposés
 - **Suivi des paiements par classe** (à jour / partiel / rien payé), état PDF par classe
 - **Annulation d'un paiement** saisi par erreur (directeur, motif obligatoire) : le paiement reste visible, barré, avec qui l'a annulé
+- **Échéancier** : frais découpés en tranches avec dates limites ; retard calculé par élève, rappels ciblés
+- **Caisse** : dépenses par catégorie (salaires, loyer, électricité…), bilan mensuel entrées / sorties / solde, export Excel
 - **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
 - **Matières et coefficients** gérés par le directeur (liste usuelle créée automatiquement)
 - **Saisie des notes en grille** : une case par matière, Entrée pour passer à la suivante, moyenne en direct, enregistrement automatique en changeant d'élève
@@ -24,7 +26,10 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
 
 - **Messages aux parents** : rappels d'impayés et annonce des bulletins, envoyés par WhatsApp ou SMS en un clic (texte prérempli, aucun abonnement)
-- **Exports Excel** : élèves, paiements (annulés compris), notes par classe
+- **Exports Excel** : élèves, paiements (annulés compris), notes par classe, caisse
+- **Photos et cartes scolaires** : photo de l'élève (recadrée automatiquement), cartes PDF avec QR code, 10 par page
+- **Espace parents** (`/espace-parents`) : avec le matricule et un code, le parent suit sur son téléphone les frais, l'échéancier, les reçus, les notes, les bulletins et les absences ; codes distribués en PDF ou par WhatsApp
+- **Mode hors connexion** : application installable sur téléphone ; les écrans déjà consultés restent lisibles, et les paiements, notes et appels faits sans réseau sont envoyés automatiquement au retour de la connexion (sans doublon)
 - **Mots de passe** : chacun change le sien, le directeur réinitialise ceux de l'équipe
 - **Nouvelle année scolaire** : passage en classe supérieure proposé automatiquement, redoublants, élèves de fin de cycle ; frais remis à zéro, historique conservé
 
@@ -96,6 +101,15 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | GET | `/export/eleves.xlsx`, `/export/paiements.xlsx` | Exports Excel | gestion |
 | GET | `/export/notes.xlsx?trimestre=` | Export des notes (une feuille par classe) | pédagogie |
 | GET/POST | `/annee/proposition`, `/annee/nouvelle` | Passage à la nouvelle année | directeur |
+| GET/PUT | `/tranches` | Échéancier de l'année | tous / directeur |
+| GET/POST | `/depenses`, `/depenses/{id}/annuler` | Dépenses | gestion / directeur |
+| GET | `/caisse/bilan`, `/export/caisse.xlsx` | Bilan de caisse | gestion |
+| PUT/GET/DELETE | `/eleves/{id}/photo` | Photo de l'élève | gestion / tous |
+| GET | `/eleves/{id}/carte.pdf`, `/classes/{id}/cartes.pdf` | Cartes scolaires | gestion |
+| GET/POST | `/eleves/{id}/code-parent` | Code d'accès parent (voir / nouveau) | gestion |
+| GET | `/classes/{id}/codes-parents.pdf`, `/messages/acces` | Distribuer les codes | gestion |
+| POST | `/parents/connexion` | Connexion parent (matricule + code) | public |
+| GET | `/parents/moi`, `/parents/recu/{id}.pdf`, `/parents/bulletin.pdf` | Espace parents | parent |
 | GET | `/stats` | Chiffres du tableau de bord | gestion |
 | GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
 | GET | `/notes/historique?classe_id=&eleve_id=&utilisateur_id=` | Qui a saisi quoi | pédagogie |

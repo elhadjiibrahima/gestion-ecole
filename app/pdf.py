@@ -343,3 +343,135 @@ def pdf_etat_paiements(ecole: Ecole, classe: Classe, soldes: list[Solde]) -> byt
     ]
     doc.build(elems)
     return buf.getvalue()
+
+
+# ---------- Cartes scolaires (format carte bancaire, 10 par page A4) ----------
+def pdf_cartes(ecole: Ecole, eleves: list) -> bytes:
+    """`eleves` : liste de (Eleve, nom de la classe, photo JPEG ou None)."""
+    from reportlab.graphics import renderPDF
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    L, H = 85.6 * mm, 54 * mm
+    cols, lignes = 2, 5
+    marge_x = (A4[0] - cols * L) / 3
+    marge_y = (A4[1] - lignes * H) / 6
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    c.setTitle(f"Cartes scolaires — {ecole.nom}")
+    c.setAuthor(ecole.nom)
+
+    def texte_coupe(t: str, police: str, taille: float, largeur: float) -> str:
+        while t and c.stringWidth(t, police, taille) > largeur:
+            t = t[:-2] + "…" if not t.endswith("…") else t[:-2] + "…"
+        return t
+
+    for i, (e, classe_nom, photo) in enumerate(eleves):
+        if i and i % (cols * lignes) == 0:
+            c.showPage()
+        k = i % (cols * lignes)
+        x = marge_x + (k % cols) * (L + marge_x)
+        y = A4[1] - marge_y - (k // cols + 1) * H - (k // cols) * marge_y
+        # Fond et bandeau
+        c.setStrokeColor(colors.HexColor("#cbd5e1"))
+        c.setFillColor(colors.white)
+        c.roundRect(x, y, L, H, 3 * mm, stroke=1, fill=1)
+        c.setFillColor(BLEU)
+        c.roundRect(x, y + H - 11 * mm, L, 11 * mm, 3 * mm, stroke=0, fill=1)
+        c.rect(x, y + H - 11 * mm, L, 4 * mm, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(x + 3 * mm, y + H - 5 * mm, texte_coupe(ecole.nom, "Helvetica-Bold", 9, L - 6 * mm))
+        c.setFont("Helvetica", 6.5)
+        c.drawString(x + 3 * mm, y + H - 9 * mm, f"CARTE SCOLAIRE  ·  {ecole.annee_scolaire}")
+        # Photo
+        px, py, pl, ph = x + 3 * mm, y + 4 * mm, 21 * mm, 28 * mm
+        if photo:
+            c.drawImage(ImageReader(io.BytesIO(photo)), px, py, pl, ph, preserveAspectRatio=True, anchor="c")
+        else:
+            c.setFillColor(FOND)
+            c.rect(px, py, pl, ph, stroke=0, fill=1)
+            c.setFillColor(BLEU)
+            c.setFont("Helvetica-Bold", 16)
+            c.drawCentredString(px + pl / 2, py + ph / 2 - 3 * mm, (e.prenom[:1] + e.nom[:1]).upper())
+        c.setStrokeColor(colors.HexColor("#cbd5e1"))
+        c.rect(px, py, pl, ph, stroke=1, fill=0)
+        # Informations
+        tx, larg = px + pl + 3 * mm, L - pl - 9 * mm
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(tx, y + H - 16.5 * mm, texte_coupe(e.nom.upper(), "Helvetica-Bold", 10, larg))
+        c.setFont("Helvetica", 9)
+        c.drawString(tx, y + H - 20.5 * mm, texte_coupe(e.prenom, "Helvetica", 9, larg))
+        lignes_info = [("Classe", classe_nom), ("Matricule", e.matricule or "–")]
+        if e.date_naissance:
+            lignes_info.append(("Né(e) le", date_fr(e.date_naissance)))
+        if e.telephone_parent:
+            lignes_info.append(("Parent", e.telephone_parent))
+        yy = y + H - 26 * mm
+        for lab, val in lignes_info:
+            c.setFont("Helvetica", 6.5)
+            c.setFillColor(GRIS)
+            c.drawString(tx, yy, lab)
+            c.setFont("Helvetica-Bold", 7.5)
+            c.setFillColor(colors.black)
+            c.drawString(tx + 13 * mm, yy, texte_coupe(str(val), "Helvetica-Bold", 7.5, larg - 26 * mm))
+            yy -= 4 * mm
+        # QR code (matricule)
+        if e.matricule:
+            qr = QrCodeWidget(e.matricule)
+            b = qr.getBounds()
+            taille = 13 * mm
+            d = Drawing(taille, taille, transform=[taille / (b[2] - b[0]), 0, 0, taille / (b[3] - b[1]), 0, 0])
+            d.add(qr)
+            renderPDF.draw(d, c, x + L - taille - 2 * mm, y + 2 * mm)
+    c.save()
+    return buf.getvalue()
+
+
+# ---------- Coupons « accès espace parents » ----------
+def pdf_codes_parents(ecole: Ecole, lignes: list, adresse: str) -> bytes:
+    """`lignes` : (Eleve, nom de classe, code). 8 coupons par page, à découper."""
+    from reportlab.pdfgen import canvas as rl_canvas
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    c.setTitle(f"Codes parents — {ecole.nom}")
+    marge = 12 * mm
+    larg = (A4[0] - 2 * marge) / 2
+    haut = (A4[1] - 2 * marge) / 4
+    for i, (e, classe_nom, code) in enumerate(lignes):
+        if i and i % 8 == 0:
+            c.showPage()
+        k = i % 8
+        x = marge + (k % 2) * larg
+        y = A4[1] - marge - (k // 2 + 1) * haut
+        c.setDash(3, 3)
+        c.setStrokeColor(colors.HexColor("#94a3b8"))
+        c.rect(x, y, larg, haut)
+        c.setDash()
+        cx = x + 6 * mm
+        c.setFillColor(BLEU)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(cx, y + haut - 10 * mm, ecole.nom[:40])
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 9)
+        c.drawString(cx, y + haut - 16 * mm, "Espace parents : notes, absences, paiements et reçus")
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(cx, y + haut - 24 * mm, f"{e.prenom} {e.nom} — {classe_nom}"[:48])
+        c.setFont("Helvetica", 8.5)
+        c.drawString(cx, y + haut - 31 * mm, "Adresse :")
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(cx + 15 * mm, y + haut - 31 * mm, adresse[:60])
+        c.setFont("Helvetica", 9)
+        c.drawString(cx, y + haut - 39 * mm, "Matricule :")
+        c.drawString(cx, y + haut - 47 * mm, "Code :")
+        c.setFont("Courier-Bold", 14)
+        c.drawString(cx + 22 * mm, y + haut - 39.5 * mm, e.matricule or "")
+        c.drawString(cx + 22 * mm, y + haut - 47.5 * mm, code)
+        c.setFont("Helvetica-Oblique", 7.5)
+        c.setFillColor(GRIS)
+        c.drawString(cx, y + 6 * mm, "Code personnel : ne le partagez pas.")
+    c.save()
+    return buf.getvalue()

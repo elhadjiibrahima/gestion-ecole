@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import EmailStr
+from sqlalchemy import Column, LargeBinary
 from sqlmodel import Field, SQLModel
 
 
@@ -123,6 +124,7 @@ class Eleve(EleveBase, table=True):
     matricule: Optional[str] = Field(default=None, unique=True, index=True)
     actif: bool = True                       # False : a quitté l'école (fin de cycle, départ)
     annee_sortie: Optional[str] = None
+    code_parent: Optional[str] = Field(default=None, index=True)   # accès à l'espace parents
 
 
 class EleveUpdate(SQLModel):
@@ -164,6 +166,7 @@ class Paiement(PaiementBase, table=True):
     annule_le: Optional[datetime] = None
     annule_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
     motif_annulation: Optional[str] = None
+    cle_client: Optional[str] = Field(default=None, index=True)
 
 
 class AnnulationPaiement(SQLModel):
@@ -188,7 +191,7 @@ class PaiementDetail(SQLModel):
 
 
 class PaiementCreate(PaiementBase):
-    pass
+    cle_client: Optional[str] = Field(default=None, max_length=64)   # évite les doublons (mode hors connexion)
 
 
 # ---------- Inscription (élève + premier paiement) ----------
@@ -305,6 +308,15 @@ class StatutPaiement(str, Enum):
     rien_paye = "rien_paye"      # aucun paiement
 
 
+class Echeance(SQLModel):
+    nom: str
+    date_limite: date
+    montant: int
+    paye: int                                # part de cette tranche déjà couverte
+    reste: int
+    statut: Literal["payee", "en_retard", "a_venir"]
+
+
 class Solde(SQLModel):
     eleve_id: int
     matricule: Optional[str] = None
@@ -317,6 +329,12 @@ class Solde(SQLModel):
     nb_paiements: int = 0
     dernier_paiement: Optional[date] = None
     statut: StatutPaiement
+    # Échéancier : ce qui devait déjà être payé à ce jour
+    montant_exigible: int = 0
+    retard: int = 0
+    prochaine_echeance: Optional[date] = None
+    prochain_montant: int = 0
+    echeances: list[Echeance] = []
 
 
 class LigneBulletin(SQLModel):
@@ -448,7 +466,7 @@ class MessageParent(SQLModel):
 
 class JournalMessage(SQLModel):
     eleve_id: int
-    type: Literal["impaye", "bulletin"]
+    type: Literal["impaye", "bulletin", "acces"]
     canal: Literal["whatsapp", "sms"]
 
 
@@ -469,3 +487,147 @@ class ResultatNouvelleAnnee(SQLModel):
     passes: int
     redoublants: int
     sortants: int
+
+
+# ---------- Échéancier (tranches de paiement) ----------
+class Tranche(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    annee_scolaire: str = Field(index=True)
+    ordre: int = 0
+    nom: str
+    date_limite: date
+    pourcentage: float                       # part des frais annuels de la classe
+
+
+class TrancheSaisie(SQLModel):
+    nom: str = Field(min_length=1, max_length=40)
+    date_limite: date
+    pourcentage: float = Field(gt=0, le=100)
+
+
+# ---------- Caisse : dépenses ----------
+class CategorieDepense(str, Enum):
+    salaires = "salaires"
+    loyer = "loyer"
+    fournitures = "fournitures"
+    electricite_eau = "electricite_eau"
+    transport = "transport"
+    entretien = "entretien"
+    impots = "impots"
+    autre = "autre"
+
+
+class DepenseCreate(SQLModel):
+    jour: date = Field(default_factory=date.today)
+    categorie: CategorieDepense
+    libelle: str = Field(min_length=2, max_length=120)
+    montant: int = Field(gt=0)
+    mode: ModePaiement = ModePaiement.especes
+    beneficiaire: Optional[str] = Field(default=None, max_length=80)
+
+
+class Depense(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    annee_scolaire: str = Field(index=True)
+    jour: date = Field(index=True)
+    categorie: CategorieDepense
+    libelle: str
+    montant: int
+    mode: ModePaiement = ModePaiement.especes
+    beneficiaire: Optional[str] = None
+    saisi_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+    annule: bool = False
+    annule_le: Optional[datetime] = None
+    annule_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+    motif_annulation: Optional[str] = None
+
+
+class DepenseDetail(SQLModel):
+    id: int
+    jour: date
+    categorie: CategorieDepense
+    libelle: str
+    montant: int
+    mode: ModePaiement
+    beneficiaire: Optional[str]
+    saisi_par: Optional[str]
+    annule: bool
+    annule_par: Optional[str]
+    motif_annulation: Optional[str]
+
+
+class MoisCaisse(SQLModel):
+    mois: str                                # 2026-11
+    entrees: int
+    sorties: int
+    solde: int
+    cumul: int
+
+
+class BilanCaisse(SQLModel):
+    annee_scolaire: str
+    total_entrees: int
+    total_sorties: int
+    solde: int
+    mois: list[MoisCaisse]
+    par_categorie: dict[str, int]
+
+
+# ---------- Photos des élèves ----------
+class PhotoEleve(SQLModel, table=True):
+    eleve_id: int = Field(foreign_key="eleve.id", primary_key=True)
+    image: bytes = Field(sa_column=Column(LargeBinary, nullable=False))        # JPEG ≤ 400 px
+    miniature: bytes = Field(sa_column=Column(LargeBinary, nullable=False))    # JPEG 80 px
+    maj_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Miniature(SQLModel):
+    eleve_id: int
+    data_url: str
+
+
+# ---------- Espace parents ----------
+class ConnexionParent(SQLModel):
+    matricule: str
+    code: str
+
+
+class CodeParent(SQLModel):
+    eleve_id: int
+    matricule: Optional[str]
+    code: str
+
+
+class AbsenceParent(SQLModel):
+    jour: date
+    type: TypeAbsence
+    justifiee: bool
+    motif: Optional[str]
+
+
+class PaiementParent(SQLModel):
+    id: int
+    numero_recu: Optional[str]
+    date_paiement: date
+    montant: int
+    mode: ModePaiement
+    annule: bool
+
+
+class EspaceParent(SQLModel):
+    eleve_id: int
+    nom: str
+    prenom: str
+    matricule: Optional[str]
+    classe: str
+    ecole: str
+    ecole_telephone: Optional[str]
+    devise: str
+    annee_scolaire: str
+    a_photo: bool
+    solde: Solde
+    paiements: list[PaiementParent]
+    bulletins: list[Bulletin]
+    absences: list[AbsenceParent]

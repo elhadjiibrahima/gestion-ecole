@@ -6,7 +6,7 @@ déjà rempli : il suffit d'appuyer sur « Envoyer ». Aucun abonnement SMS n'es
 import re
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, func, select
 
 from app.database import get_session
@@ -59,22 +59,34 @@ def _message(ecole: Ecole, eleve: Eleve, classe_nom: str, texte: str, dernier) -
 @router.get("/impayes", response_model=list[MessageParent])
 def rappels_impayes(
     classe_id: int | None = None,
+    en_retard: bool = False,
     user: Utilisateur = Depends(exiger_role(*GESTION)),
     session: Session = Depends(get_session),
 ):
-    """Un rappel pour chaque élève qui doit encore de l'argent."""
+    """Un rappel pour chaque élève qui doit encore de l'argent
+    (`en_retard=true` : seulement ceux qui ont une tranche échue non réglée)."""
     if classe_id:
         get_classe(session, classe_id, user.ecole_id)
     ecole = session.get(Ecole, user.ecole_id)
     derniers = _derniers_envois(session, user.ecole_id, "impaye")
     messages = []
     for s in soldes_ecole(session, user.ecole_id, classe_id):
-        if s.reste_a_payer <= 0:
+        if s.reste_a_payer <= 0 or (en_retard and s.retard <= 0):
             continue
         eleve = session.get(Eleve, s.eleve_id)
-        texte = (f"Bonjour, {ecole.nom} vous rappelle qu'il reste {argent(s.reste_a_payer, ecole.devise)} "
-                 f"à payer pour la scolarité de {eleve.prenom} {eleve.nom} ({s.classe}), "
-                 f"sur {argent(s.frais_annuels, ecole.devise)} de frais annuels. "
+        echues = [e for e in s.echeances if e.statut == "en_retard"]
+        if echues:
+            noms = ", ".join(f"{e.nom} (échue le {e.date_limite:%d/%m/%Y})" for e in echues)
+            detail = (f"la scolarité de {eleve.prenom} {eleve.nom} ({s.classe}) a un retard de "
+                      f"{argent(s.retard, ecole.devise)} : {noms}. Reste total de l'année : "
+                      f"{argent(s.reste_a_payer, ecole.devise)}.")
+        else:
+            detail = (f"il reste {argent(s.reste_a_payer, ecole.devise)} à payer pour la scolarité de "
+                      f"{eleve.prenom} {eleve.nom} ({s.classe}), sur {argent(s.frais_annuels, ecole.devise)} "
+                      f"de frais annuels." + (f" Prochaine échéance : {s.prochaine_echeance:%d/%m/%Y} "
+                                              f"({argent(s.prochain_montant, ecole.devise)})."
+                                              if s.prochaine_echeance else ""))
+        texte = (f"Bonjour, {ecole.nom} vous informe que {detail} "
                  f"Merci de passer régulariser à l'école. Pour toute question : {ecole.telephone or 'contactez l’école'}.")
         messages.append(_message(ecole, eleve, s.classe, texte, derniers.get(eleve.id)))
     return messages
@@ -106,6 +118,31 @@ def annonces_bulletins(
         absences = f" Absences : {b.absences}, retards : {b.retards}." if (b.absences or b.retards) else ""
         texte = (f"Bonjour, le bulletin du {t} de {eleve.prenom} {eleve.nom} ({classe.nom}) est disponible "
                  f"à {ecole.nom} : {resultat}{absences}")
+        messages.append(_message(ecole, eleve, classe.nom, texte, derniers.get(eleve.id)))
+    return messages
+
+
+@router.get("/acces", response_model=list[MessageParent])
+def acces_parents(
+    classe_id: int,
+    request: Request,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    """Un message par élève avec l'adresse de l'espace parents, le matricule et le code."""
+    from app.routers.parents import code_de
+    classe = get_classe(session, classe_id, user.ecole_id)
+    ecole = session.get(Ecole, user.ecole_id)
+    derniers = _derniers_envois(session, user.ecole_id, "acces")
+    adresse = str(request.base_url).rstrip("/") + "/espace-parents"
+    eleves = session.exec(select(Eleve).where(Eleve.classe_id == classe.id, Eleve.actif == True)  # noqa: E712
+                          .order_by(Eleve.nom, Eleve.prenom)).all()
+    messages = []
+    for eleve in eleves:
+        code = code_de(session, eleve)
+        texte = (f"Bonjour, {ecole.nom} ouvre l'espace parents : suivez les notes, absences et paiements de "
+                 f"{eleve.prenom} {eleve.nom} ({classe.nom}) sur votre téléphone. Adresse : {adresse} — "
+                 f"Matricule : {eleve.matricule} — Code : {code}. Ce code est personnel, ne le partagez pas.")
         messages.append(_message(ecole, eleve, classe.nom, texte, derniers.get(eleve.id)))
     return messages
 

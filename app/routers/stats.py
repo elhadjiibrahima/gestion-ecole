@@ -4,7 +4,7 @@ from sqlmodel import Session, SQLModel, func, select
 from app.database import get_session
 from app.models import Classe, Eleve, Paiement, Utilisateur
 from app.security import GESTION, exiger_role
-from app.services import annee_courante, calculer_solde
+from app.services import annee_courante, calculer_solde, tranches_annee
 
 router = APIRouter(tags=["Tableau de bord"])
 
@@ -17,6 +17,8 @@ class Stats(SQLModel):
     total_impaye: int
     nb_eleves_en_retard: int
     taux_recouvrement: float
+    total_retard_echeances: int = 0          # montant des tranches échues non payées
+    nb_retard_echeances: int = 0
 
 
 @router.get("/stats", response_model=Stats)
@@ -25,7 +27,8 @@ def statistiques(
     session: Session = Depends(get_session),
 ):
     eleves = session.exec(select(Eleve).where(Eleve.ecole_id == user.ecole_id, Eleve.actif == True)).all()  # noqa: E712
-    soldes = [calculer_solde(session, e) for e in eleves]
+    tranches = tranches_annee(session, user.ecole_id)
+    soldes = [calculer_solde(session, e, tranches) for e in eleves]
     attendu = sum(s.frais_annuels for s in soldes)
     encaisse = session.exec(
         select(func.coalesce(func.sum(Paiement.montant), 0))
@@ -44,4 +47,6 @@ def statistiques(
         total_impaye=impaye,
         nb_eleves_en_retard=sum(1 for s in soldes if s.reste_a_payer > 0),
         taux_recouvrement=round(100 * (attendu - impaye) / attendu, 1) if attendu else 0.0,
+        total_retard_echeances=sum(s.retard for s in soldes),
+        nb_retard_echeances=sum(1 for s in soldes if s.retard > 0),
     )

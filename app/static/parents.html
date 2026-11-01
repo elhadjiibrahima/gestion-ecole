@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1d4ed8">
+<title>Espace parents</title>
+<style>
+  :root { --bg: #f5f6fa; --card: #fff; --text: #1f2937; --muted: #6b7280; --primary: #1d4ed8;
+          --primary-light: #e0e7ff; --border: #e5e7eb; --ok: #059669; --ok-bg: #d1fae5; --bad: #dc2626;
+          --bad-bg: #fee2e2; --warn: #b45309; --warn-bg: #fef3c7; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .page { max-width: 560px; margin: 0 auto; padding: 16px 14px 40px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 14px; }
+  h1 { margin: 0; font-size: 1.25rem; }
+  h2 { margin: 0 0 10px; font-size: 1.02rem; }
+  label { display: grid; gap: 4px; font-size: .88rem; color: var(--muted); }
+  input { padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 1.05rem; width: 100%; }
+  form { display: grid; gap: 12px; }
+  .btn { background: var(--primary); color: #fff; border: none; padding: 12px 14px; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .btn.secondaire { background: var(--primary-light); color: var(--primary); padding: 7px 10px; font-size: .85rem; }
+  .entete { background: var(--primary); color: #fff; padding: 18px 14px; }
+  .entete .page { padding: 0; display: flex; gap: 14px; align-items: center; }
+  .entete img, .entete .initiales { width: 60px; height: 80px; border-radius: 8px; object-fit: cover; background: rgba(255,255,255,.2);
+    display: grid; place-items: center; font-weight: 700; font-size: 1.3rem; flex: none; }
+  .entete .infos { flex: 1; min-width: 0; }
+  .entete .sub { color: #c7d2fe; font-size: .85rem; margin-top: 2px; }
+  .entete button { background: rgba(255,255,255,.15); color: #fff; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .grand { font-size: 1.6rem; font-weight: 700; }
+  .ligne { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: .93rem; align-items: center; }
+  .ligne:last-child { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+  .ok { background: var(--ok-bg); color: var(--ok); } .bad { background: var(--bad-bg); color: var(--bad); }
+  .warn { background: var(--warn-bg); color: var(--warn); } .info { background: var(--primary-light); color: var(--primary); }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .bar { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin: 8px 0; }
+  .bar > div { height: 100%; background: var(--ok); }
+  .onglets { display: flex; gap: 6px; margin-bottom: 10px; }
+  .onglets button { flex: 1; border: 1px solid var(--border); background: #fff; padding: 8px; border-radius: 8px; cursor: pointer; }
+  .onglets button.actif { background: var(--primary); color: #fff; border-color: var(--primary); }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  td, th { padding: 7px 4px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
+  td.n, th.n { text-align: right; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff;
+           padding: 10px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; max-width: 90vw; }
+  #toast.show { opacity: 1; } #toast.error { background: var(--bad); }
+  .connexion { min-height: 100vh; display: grid; place-items: center; background: linear-gradient(135deg, #1d4ed8, #4338ca); padding: 16px; }
+  .connexion .card { width: 100%; max-width: 400px; }
+</style>
+</head>
+<body>
+
+<div class="connexion" id="ecran-connexion" hidden>
+  <div style="width:100%;max-width:400px">
+    <div style="text-align:center;color:#fff"><h1>👨‍👩‍👧 Espace parents</h1>
+      <p style="color:#c7d2fe;margin:6px 0 0">Notes, absences et paiements de votre enfant</p></div>
+    <div class="card">
+      <form id="f-connexion">
+        <label>Matricule de l'élève<input name="matricule" placeholder="2026-00012" autocomplete="username" required></label>
+        <label>Code parent<input name="code" placeholder="ABCD-EFGH" autocomplete="current-password" autocapitalize="characters" required></label>
+        <button class="btn">Se connecter</button>
+      </form>
+      <p class="muted" style="margin:12px 0 0">Le matricule et le code vous sont donnés par l'école.</p>
+    </div>
+  </div>
+</div>
+
+<div id="ecran-espace" hidden>
+  <div class="entete">
+    <div class="page">
+      <div id="photo"></div>
+      <div class="infos">
+        <h1 id="nom"></h1>
+        <div class="sub" id="classe"></div>
+        <div class="sub" id="ecole"></div>
+      </div>
+      <button id="btn-deconnexion">Quitter</button>
+    </div>
+  </div>
+  <div class="page">
+    <div class="card" id="carte-frais">
+      <h2>Frais de scolarité</h2>
+      <div id="frais"></div>
+    </div>
+    <div class="card">
+      <h2>Résultats</h2>
+      <div class="onglets" id="onglets-trim">
+        <button data-t="0">1er trim.</button><button data-t="1">2e trim.</button><button data-t="2">3e trim.</button>
+      </div>
+      <div id="resultats"></div>
+    </div>
+    <div class="card">
+      <h2>Absences et retards</h2>
+      <div id="absences"></div>
+    </div>
+    <div class="card">
+      <h2>Paiements et reçus</h2>
+      <div id="paiements"></div>
+    </div>
+    <p class="muted" style="text-align:center;margin-top:18px" id="contact"></p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const dateFr = (d) => new Date(d).toLocaleDateString("fr-FR");
+const MODES = { especes: "Espèces", orange_money: "Orange Money", mtn_momo: "MTN MoMo", virement: "Virement" };
+let jeton = null, donnees = null, trimestre = 0;
+try { jeton = localStorage.getItem("jeton_parent"); } catch {}
+
+function toast(msg, erreur = false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "show" + (erreur ? " error" : "");
+  clearTimeout(t._t); t._t = setTimeout(() => (t.className = ""), 3000);
+}
+function garder(j) { jeton = j; try { j ? localStorage.setItem("jeton_parent", j) : localStorage.removeItem("jeton_parent"); } catch {} }
+
+async function api(chemin, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body) headers["Content-Type"] = "application/json";
+  if (jeton) headers.Authorization = "Bearer " + jeton;
+  const r = await fetch(chemin, { ...options, headers });
+  if (r.status === 401 && jeton) { garder(null); afficherConnexion(); throw new Error("Session expirée, reconnectez-vous"); }
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail; } catch {} throw new Error(m); }
+  return options.brut ? r : r.json();
+}
+
+async function ouvrirPdf(chemin, nom) {
+  const fenetre = navigator.pdfViewerEnabled === false ? null : window.open("", "_blank");
+  try {
+    const url = URL.createObjectURL(await (await api(chemin, { brut: true })).blob());
+    if (fenetre) fenetre.location.href = url;
+    else { const a = document.createElement("a"); a.href = url; a.download = nom; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { fenetre?.close(); toast(e.message, true); }
+}
+
+function afficherConnexion() { $("#ecran-espace").hidden = true; $("#ecran-connexion").hidden = false; }
+
+$("#f-connexion").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = Object.fromEntries(new FormData(ev.target));
+  try {
+    const r = await api("/parents/connexion", { method: "POST", body: JSON.stringify(d) });
+    garder(r.access_token); ev.target.reset(); charger();
+  } catch (e) { toast(e.message, true); }
+});
+$("#btn-deconnexion").addEventListener("click", () => { garder(null); afficherConnexion(); });
+
+async function charger() {
+  if (!jeton) return afficherConnexion();
+  try { donnees = await api("/parents/moi"); } catch (e) { return afficherConnexion(); }
+  const d = donnees, argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + d.devise;
+  $("#ecran-connexion").hidden = true; $("#ecran-espace").hidden = false;
+  $("#nom").textContent = `${d.prenom} ${d.nom}`;
+  $("#classe").textContent = `${d.classe} · matricule ${d.matricule}`;
+  $("#ecole").textContent = `${d.ecole} · ${d.annee_scolaire}`;
+  $("#contact").textContent = d.ecole_telephone ? `Une question ? Appelez l'école : ${d.ecole_telephone}` : "";
+  $("#photo").innerHTML = `<div class="initiales">${esc((d.prenom[0] || "") + (d.nom[0] || ""))}</div>`;
+  if (d.a_photo) api("/parents/photo", { brut: true }).then((r) => r.blob()).then((b) => {
+    $("#photo").innerHTML = `<img alt="" src="${URL.createObjectURL(b)}">`; }).catch(() => {});
+
+  // Frais
+  const s = d.solde, pct = s.frais_annuels ? Math.round(100 * s.total_paye / s.frais_annuels) : 100;
+  $("#frais").innerHTML = `
+    <div class="ligne"><span>Déjà payé</span><b style="color:var(--ok)">${argent(s.total_paye)}</b></div>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+    <div class="ligne"><span>Reste à payer</span><span class="grand" style="color:${s.reste_a_payer ? "var(--bad)" : "var(--ok)"}">${s.reste_a_payer ? argent(s.reste_a_payer) : "✔ Tout est payé"}</span></div>
+    ${s.retard ? `<div class="ligne"><span class="badge bad">⚠ En retard</span><b style="color:var(--bad)">${argent(s.retard)}</b></div>` : ""}
+    ${s.echeances.length ? `<h2 style="margin-top:12px;font-size:.92rem">Échéancier</h2>` + s.echeances.map((e) => `
+      <div class="ligne"><span>${esc(e.nom)}<br><span class="muted">avant le ${dateFr(e.date_limite)} · ${argent(e.montant)}</span></span>
+        <span class="badge ${{ payee: "ok", en_retard: "bad", a_venir: "info" }[e.statut]}">${{ payee: "Payée", en_retard: "Reste " + argent(e.reste), a_venir: e.paye ? "Reste " + argent(e.reste) : "À venir" }[e.statut]}</span></div>`).join("") : ""}
+    <p class="muted" style="margin:8px 0 0">Frais de l'année : ${argent(s.frais_annuels)}</p>`;
+
+  // Paiements
+  $("#paiements").innerHTML = d.paiements.length ? d.paiements.map((p) => `
+    <div class="ligne"><span>${dateFr(p.date_paiement)} · ${esc(MODES[p.mode] || p.mode)}<br><span class="muted">Reçu ${esc(p.numero_recu)}${p.annule ? " · <b style='color:var(--bad)'>annulé</b>" : ""}</span></span>
+      <span style="text-align:right"><b ${p.annule ? "style='text-decoration:line-through;color:var(--muted)'" : ""}>${argent(p.montant)}</b><br>
+      <button class="btn secondaire" data-recu="${p.id}">📄 Reçu</button></span></div>`).join("")
+    : `<p class="muted">Aucun paiement cette année.</p>`;
+
+  // Absences
+  const abs = d.absences.filter((a) => a.type === "absence").length, ret = d.absences.length - abs;
+  $("#absences").innerHTML = `<p style="margin:0 0 6px"><b>${abs}</b> absence(s) · <b>${ret}</b> retard(s) cette année</p>` +
+    d.absences.slice(0, 30).map((a) => `<div class="ligne"><span>${dateFr(a.jour)}${a.motif ? `<br><span class="muted">${esc(a.motif)}</span>` : ""}</span>
+      <span><span class="badge ${a.type === "absence" ? "bad" : "warn"}">${a.type === "absence" ? "Absence" : "Retard"}</span>
+      ${a.justifiee ? '<span class="badge ok">Justifiée</span>' : ""}</span></div>`).join("");
+
+  // Trimestre : le dernier qui a des notes
+  const avecNotes = d.bulletins.map((b, i) => (b.moyenne_generale != null ? i : -1)).filter((i) => i >= 0);
+  trimestre = avecNotes.length ? avecNotes[avecNotes.length - 1] : 0;
+  afficherResultats();
+}
+
+function afficherResultats() {
+  const d = donnees, b = d.bulletins[trimestre];
+  document.querySelectorAll("#onglets-trim button").forEach((x) => x.classList.toggle("actif", Number(x.dataset.t) === trimestre));
+  if (b.moyenne_generale == null) { $("#resultats").innerHTML = `<p class="muted">Pas encore de notes pour ce trimestre.</p>`; return; }
+  const rang = b.rang ? `${b.rang}${b.rang === 1 ? "er" : "e"} sur ${b.effectif}` : "–";
+  $("#resultats").innerHTML = `
+    <div class="ligne"><span>Moyenne générale</span><span class="grand" style="color:${b.moyenne_generale >= 10 ? "var(--ok)" : "var(--bad)"}">${b.moyenne_generale.toFixed(2)} / 20</span></div>
+    <div class="ligne"><span>Rang</span><b>${rang}</b></div>
+    <div class="ligne"><span>Appréciation</span><span style="text-align:right">${esc(b.appreciation)}</span></div>
+    <table style="margin-top:8px"><tr><th>Matière</th><th class="n">Coef.</th><th class="n">Moyenne</th></tr>
+      ${b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="n">${m.coefficient}</td>
+        <td class="n" style="${m.moyenne < 10 ? "color:var(--bad)" : ""}">${m.moyenne.toFixed(2)}</td></tr>`).join("")}</table>
+    <button class="btn" style="width:100%;margin-top:12px" data-bulletin="${trimestre + 1}">📄 Télécharger le bulletin</button>`;
+}
+
+$("#onglets-trim").addEventListener("click", (ev) => { if (ev.target.dataset.t) { trimestre = Number(ev.target.dataset.t); afficherResultats(); } });
+document.addEventListener("click", (ev) => {
+  if (ev.target.dataset.recu) ouvrirPdf(`/parents/recu/${ev.target.dataset.recu}.pdf`, "recu.pdf");
+  if (ev.target.dataset.bulletin) ouvrirPdf(`/parents/bulletin.pdf?trimestre=${ev.target.dataset.bulletin}`, "bulletin.pdf");
+});
+
+charger();
+</script>
+</body>
+</html>

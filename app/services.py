@@ -5,8 +5,8 @@ from fastapi import HTTPException
 from sqlmodel import Session, func, select
 
 from app.models import (
-    Absence, Bulletin, Classe, CoefficientClasse, Ecole, Eleve, LigneBulletin, Matiere, Note, Paiement,
-    Solde, StatutPaiement, TypeAbsence,
+    Absence, Bulletin, Classe, CoefficientClasse, Echeance, Ecole, Eleve, LigneBulletin, Matiere, Note,
+    Paiement, Solde, StatutPaiement, Tranche, TypeAbsence,
 )
 
 
@@ -67,8 +67,36 @@ def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference
     return paiement
 
 
+# ---------- Échéancier ----------
+def tranches_annee(session: Session, ecole_id: int) -> list[Tranche]:
+    return session.exec(
+        select(Tranche).where(Tranche.ecole_id == ecole_id,
+                              Tranche.annee_scolaire == annee_courante(session, ecole_id))
+        .order_by(Tranche.ordre, Tranche.date_limite)
+    ).all()
+
+
+def calculer_echeances(frais: int, total_paye: int, tranches: list[Tranche],
+                       aujourd_hui: date | None = None) -> list[Echeance]:
+    """Répartit les frais en tranches et y impute les paiements dans l'ordre."""
+    aujourd_hui = aujourd_hui or date.today()
+    montants, cumul = [], 0
+    for i, t in enumerate(tranches):
+        m = frais - cumul if i == len(tranches) - 1 else round(frais * t.pourcentage / 100)
+        montants.append(m)
+        cumul += m
+    reste_paye, echeances = total_paye, []
+    for t, m in zip(tranches, montants):
+        couvert = min(m, max(reste_paye, 0))
+        reste_paye -= couvert
+        statut = "payee" if couvert >= m else ("en_retard" if t.date_limite < aujourd_hui else "a_venir")
+        echeances.append(Echeance(nom=t.nom, date_limite=t.date_limite, montant=m, paye=couvert,
+                                  reste=m - couvert, statut=statut))
+    return echeances
+
+
 # ---------- Soldes ----------
-def calculer_solde(session: Session, eleve: Eleve) -> Solde:
+def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | None = None) -> Solde:
     classe = session.get(Classe, eleve.classe_id)
     total, nb, dernier = session.exec(
         select(func.coalesce(func.sum(Paiement.montant), 0), func.count(Paiement.id),
@@ -79,7 +107,20 @@ def calculer_solde(session: Session, eleve: Eleve) -> Solde:
     reste = max(classe.frais_annuels - total, 0)
     statut = (StatutPaiement.a_jour if reste == 0
               else StatutPaiement.partiel if total > 0 else StatutPaiement.rien_paye)
+    if tranches is None:
+        tranches = tranches_annee(session, eleve.ecole_id)
+    if tranches:
+        echeances = calculer_echeances(classe.frais_annuels, total, tranches)
+        exigible = sum(e.montant for e in echeances if e.date_limite < date.today())
+        prochaine = next((e for e in echeances if e.statut == "a_venir"), None)
+    else:   # pas d'échéancier : tout est dû
+        echeances, exigible, prochaine = [], classe.frais_annuels, None
     return Solde(
+        montant_exigible=exigible,
+        retard=max(exigible - total, 0),
+        prochaine_echeance=prochaine.date_limite if prochaine else None,
+        prochain_montant=prochaine.reste if prochaine else 0,
+        echeances=echeances,
         eleve_id=eleve.id,
         matricule=eleve.matricule,
         nom_complet=f"{eleve.prenom} {eleve.nom}",
@@ -99,7 +140,8 @@ def soldes_ecole(session: Session, ecole_id: int, classe_id: int | None = None) 
     stmt = select(Eleve).where(Eleve.ecole_id == ecole_id, Eleve.actif == True)  # noqa: E712
     if classe_id:
         stmt = stmt.where(Eleve.classe_id == classe_id)
-    soldes = [calculer_solde(session, e) for e in session.exec(stmt.order_by(Eleve.nom, Eleve.prenom)).all()]
+    tranches = tranches_annee(session, ecole_id)
+    soldes = [calculer_solde(session, e, tranches) for e in session.exec(stmt.order_by(Eleve.nom, Eleve.prenom)).all()]
     return sorted(soldes, key=lambda s: s.classe.lower())
 
 

@@ -59,6 +59,8 @@ def utilisateur_courant(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") == "parent":      # un jeton parent n'ouvre pas l'espace du personnel
+            raise erreur
         user = session.get(Utilisateur, int(payload["sub"]))
     except (jwt.PyJWTError, KeyError, ValueError):
         raise erreur
@@ -79,3 +81,46 @@ def exiger_role(*roles: Role):
 TOUS = (Role.directeur, Role.comptable, Role.enseignant)
 GESTION = (Role.directeur, Role.comptable)
 PEDAGOGIE = (Role.directeur, Role.enseignant)
+
+
+# ---------- Espace parents ----------
+ALPHABET_CODE = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # sans 0/O ni 1/I
+DUREE_TOKEN_PARENT = timedelta(days=30)
+oauth2_parent = OAuth2PasswordBearer(tokenUrl="/parents/connexion", auto_error=True)
+
+
+def generer_code_parent() -> str:
+    brut = "".join(secrets.choice(ALPHABET_CODE) for _ in range(8))
+    return f"{brut[:4]}-{brut[4:]}"
+
+
+def normaliser_code(code: str) -> str:
+    brut = "".join(ch for ch in code.upper() if ch.isalnum())
+    return f"{brut[:4]}-{brut[4:]}" if len(brut) == 8 else brut
+
+
+def _empreinte_code(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()[:12]
+
+
+def creer_token_parent(eleve) -> str:
+    payload = {"sub": str(eleve.id), "type": "parent", "ecole": eleve.ecole_id,
+               "cv": _empreinte_code(eleve.code_parent),   # change si l'école génère un nouveau code
+               "exp": datetime.now(timezone.utc) + DUREE_TOKEN_PARENT}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def eleve_du_parent(token: str = Depends(oauth2_parent), session: Session = Depends(get_session)):
+    from app.models import Eleve
+    erreur = HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expirée, reconnectez-vous",
+                           headers={"WWW-Authenticate": "Bearer"})
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "parent":
+            raise erreur
+        eleve = session.get(Eleve, int(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        raise erreur
+    if not eleve or not eleve.code_parent or payload.get("cv") != _empreinte_code(eleve.code_parent):
+        raise erreur                             # code régénéré ou retiré : accès coupé
+    return eleve

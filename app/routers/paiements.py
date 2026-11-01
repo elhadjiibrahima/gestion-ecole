@@ -40,10 +40,16 @@ def enregistrer_paiement(
     session: Session = Depends(get_session),
 ):
     eleve = get_eleve(session, data.eleve_id, user.ecole_id, code=400)
+    if data.cle_client:   # déjà reçu (renvoi après une coupure réseau) : on ne l'enregistre pas deux fois
+        deja = session.exec(select(Paiement).where(Paiement.cle_client == data.cle_client,
+                                                   Paiement.eleve_id == eleve.id)).first()
+        if deja:
+            return deja
     if not eleve.actif:
         raise HTTPException(400, "Cet élève ne fait plus partie de l'école")
     paiement = creer_paiement(session, eleve, data.montant, data.mode, data.reference,
                               data.date_paiement, user.id)
+    paiement.cle_client = data.cle_client
     session.commit()
     session.refresh(paiement)
     return paiement
