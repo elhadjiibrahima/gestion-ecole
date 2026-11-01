@@ -1,6 +1,18 @@
-# Gestion École — API (FastAPI + SQLite)
+# Gestion École — FastAPI + SQLite
 
-Première version d'un logiciel de gestion scolaire : classes, élèves, frais de scolarité et notes.
+Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolarité, reçus, notes et bulletins.
+
+## Fonctionnalités
+
+- **Multi-écoles** : chaque école a son compte, ses données sont isolées des autres.
+- **Comptes et rôles**
+  - *Directeur* : tout, plus la gestion de l'équipe et des paramètres de l'école
+  - *Comptable* : élèves, paiements, impayés, tableau de bord
+  - *Enseignant* : notes et bulletins
+- **Élèves** : inscription, matricule automatique, recherche, **import depuis Excel** (modèle fourni)
+- **Paiements** : espèces, Orange Money, MTN MoMo, virement — **reçu PDF numéroté** avec montant en lettres
+- **Impayés** et **tableau de bord** (encaissé, reste à encaisser, taux de recouvrement)
+- **Notes** (/20, coefficient, trimestre) et **bulletins PDF** avec rang et appréciation, à l'unité ou pour toute une classe
 
 ## Installation
 
@@ -10,57 +22,78 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-## Lancer le serveur
+## Lancer
 
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
-Ouvre ensuite :
-- **http://127.0.0.1:8000** : l'interface web (tableau de bord, classes, élèves, paiements, bulletins)
-- **http://127.0.0.1:8000/docs** : la documentation interactive de l'API
-La base `ecole.db` est créée automatiquement au premier lancement.
+- **http://127.0.0.1:8000** : l'application (clique sur « Créer un compte » la première fois)
+- **http://127.0.0.1:8000/docs** : documentation interactive de l'API
 
-## Lancer les tests
+La base `ecole.db` est créée automatiquement.
+
+> **Tu avais déjà une ancienne version ?** Supprime le fichier `ecole.db` avant de relancer :
+> la structure de la base a changé (écoles, comptes, n° de reçus).
+
+## Tests
 
 ```bash
-pytest
+python -m pytest
 ```
+
+## Configuration (variables d'environnement)
+
+| Variable | Rôle | Par défaut |
+|---|---|---|
+| `SECRET_KEY` | Clé de signature des sessions. **À changer en production** (longue chaîne aléatoire) | valeur de dev |
+| `TOKEN_HEURES` | Durée d'une session avant reconnexion | `12` |
+
+Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 
 ## Routes principales
 
-| Méthode | Route | Rôle |
-|---|---|---|
-| POST | `/classes` | Créer une classe (nom, niveau, frais annuels) |
-| GET | `/classes` | Lister les classes |
-| GET | `/classes/{id}/eleves` | Élèves d'une classe |
-| POST | `/eleves` | Inscrire un élève (matricule généré automatiquement) |
-| GET | `/eleves?q=...` | Rechercher par nom, prénom ou matricule |
-| PATCH | `/eleves/{id}` | Modifier un élève |
-| GET | `/eleves/{id}/solde` | Total payé et reste à payer |
-| GET | `/eleves/{id}/bulletin?trimestre=1` | Moyennes par matière et moyenne générale |
-| POST | `/paiements` | Enregistrer un paiement (espèces, Orange Money, MTN MoMo, virement) |
-| GET | `/eleves/{id}/paiements` | Historique des paiements |
-| GET | `/stats` | Chiffres du tableau de bord (encaissé, impayés, taux de recouvrement) |
-| GET | `/impayes?classe_id=...` | Élèves qui doivent encore de l'argent |
-| POST | `/notes` | Ajouter une note (/20, coefficient, trimestre) |
-| DELETE | `/notes/{id}` | Supprimer une note |
+| Méthode | Route | Rôle | Accès |
+|---|---|---|---|
+| POST | `/auth/inscription` | Créer une école + compte directeur | public |
+| POST | `/auth/token` | Connexion (e-mail / mot de passe) | public |
+| GET | `/auth/moi` | Utilisateur connecté et son école | tous |
+| PATCH | `/ecole` | Modifier les infos de l'école | directeur |
+| GET/POST | `/utilisateurs` | Lister / créer les comptes de l'équipe | directeur |
+| PATCH | `/utilisateurs/{id}/actif` | Activer / désactiver un compte | directeur |
+| GET/POST | `/classes` | Lister / créer des classes | tous / directeur |
+| GET | `/classes/{id}/bulletins.pdf?trimestre=1` | Bulletins de toute la classe | tous |
+| GET/POST | `/eleves` | Lister / inscrire des élèves | tous / gestion |
+| GET | `/eleves/modele-import.xlsx` | Modèle Excel d'import | gestion |
+| POST | `/eleves/import` | Importer un fichier Excel | gestion |
+| GET | `/eleves/{id}/bulletin?trimestre=1` | Bulletin (JSON) | tous |
+| GET | `/eleves/{id}/bulletin.pdf?trimestre=1` | Bulletin PDF | tous |
+| POST | `/paiements` | Enregistrer un paiement | gestion |
+| GET | `/paiements/{id}/recu.pdf` | Reçu PDF | gestion |
+| GET | `/impayes` | Élèves qui doivent encore de l'argent | gestion |
+| GET | `/stats` | Chiffres du tableau de bord | gestion |
+| GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
+
+*gestion* = directeur + comptable · *pédagogie* = directeur + enseignant
 
 ## Structure
 
 ```
 app/
-  main.py          point d'entrée FastAPI
-  database.py      connexion SQLite
-  models.py        tables et schémas (SQLModel)
-  routers/         classes, eleves, paiements, notes, stats
-  static/index.html  interface web (HTML + JS, sans framework)
-tests/test_api.py  tests automatiques
+  main.py            point d'entrée FastAPI
+  database.py        connexion SQLite
+  models.py          tables et schémas (SQLModel)
+  security.py        mots de passe, jetons JWT, rôles
+  services.py        soldes, bulletins, rangs
+  pdf.py             reçus et bulletins (ReportLab)
+  excel.py           modèle et import Excel (openpyxl)
+  routers/           auth, classes, eleves, paiements, notes, stats
+  static/index.html  interface web
+tests/               tests automatiques (pytest)
 ```
 
 ## Prochaines étapes
 
-1. Authentification (directeur / comptable) avec JWT
-2. Reçus et bulletins en PDF
-3. Import des élèves depuis Excel
-4. Passage à PostgreSQL (Supabase) pour la production
+1. Rappels SMS aux parents en retard de paiement
+2. Suivi des absences
+3. Mise en ligne (PostgreSQL / Supabase + hébergement)

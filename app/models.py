@@ -1,8 +1,85 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from pydantic import EmailStr
 from sqlmodel import Field, SQLModel
+
+
+# ---------- Écoles ----------
+class EcoleBase(SQLModel):
+    nom: str
+    adresse: Optional[str] = None
+    telephone: Optional[str] = None
+    devise: str = "FCFA"
+    annee_scolaire: str = "2026-2027"
+
+
+class Ecole(EcoleBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class EcoleUpdate(SQLModel):
+    nom: Optional[str] = None
+    adresse: Optional[str] = None
+    telephone: Optional[str] = None
+    devise: Optional[str] = None
+    annee_scolaire: Optional[str] = None
+
+
+# ---------- Utilisateurs ----------
+class Role(str, Enum):
+    directeur = "directeur"      # tout
+    comptable = "comptable"      # élèves, paiements, impayés
+    enseignant = "enseignant"    # notes, bulletins
+
+
+class UtilisateurBase(SQLModel):
+    nom: str
+    email: str = Field(index=True, unique=True)
+    role: Role
+
+
+class Utilisateur(UtilisateurBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    mot_de_passe_hash: str
+    actif: bool = True
+
+
+class UtilisateurCreate(SQLModel):
+    nom: str
+    email: EmailStr
+    role: Role
+    mot_de_passe: str = Field(min_length=8)
+
+
+class UtilisateurPublic(UtilisateurBase):
+    id: int
+    ecole_id: int
+    actif: bool
+
+
+class InscriptionEcole(SQLModel):
+    """Création d'une nouvelle école + compte du directeur."""
+    nom_ecole: str
+    adresse: Optional[str] = None
+    telephone: Optional[str] = None
+    devise: str = "FCFA"
+    nom_directeur: str
+    email: EmailStr
+    mot_de_passe: str = Field(min_length=8)
+
+
+class Token(SQLModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class Moi(SQLModel):
+    utilisateur: UtilisateurPublic
+    ecole: Ecole
 
 
 # ---------- Classes ----------
@@ -14,6 +91,7 @@ class ClasseBase(SQLModel):
 
 class Classe(ClasseBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
 
 
 class ClasseCreate(ClasseBase):
@@ -31,7 +109,8 @@ class EleveBase(SQLModel):
 
 class Eleve(EleveBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    matricule: str = Field(unique=True, index=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    matricule: Optional[str] = Field(default=None, unique=True, index=True)
 
 
 class EleveCreate(EleveBase):
@@ -44,6 +123,11 @@ class EleveUpdate(SQLModel):
     date_naissance: Optional[date] = None
     telephone_parent: Optional[str] = None
     classe_id: Optional[int] = None
+
+
+class ResultatImport(SQLModel):
+    importes: int
+    erreurs: list[str]
 
 
 # ---------- Paiements ----------
@@ -64,6 +148,8 @@ class PaiementBase(SQLModel):
 
 class Paiement(PaiementBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    numero_recu: Optional[str] = Field(default=None, unique=True)
+    enregistre_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
 
 
 class PaiementCreate(PaiementBase):
@@ -105,8 +191,12 @@ class LigneBulletin(SQLModel):
 
 class Bulletin(SQLModel):
     eleve_id: int
+    matricule: Optional[str]
     nom_complet: str
     classe: str
     trimestre: int
     matieres: list[LigneBulletin]
     moyenne_generale: Optional[float]
+    rang: Optional[int]
+    effectif: int
+    appreciation: str

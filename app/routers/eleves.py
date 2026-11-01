@@ -1,64 +1,140 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, func, select
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from sqlmodel import Session, select
 
 from app.database import get_session
+from app.excel import lire_import_eleves, modele_import_eleves
 from app.models import (
-    Bulletin, Classe, Eleve, EleveCreate, EleveUpdate, LigneBulletin,
-    Note, Paiement, Solde,
+    Bulletin, Classe, Ecole, Eleve, EleveCreate, EleveUpdate, ResultatImport,
+    Solde, Utilisateur,
 )
+from app.pdf import en_tete_pdf, pdf_bulletins
+from app.security import GESTION, TOUS, exiger_role
+from app.services import bulletin_eleve, calculer_solde, get_classe, get_eleve
 
 router = APIRouter(prefix="/eleves", tags=["Élèves"])
 
 
-def _get_eleve(session: Session, eleve_id: int) -> Eleve:
-    eleve = session.get(Eleve, eleve_id)
-    if not eleve:
-        raise HTTPException(404, "Élève introuvable")
-    return eleve
-
-
-def _generer_matricule(session: Session) -> str:
-    annee = date.today().year
-    n = session.exec(select(func.count()).select_from(Eleve)).one() + 1
-    return f"{annee}-{n:04d}"
+def _attribuer_matricule(session: Session, eleve: Eleve) -> None:
+    session.flush()  # obtient l'id
+    eleve.matricule = f"{date.today().year}-{eleve.id:05d}"
 
 
 @router.post("", response_model=Eleve, status_code=201)
-def inscrire_eleve(data: EleveCreate, session: Session = Depends(get_session)):
-    if not session.get(Classe, data.classe_id):
-        raise HTTPException(400, "Classe introuvable")
-    eleve = Eleve.model_validate(data, update={"matricule": _generer_matricule(session)})
+def inscrire_eleve(
+    data: EleveCreate,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    get_classe(session, data.classe_id, user.ecole_id, code=400)
+    eleve = Eleve.model_validate(data, update={"ecole_id": user.ecole_id})
     session.add(eleve)
+    _attribuer_matricule(session, eleve)
     session.commit()
     session.refresh(eleve)
     return eleve
 
 
 @router.get("", response_model=list[Eleve])
-def lister_eleves(q: str | None = None, session: Session = Depends(get_session)):
-    """Liste les élèves. `q` filtre par nom, prénom ou matricule."""
-    stmt = select(Eleve)
+def lister_eleves(
+    q: str | None = None,
+    classe_id: int | None = None,
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
+    """Liste les élèves de l'école. `q` filtre par nom, prénom ou matricule."""
+    stmt = select(Eleve).where(Eleve.ecole_id == user.ecole_id)
     if q:
         motif = f"%{q}%"
         stmt = stmt.where(
             Eleve.nom.ilike(motif) | Eleve.prenom.ilike(motif) | Eleve.matricule.ilike(motif)
         )
-    return session.exec(stmt.order_by(Eleve.nom)).all()
+    if classe_id:
+        stmt = stmt.where(Eleve.classe_id == classe_id)
+    return session.exec(stmt.order_by(Eleve.nom, Eleve.prenom)).all()
 
 
+@router.get("/soldes", response_model=list[Solde])
+def soldes(
+    classe_id: int | None = None,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    """Solde de chaque élève (évite un appel par élève depuis l'interface)."""
+    stmt = select(Eleve).where(Eleve.ecole_id == user.ecole_id)
+    if classe_id:
+        stmt = stmt.where(Eleve.classe_id == classe_id)
+    return [calculer_solde(session, e) for e in session.exec(stmt).all()]
+
+
+# ---------- Import Excel ----------
+@router.get("/modele-import.xlsx", response_class=Response)
+def telecharger_modele(
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    classes = session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all()
+    return Response(
+        modele_import_eleves([c.nom for c in classes]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="modele_import_eleves.xlsx"'},
+    )
+
+
+@router.post("/import", response_model=ResultatImport)
+async def importer_eleves(
+    fichier: UploadFile = File(...),
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    """Importe des élèves depuis un fichier Excel (.xlsx).
+
+    Colonnes : nom, prenom, classe, date_naissance (facultatif), telephone_parent (facultatif).
+    Si une ligne contient une erreur, rien n'est importé et la liste des erreurs est renvoyée.
+    """
+    if not (fichier.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Le fichier doit être au format .xlsx")
+    contenu = await fichier.read()
+    if len(contenu) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Fichier trop gros (5 Mo maximum)")
+
+    classes = {
+        c.nom.strip().lower(): c
+        for c in session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all()
+    }
+    lignes, erreurs = lire_import_eleves(contenu, classes)
+    if erreurs:
+        return ResultatImport(importes=0, erreurs=erreurs)
+    for data in lignes:
+        eleve = Eleve(**data, ecole_id=user.ecole_id)
+        session.add(eleve)
+        _attribuer_matricule(session, eleve)
+    session.commit()
+    return ResultatImport(importes=len(lignes), erreurs=[])
+
+
+# ---------- Un élève ----------
 @router.get("/{eleve_id}", response_model=Eleve)
-def voir_eleve(eleve_id: int, session: Session = Depends(get_session)):
-    return _get_eleve(session, eleve_id)
+def voir_eleve(
+    eleve_id: int,
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
+    return get_eleve(session, eleve_id, user.ecole_id)
 
 
 @router.patch("/{eleve_id}", response_model=Eleve)
-def modifier_eleve(eleve_id: int, data: EleveUpdate, session: Session = Depends(get_session)):
-    eleve = _get_eleve(session, eleve_id)
+def modifier_eleve(
+    eleve_id: int,
+    data: EleveUpdate,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
     changes = data.model_dump(exclude_unset=True)
-    if "classe_id" in changes and not session.get(Classe, changes["classe_id"]):
-        raise HTTPException(400, "Classe introuvable")
+    if "classe_id" in changes:
+        get_classe(session, changes["classe_id"], user.ecole_id, code=400)
     eleve.sqlmodel_update(changes)
     session.add(eleve)
     session.commit()
@@ -67,56 +143,37 @@ def modifier_eleve(eleve_id: int, data: EleveUpdate, session: Session = Depends(
 
 
 @router.get("/{eleve_id}/solde", response_model=Solde)
-def solde_eleve(eleve_id: int, session: Session = Depends(get_session)):
-    eleve = _get_eleve(session, eleve_id)
-    return calculer_solde(session, eleve)
-
-
-def calculer_solde(session: Session, eleve: Eleve) -> Solde:
-    classe = session.get(Classe, eleve.classe_id)
-    total = session.exec(
-        select(func.coalesce(func.sum(Paiement.montant), 0)).where(Paiement.eleve_id == eleve.id)
-    ).one()
-    return Solde(
-        eleve_id=eleve.id,
-        nom_complet=f"{eleve.prenom} {eleve.nom}",
-        classe=classe.nom,
-        frais_annuels=classe.frais_annuels,
-        total_paye=total,
-        reste_a_payer=max(classe.frais_annuels - total, 0),
-    )
+def solde_eleve(
+    eleve_id: int,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    return calculer_solde(session, get_eleve(session, eleve_id, user.ecole_id))
 
 
 @router.get("/{eleve_id}/bulletin", response_model=Bulletin)
-def bulletin(eleve_id: int, trimestre: int, session: Session = Depends(get_session)):
+def bulletin(
+    eleve_id: int,
+    trimestre: int,
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
     if trimestre not in (1, 2, 3):
         raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
-    eleve = _get_eleve(session, eleve_id)
-    classe = session.get(Classe, eleve.classe_id)
-    notes = session.exec(
-        select(Note).where(Note.eleve_id == eleve_id, Note.trimestre == trimestre)
-    ).all()
+    return bulletin_eleve(session, get_eleve(session, eleve_id, user.ecole_id), trimestre)
 
-    # Moyenne par matière, puis moyenne générale pondérée par coefficient
-    par_matiere: dict[str, list[Note]] = {}
-    for n in notes:
-        par_matiere.setdefault(n.matiere, []).append(n)
 
-    lignes = []
-    for matiere, ns in sorted(par_matiere.items()):
-        moy = sum(n.valeur for n in ns) / len(ns)
-        coef = max(n.coefficient for n in ns)
-        lignes.append(LigneBulletin(matiere=matiere, moyenne=round(moy, 2), coefficient=coef))
-
-    total_coef = sum(l.coefficient for l in lignes)
-    moyenne_generale = (
-        round(sum(l.moyenne * l.coefficient for l in lignes) / total_coef, 2) if total_coef else None
-    )
-    return Bulletin(
-        eleve_id=eleve.id,
-        nom_complet=f"{eleve.prenom} {eleve.nom}",
-        classe=classe.nom,
-        trimestre=trimestre,
-        matieres=lignes,
-        moyenne_generale=moyenne_generale,
-    )
+@router.get("/{eleve_id}/bulletin.pdf", response_class=Response)
+def bulletin_pdf(
+    eleve_id: int,
+    trimestre: int,
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
+    if trimestre not in (1, 2, 3):
+        raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
+    b = bulletin_eleve(session, eleve, trimestre)
+    pdf = pdf_bulletins(session.get(Ecole, user.ecole_id), [b])
+    return Response(pdf, media_type="application/pdf",
+                    headers=en_tete_pdf(f"bulletin_{eleve.nom}_{eleve.prenom}_T{trimestre}.pdf"))

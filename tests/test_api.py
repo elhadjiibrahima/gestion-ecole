@@ -1,98 +1,69 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
-from sqlmodel.pool import StaticPool
-
-from app.database import get_session
-from app.main import app
+from tests.conftest import creer_compte, creer_ecole
 
 
-@pytest.fixture
-def client():
-    # Base SQLite en mémoire, isolée pour chaque test
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    SQLModel.metadata.create_all(engine)
-
-    def override():
-        with Session(engine) as s:
-            yield s
-
-    app.dependency_overrides[get_session] = override
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+def test_inscription_et_matricule(client, dir_headers, setup):
+    _, eleve = setup
+    assert eleve["matricule"].endswith("-00001")
+    r = client.get("/eleves", params={"q": "amin"}, headers=dir_headers).json()
+    assert r[0]["id"] == eleve["id"]
 
 
-def _setup(client):
-    classe = client.post(
-        "/classes", json={"nom": "6ème A", "niveau": "Collège", "frais_annuels": 500000}
-    ).json()
-    eleve = client.post(
-        "/eleves",
-        json={"nom": "Diallo", "prenom": "Aminata", "classe_id": classe["id"],
-              "telephone_parent": "+224620000000"},
-    ).json()
-    return classe, eleve
-
-
-def test_inscription_et_matricule(client):
-    _, eleve = _setup(client)
-    assert eleve["matricule"].endswith("-0001")
-    assert client.get("/eleves", params={"q": "amin"}).json()[0]["id"] == eleve["id"]
-
-
-def test_classe_inexistante(client):
-    r = client.post("/eleves", json={"nom": "X", "prenom": "Y", "classe_id": 99})
+def test_classe_inexistante(client, dir_headers):
+    r = client.post("/eleves", headers=dir_headers, json={"nom": "X", "prenom": "Y", "classe_id": 99})
     assert r.status_code == 400
 
 
-def test_paiements_solde_et_impayes(client):
-    _, eleve = _setup(client)
-    client.post("/paiements", json={"eleve_id": eleve["id"], "montant": 200000,
-                                    "mode": "orange_money", "reference": "OM123"})
-    client.post("/paiements", json={"eleve_id": eleve["id"], "montant": 100000})
+def test_paiements_solde_et_impayes(client, dir_headers, setup):
+    _, eleve = setup
+    p = client.post("/paiements", headers=dir_headers, json={
+        "eleve_id": eleve["id"], "montant": 200000, "mode": "orange_money", "reference": "OM123"}).json()
+    assert p["numero_recu"].startswith("R") and p["numero_recu"].endswith("000001")
+    client.post("/paiements", headers=dir_headers, json={"eleve_id": eleve["id"], "montant": 100000})
 
-    solde = client.get(f"/eleves/{eleve['id']}/solde").json()
-    assert solde["total_paye"] == 300000
-    assert solde["reste_a_payer"] == 200000
+    solde = client.get(f"/eleves/{eleve['id']}/solde", headers=dir_headers).json()
+    assert solde["total_paye"] == 300000 and solde["reste_a_payer"] == 200000
 
-    impayes = client.get("/impayes").json()
+    impayes = client.get("/impayes", headers=dir_headers).json()
     assert len(impayes) == 1 and impayes[0]["reste_a_payer"] == 200000
 
-    client.post("/paiements", json={"eleve_id": eleve["id"], "montant": 200000})
-    assert client.get("/impayes").json() == []
+    client.post("/paiements", headers=dir_headers, json={"eleve_id": eleve["id"], "montant": 200000})
+    assert client.get("/impayes", headers=dir_headers).json() == []
 
 
-def test_montant_negatif_refuse(client):
-    _, eleve = _setup(client)
-    r = client.post("/paiements", json={"eleve_id": eleve["id"], "montant": -5})
+def test_montant_negatif_refuse(client, dir_headers, setup):
+    _, eleve = setup
+    r = client.post("/paiements", headers=dir_headers, json={"eleve_id": eleve["id"], "montant": -5})
     assert r.status_code == 422
 
 
-def test_bulletin(client):
-    _, eleve = _setup(client)
-    for matiere, valeur, coef in [("Maths", 14, 4), ("Maths", 16, 4), ("Français", 12, 3)]:
-        client.post("/notes", json={"eleve_id": eleve["id"], "matiere": matiere,
-                                    "valeur": valeur, "coefficient": coef, "trimestre": 1})
-    b = client.get(f"/eleves/{eleve['id']}/bulletin", params={"trimestre": 1}).json()
-    maths = next(m for m in b["matieres"] if m["matiere"] == "Maths")
-    assert maths["moyenne"] == 15
-    # (15*4 + 12*3) / 7 = 13.71
-    assert b["moyenne_generale"] == 13.71
+def test_bulletin_rang_et_appreciation(client, dir_headers, setup):
+    classe, eleve = setup
+    autre = client.post("/eleves", headers=dir_headers, json={
+        "nom": "Bah", "prenom": "Mamadou", "classe_id": classe["id"]}).json()
+    for eid, matiere, valeur, coef in [
+        (eleve["id"], "Maths", 14, 4), (eleve["id"], "Maths", 16, 4), (eleve["id"], "Français", 12, 3),
+        (autre["id"], "Maths", 17, 4), (autre["id"], "Français", 15, 3),
+    ]:
+        client.post("/notes", headers=dir_headers, json={
+            "eleve_id": eid, "matiere": matiere, "valeur": valeur, "coefficient": coef, "trimestre": 1})
+    b = client.get(f"/eleves/{eleve['id']}/bulletin", params={"trimestre": 1}, headers=dir_headers).json()
+    assert next(m for m in b["matieres"] if m["matiere"] == "Maths")["moyenne"] == 15
+    assert b["moyenne_generale"] == 13.71          # (15*4 + 12*3) / 7
+    assert b["rang"] == 2 and b["effectif"] == 2
+    assert "Bon travail" in b["appreciation"]
 
 
-def test_note_hors_bareme(client):
-    _, eleve = _setup(client)
-    r = client.post("/notes", json={"eleve_id": eleve["id"], "matiere": "Maths",
-                                    "valeur": 25, "trimestre": 1})
+def test_note_hors_bareme(client, dir_headers, setup):
+    _, eleve = setup
+    r = client.post("/notes", headers=dir_headers, json={
+        "eleve_id": eleve["id"], "matiere": "Maths", "valeur": 25, "trimestre": 1})
     assert r.status_code == 422
 
 
-def test_stats(client):
-    _, eleve = _setup(client)
-    client.post("/paiements", json={"eleve_id": eleve["id"], "montant": 125000})
-    s = client.get("/stats").json()
+def test_stats(client, dir_headers, setup):
+    _, eleve = setup
+    client.post("/paiements", headers=dir_headers, json={"eleve_id": eleve["id"], "montant": 125000})
+    s = client.get("/stats", headers=dir_headers).json()
     assert s["nb_eleves"] == 1 and s["total_encaisse"] == 125000
     assert s["total_impaye"] == 375000 and s["taux_recouvrement"] == 25.0
 

@@ -11,40 +11,49 @@
     --ok: #059669; --ok-bg: #d1fae5; --bad: #dc2626; --bad-bg: #fee2e2;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
          background: var(--bg); color: var(--text); }
-  header { background: var(--primary); color: #fff; padding: 14px 20px;
-           display: flex; align-items: center; justify-content: space-between; }
-  header h1 { margin: 0; font-size: 1.2rem; }
-  header a { color: #c7d2fe; font-size: .85rem; }
+  header { background: var(--primary); color: #fff; padding: 12px 20px;
+           display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.15rem; }
+  header .who { font-size: .85rem; color: #c7d2fe; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header .who b { color: #fff; }
+  header button { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 10px;
+                  border-radius: 6px; cursor: pointer; font-size: .85rem; }
   nav { display: flex; gap: 4px; padding: 0 12px; background: #fff;
         border-bottom: 1px solid var(--border); overflow-x: auto; }
   nav button { background: none; border: none; padding: 14px 14px; cursor: pointer;
-               font-size: .95rem; color: var(--muted); border-bottom: 3px solid transparent;
-               white-space: nowrap; }
+               font-size: .95rem; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; }
   nav button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
   main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
-  section { display: none; }
-  section.active { display: block; }
+  section.tab { display: none; }
+  section.tab.active { display: block; }
   .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
   .card h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  .card p.hint { color: var(--muted); font-size: .85rem; margin: -6px 0 12px; }
   .kpi .label { color: var(--muted); font-size: .85rem; }
   .kpi .value { font-size: clamp(1.15rem, 4vw, 1.6rem); font-weight: 700; margin-top: 4px; }
   .kpi.bad .value { color: var(--bad); }
   .kpi.ok .value { color: var(--ok); }
   .bar { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin-top: 10px; }
   .bar > div { height: 100%; background: var(--ok); }
-  .two { display: grid; gap: 16px; grid-template-columns: 1fr 2fr; margin-top: 16px; }
+  .two { display: grid; gap: 16px; grid-template-columns: 1fr 2fr; }
+  .stack { display: grid; gap: 16px; align-content: start; }
+  .mt { margin-top: 16px; }
   @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
   form { display: grid; gap: 10px; }
   label { font-size: .85rem; color: var(--muted); display: grid; gap: 4px; }
   input, select { padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px;
                   font-size: .95rem; background: #fff; width: 100%; }
-  button.btn { background: var(--primary); color: #fff; border: none; padding: 10px 14px;
-               border-radius: 6px; font-size: .95rem; cursor: pointer; }
-  button.btn:hover { opacity: .9; }
+  .btn { background: var(--primary); color: #fff; border: none; padding: 10px 14px;
+         border-radius: 6px; font-size: .95rem; cursor: pointer; text-align: center; }
+  .btn:hover { opacity: .9; }
+  .btn.secondary { background: var(--primary-light); color: var(--primary); }
+  .btn:disabled { opacity: .5; cursor: wait; }
   button.link { background: none; border: none; color: var(--primary); cursor: pointer; padding: 0; font-size: .9rem; }
+  button.link.danger { color: var(--bad); }
   table { width: 100%; border-collapse: collapse; font-size: .92rem; }
   th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; }
@@ -53,59 +62,120 @@
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
   .badge.ok { background: var(--ok-bg); color: var(--ok); }
   .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .badge.info { background: var(--primary-light); color: var(--primary); }
   .empty { color: var(--muted); text-align: center; padding: 20px; }
-  .toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
   .toolbar input, .toolbar select { max-width: 260px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > * { flex: 1; }
   #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-           background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px;
+           background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px; max-width: 90vw;
            opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
   #toast.show { opacity: 1; }
   #toast.error { background: var(--bad); }
   .bulletin-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
   .moyenne { font-size: 1.3rem; font-weight: 700; }
+  .erreurs { background: var(--bad-bg); color: var(--bad); border-radius: 6px; padding: 10px 12px;
+             font-size: .85rem; margin: 10px 0 0; max-height: 200px; overflow: auto; }
+  .erreurs ul { margin: 4px 0 0; padding-left: 18px; }
+  .recu-pret { background: var(--ok-bg); border-radius: 8px; padding: 10px 12px; display: flex;
+               justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; font-size: .9rem; }
+
+  /* ----- Écran de connexion ----- */
+  #auth { min-height: 100vh; display: grid; place-items: center; padding: 20px;
+          background: linear-gradient(135deg, #1d4ed8, #4338ca); }
+  #auth .box { width: 100%; max-width: 420px; }
+  #auth .logo { text-align: center; color: #fff; margin-bottom: 18px; }
+  #auth .logo h1 { margin: 0; font-size: 1.6rem; }
+  #auth .logo p { margin: 4px 0 0; color: #c7d2fe; }
+  #auth .switch { text-align: center; margin-top: 12px; font-size: .9rem; color: var(--muted); }
 </style>
 </head>
 <body>
 
+<!-- ===================== CONNEXION / INSCRIPTION ===================== -->
+<div id="auth" hidden>
+  <div class="box">
+    <div class="logo"><h1>🏫 Gestion École</h1><p>Élèves, frais, notes et bulletins</p></div>
+
+    <div class="card" id="box-login">
+      <h2>Connexion</h2>
+      <form id="f-login">
+        <label>E-mail<input name="username" type="email" autocomplete="username" required></label>
+        <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn">Se connecter</button>
+      </form>
+      <div class="switch">Nouvelle école ? <button class="link" data-auth="signup">Créer un compte</button></div>
+    </div>
+
+    <div class="card" id="box-signup" hidden>
+      <h2>Créer mon école</h2>
+      <form id="f-signup">
+        <label>Nom de l'école<input name="nom_ecole" required></label>
+        <div class="row">
+          <label>Adresse<input name="adresse"></label>
+          <label>Téléphone<input name="telephone"></label>
+        </div>
+        <label>Devise
+          <select name="devise"><option>FCFA</option><option>GNF</option><option>EUR</option></select>
+        </label>
+        <label>Ton nom (directeur)<input name="nom_directeur" required></label>
+        <label>E-mail<input name="email" type="email" autocomplete="username" required></label>
+        <label>Mot de passe (8 caractères min.)<input name="mot_de_passe" type="password" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn">Créer l'école</button>
+      </form>
+      <div class="switch">Déjà un compte ? <button class="link" data-auth="login">Se connecter</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== APPLICATION ===================== -->
+<div id="appli" hidden>
 <header>
-  <h1>🏫 Gestion École</h1>
-  <a href="/docs" target="_blank">Documentation API</a>
+  <h1 id="nom-ecole">🏫 Gestion École</h1>
+  <div class="who">
+    <span><b id="nom-user"></b> · <span id="role-user"></span></span>
+    <a href="/docs" target="_blank" style="color:#c7d2fe">API</a>
+    <button id="btn-logout">Déconnexion</button>
+  </div>
 </header>
 
 <nav>
-  <button data-tab="dashboard" class="active">Tableau de bord</button>
+  <button data-tab="dashboard" data-roles="directeur comptable">Tableau de bord</button>
   <button data-tab="classes">Classes</button>
   <button data-tab="eleves">Élèves</button>
-  <button data-tab="paiements">Paiements</button>
-  <button data-tab="notes">Notes & bulletins</button>
+  <button data-tab="paiements" data-roles="directeur comptable">Paiements</button>
+  <button data-tab="notes" data-roles="directeur enseignant">Notes & bulletins</button>
+  <button data-tab="equipe" data-roles="directeur">Équipe</button>
+  <button data-tab="parametres" data-roles="directeur">Paramètres</button>
 </nav>
 
 <main>
   <!-- ===== Tableau de bord ===== -->
-  <section id="dashboard" class="active">
+  <section class="tab" id="dashboard">
     <div class="grid">
       <div class="card kpi"><div class="label">Élèves</div><div class="value" id="k-eleves">–</div></div>
       <div class="card kpi"><div class="label">Classes</div><div class="value" id="k-classes">–</div></div>
       <div class="card kpi ok"><div class="label">Encaissé</div><div class="value" id="k-encaisse">–</div></div>
       <div class="card kpi bad"><div class="label">Reste à encaisser</div><div class="value" id="k-impaye">–</div></div>
     </div>
-    <div class="card" style="margin-top:16px">
+    <div class="card mt">
       <h2>Taux de recouvrement : <span id="k-taux">–</span></h2>
       <div class="bar"><div id="k-bar" style="width:0"></div></div>
       <p style="color:var(--muted);font-size:.85rem;margin:8px 0 0">
         <span id="k-retard">–</span> élève(s) n'ont pas encore tout payé.
       </p>
     </div>
-    <div class="card" style="margin-top:16px">
+    <div class="card mt">
       <h2>Plus gros impayés</h2>
       <div class="table-wrap"><table id="t-top-impayes"></table></div>
     </div>
   </section>
 
   <!-- ===== Classes ===== -->
-  <section id="classes">
+  <section class="tab" id="classes">
     <div class="two">
-      <div class="card">
+      <div class="card" data-roles="directeur">
         <h2>Nouvelle classe</h2>
         <form id="f-classe">
           <label>Nom<input name="nom" placeholder="6ème A" required></label>
@@ -114,7 +184,7 @@
           <button class="btn">Créer la classe</button>
         </form>
       </div>
-      <div class="card">
+      <div class="card" id="card-classes">
         <h2>Liste des classes</h2>
         <div class="table-wrap"><table id="t-classes"></table></div>
       </div>
@@ -122,20 +192,32 @@
   </section>
 
   <!-- ===== Élèves ===== -->
-  <section id="eleves">
+  <section class="tab" id="eleves">
     <div class="two">
-      <div class="card">
-        <h2>Inscrire un élève</h2>
-        <form id="f-eleve">
-          <label>Nom<input name="nom" required></label>
-          <label>Prénom<input name="prenom" required></label>
-          <label>Date de naissance<input name="date_naissance" type="date"></label>
-          <label>Téléphone du parent<input name="telephone_parent" placeholder="+224 6.."></label>
-          <label>Classe<select name="classe_id" class="sel-classes" required></select></label>
-          <button class="btn">Inscrire</button>
-        </form>
+      <div class="stack" data-roles="directeur comptable">
+        <div class="card">
+          <h2>Inscrire un élève</h2>
+          <form id="f-eleve">
+            <label>Nom<input name="nom" required></label>
+            <label>Prénom<input name="prenom" required></label>
+            <label>Date de naissance<input name="date_naissance" type="date"></label>
+            <label>Téléphone du parent<input name="telephone_parent" placeholder="+224 6.."></label>
+            <label>Classe<select name="classe_id" class="sel-classes" required></select></label>
+            <button class="btn">Inscrire</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Importer depuis Excel</h2>
+          <p class="hint">Télécharge le modèle, remplis-le (une ligne par élève), puis importe-le.</p>
+          <form id="f-import">
+            <button type="button" class="btn secondary" id="btn-modele">⬇ Télécharger le modèle</button>
+            <input type="file" name="fichier" accept=".xlsx" required>
+            <button class="btn">Importer</button>
+          </form>
+          <div id="import-resultat"></div>
+        </div>
       </div>
-      <div class="card">
+      <div class="card" id="card-eleves">
         <h2>Élèves inscrits</h2>
         <div class="toolbar">
           <input id="q-eleve" placeholder="Rechercher nom, prénom, matricule…">
@@ -147,7 +229,7 @@
   </section>
 
   <!-- ===== Paiements ===== -->
-  <section id="paiements">
+  <section class="tab" id="paiements">
     <div class="two">
       <div class="card">
         <h2>Enregistrer un paiement</h2>
@@ -166,6 +248,7 @@
           <label>Date<input name="date_paiement" type="date"></label>
           <button class="btn">Enregistrer</button>
         </form>
+        <div id="dernier-recu"></div>
       </div>
       <div class="card">
         <h2>Impayés</h2>
@@ -175,68 +258,143 @@
         <div class="table-wrap"><table id="t-impayes"></table></div>
       </div>
     </div>
-    <div class="card" style="margin-top:16px" id="historique-card" hidden>
+    <div class="card mt" id="historique-card" hidden>
       <h2>Historique — <span id="historique-nom"></span></h2>
       <div class="table-wrap"><table id="t-historique"></table></div>
     </div>
   </section>
 
   <!-- ===== Notes ===== -->
-  <section id="notes">
+  <section class="tab" id="notes">
     <div class="two">
-      <div class="card">
-        <h2>Ajouter une note</h2>
-        <form id="f-note">
-          <label>Élève<select name="eleve_id" class="sel-eleves" required></select></label>
-          <label>Matière<input name="matiere" list="matieres" required></label>
-          <datalist id="matieres">
-            <option>Mathématiques</option><option>Français</option><option>Anglais</option>
-            <option>Physique-Chimie</option><option>SVT</option><option>Histoire-Géographie</option>
-          </datalist>
-          <label>Note /20<input name="valeur" type="number" min="0" max="20" step="0.25" required></label>
-          <label>Coefficient<input name="coefficient" type="number" min="1" value="1" required></label>
-          <label>Trimestre
-            <select name="trimestre"><option>1</option><option>2</option><option>3</option></select>
-          </label>
-          <button class="btn">Ajouter</button>
-        </form>
+      <div class="stack">
+        <div class="card">
+          <h2>Ajouter une note</h2>
+          <form id="f-note">
+            <label>Élève<select name="eleve_id" class="sel-eleves" required></select></label>
+            <label>Matière<input name="matiere" list="matieres" required></label>
+            <datalist id="matieres">
+              <option>Mathématiques</option><option>Français</option><option>Anglais</option>
+              <option>Physique-Chimie</option><option>SVT</option><option>Histoire-Géographie</option>
+            </datalist>
+            <div class="row">
+              <label>Note /20<input name="valeur" type="number" min="0" max="20" step="0.25" required></label>
+              <label>Coefficient<input name="coefficient" type="number" min="1" value="1" required></label>
+            </div>
+            <label>Trimestre
+              <select name="trimestre"><option>1</option><option>2</option><option>3</option></select>
+            </label>
+            <button class="btn">Ajouter</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Bulletins de toute une classe</h2>
+          <p class="hint">Un seul PDF, une page par élève, prêt à imprimer.</p>
+          <div class="toolbar" style="margin:0">
+            <select id="bc-classe" class="sel-classes"></select>
+            <select id="bc-trimestre"><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option></select>
+            <button class="btn" id="btn-bulletins-classe">📄 PDF</button>
+          </div>
+        </div>
       </div>
       <div class="card">
         <h2>Bulletin</h2>
         <div class="toolbar">
           <select id="b-eleve" class="sel-eleves"></select>
           <select id="b-trimestre"><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
+          <button class="btn secondary" id="btn-bulletin-pdf">📄 PDF</button>
         </div>
         <div id="bulletin"></div>
+        <h2 class="mt" style="font-size:.95rem">Notes saisies</h2>
+        <div class="table-wrap"><table id="t-notes"></table></div>
       </div>
     </div>
   </section>
+
+  <!-- ===== Équipe ===== -->
+  <section class="tab" id="equipe">
+    <div class="two">
+      <div class="card">
+        <h2>Ajouter un membre</h2>
+        <p class="hint">Le comptable gère élèves et paiements. L'enseignant saisit les notes.</p>
+        <form id="f-user">
+          <label>Nom<input name="nom" required></label>
+          <label>E-mail<input name="email" type="email" required></label>
+          <label>Rôle
+            <select name="role">
+              <option value="comptable">Comptable</option>
+              <option value="enseignant">Enseignant</option>
+              <option value="directeur">Directeur</option>
+            </select>
+          </label>
+          <label>Mot de passe provisoire (8 car. min.)<input name="mot_de_passe" type="text" minlength="8" required></label>
+          <button class="btn">Créer le compte</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Comptes de l'école</h2>
+        <div class="table-wrap"><table id="t-users"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Paramètres ===== -->
+  <section class="tab" id="parametres">
+    <div class="card" style="max-width:520px">
+      <h2>Informations de l'école</h2>
+      <p class="hint">Elles apparaissent en haut des reçus et des bulletins.</p>
+      <form id="f-ecole">
+        <label>Nom<input name="nom" required></label>
+        <label>Adresse<input name="adresse"></label>
+        <label>Téléphone<input name="telephone"></label>
+        <div class="row">
+          <label>Devise<input name="devise" required></label>
+          <label>Année scolaire<input name="annee_scolaire" placeholder="2026-2027" required></label>
+        </div>
+        <button class="btn">Enregistrer</button>
+      </form>
+    </div>
+  </section>
 </main>
+</div>
 
 <div id="toast"></div>
 
 <script>
-const DEVISE = "FCFA";  // change en "GNF" si besoin
 const MODES = { especes: "Espèces", orange_money: "Orange Money", mtn_momo: "MTN MoMo", virement: "Virement" };
+const ROLES = { directeur: "Directeur", comptable: "Comptable", enseignant: "Enseignant" };
+
+// ---------- Session (jeton stocké dans le navigateur) ----------
+const store = {
+  get() { try { return localStorage.getItem("token"); } catch { return memoire; } },
+  set(t) { memoire = t; try { t ? localStorage.setItem("token", t) : localStorage.removeItem("token"); } catch {} },
+};
+let memoire = null;
+let moi = null;  // { utilisateur, ecole }
 
 // ---------- Utilitaires ----------
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + DEVISE;
+const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + (moi?.ecole.devise ?? "");
+const peut = (...roles) => moi && roles.includes(moi.utilisateur.role);
 
 function toast(msg, error = false) {
   const t = $("#toast");
   t.textContent = msg;
   t.className = "show" + (error ? " error" : "");
   clearTimeout(t._timer);
-  t._timer = setTimeout(() => (t.className = ""), 2500);
+  t._timer = setTimeout(() => (t.className = ""), 3000);
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" }, ...options,
-  });
+  const headers = { ...(options.headers || {}) };
+  if (!(options.body instanceof FormData) && !(options.body instanceof URLSearchParams))
+    headers["Content-Type"] = "application/json";
+  const token = store.get();
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(path, { ...options, headers });
+  if (res.status === 401 && token) { deconnexion(); throw new Error("Session expirée, reconnecte-toi"); }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -247,13 +405,34 @@ async function api(path, options = {}) {
     } catch {}
     throw new Error(detail);
   }
-  return res.status === 204 ? null : res.json();
+  if (res.status === 204) return null;
+  return options.raw ? res : res.json();
+}
+
+// Ouvre un PDF/fichier protégé par le jeton
+async function ouvrirFichier(path, nom) {
+  // Téléchargement direct pour Excel, ou si le navigateur (mobile) n'affiche pas les PDF
+  const telecharger = nom.endsWith(".xlsx") || navigator.pdfViewerEnabled === false;
+  // Sinon la fenêtre est ouverte tout de suite pour ne pas être bloquée par le navigateur
+  const fenetre = telecharger ? null : window.open("", "_blank");
+  const nomTelechargement = nom;
+  try {
+    const res = await api(path, { raw: true });
+    const url = URL.createObjectURL(await res.blob());
+    if (fenetre) { fenetre.location.href = url; }
+    else {
+      const a = document.createElement("a");
+      a.href = url; a.download = nomTelechargement || "document.pdf";
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { fenetre?.close(); toast(err.message, true); }
 }
 
 function formData(form) {
   const data = {};
   for (const [k, v] of new FormData(form)) {
-    if (v === "") continue;  // champs optionnels vides ignorés
+    if (v === "" || v instanceof File) continue;
     data[k] = form.elements[k].type === "number" || k.endsWith("_id") || k === "trimestre" ? Number(v) : v;
   }
   return data;
@@ -266,6 +445,46 @@ function table(el, headers, rows, emptyMsg = "Aucune donnée") {
     : head + `<tr><td colspan="${headers.length}" class="empty">${emptyMsg}</td></tr>`;
 }
 
+// ---------- Connexion ----------
+function afficherAuth(mode = "login") {
+  $("#appli").hidden = true;
+  $("#auth").hidden = false;
+  $("#box-login").hidden = mode !== "login";
+  $("#box-signup").hidden = mode !== "signup";
+}
+
+function deconnexion() {
+  store.set(null);
+  moi = null;
+  afficherAuth("login");
+}
+
+document.querySelectorAll("[data-auth]").forEach((b) =>
+  b.addEventListener("click", () => afficherAuth(b.dataset.auth)));
+
+$("#f-login").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    const r = await api("/auth/token", { method: "POST", body: new URLSearchParams(new FormData(ev.target)) });
+    store.set(r.access_token);
+    ev.target.reset();
+    demarrer();
+  } catch (err) { toast(err.message, true); }
+});
+
+$("#f-signup").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    const r = await api("/auth/inscription", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    store.set(r.access_token);
+    ev.target.reset();
+    toast("École créée, bienvenue ! Commence par créer tes classes.");
+    demarrer("classes");
+  } catch (err) { toast(err.message, true); }
+});
+
+$("#btn-logout").addEventListener("click", deconnexion);
+
 // ---------- Données en cache ----------
 let classes = [], eleves = [];
 const classeNom = (id) => classes.find((c) => c.id === id)?.nom ?? "?";
@@ -275,7 +494,9 @@ async function chargerClasses() {
   document.querySelectorAll(".sel-classes").forEach((sel) => {
     const keep = sel.value;
     const first = sel.dataset.all ? `<option value="">${sel.dataset.all}</option>` : "";
-    sel.innerHTML = first + classes.map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join("");
+    sel.innerHTML = first + (classes.length
+      ? classes.map((c) => `<option value="${c.id}">${esc(c.nom)}</option>`).join("")
+      : (sel.dataset.all ? "" : `<option value="">Aucune classe</option>`));
     if (keep) sel.value = keep;
   });
 }
@@ -307,7 +528,7 @@ async function afficherDashboard() {
     ["Élève", "Classe", { label: "Reste à payer", num: true }],
     imp.map((s) => `<tr><td>${esc(s.nom_complet)}</td><td>${esc(s.classe)}</td>
       <td class="num"><span class="badge bad">${argent(s.reste_a_payer)}</span></td></tr>`),
-    "Aucun impayé 🎉");
+    s.nb_eleves ? "Aucun impayé 🎉" : "Aucun élève pour l'instant");
 }
 
 // ---------- Classes ----------
@@ -318,29 +539,60 @@ async function afficherClasses() {
     ["Classe", "Niveau", { label: "Élèves", num: true }, { label: "Frais annuels", num: true }],
     classes.map((c) => `<tr><td>${esc(c.nom)}</td><td>${esc(c.niveau)}</td>
       <td class="num">${counts[c.id] || 0}</td><td class="num">${argent(c.frais_annuels)}</td></tr>`),
-    "Crée ta première classe à gauche");
+    peut("directeur") ? "Crée ta première classe à gauche" : "Aucune classe");
 }
 
 // ---------- Élèves ----------
 async function afficherEleves() {
   const q = $("#q-eleve").value.trim();
-  const classeId = Number($("#filtre-classe").value) || null;
-  let liste = await api("/eleves" + (q ? "?q=" + encodeURIComponent(q) : ""));
-  if (classeId) liste = liste.filter((e) => e.classe_id === classeId);
-  const soldes = await Promise.all(liste.map((e) => api(`/eleves/${e.id}/solde`)));
-  table($("#t-eleves"),
-    ["Matricule", "Nom", "Classe", "Parent", { label: "Frais", num: true }],
-    liste.map((e, i) => {
-      const s = soldes[i];
-      const badge = s.reste_a_payer > 0
+  const classeId = $("#filtre-classe").value;
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (classeId) params.set("classe_id", classeId);
+  const liste = await api("/eleves?" + params);
+  const gestion = peut("directeur", "comptable");
+  let soldes = {};
+  if (gestion) {
+    (await api("/eleves/soldes" + (classeId ? "?classe_id=" + classeId : "")))
+      .forEach((s) => (soldes[s.eleve_id] = s));
+  }
+  const entetes = ["Matricule", "Nom", "Classe", "Parent"];
+  if (gestion) entetes.push({ label: "Frais", num: true });
+  table($("#t-eleves"), entetes,
+    liste.map((e) => {
+      const s = soldes[e.id];
+      const badge = !s ? "" : s.reste_a_payer > 0
         ? `<span class="badge bad">Doit ${argent(s.reste_a_payer)}</span>`
         : `<span class="badge ok">À jour</span>`;
       return `<tr><td>${esc(e.matricule)}</td><td>${esc(e.nom)} ${esc(e.prenom)}</td>
         <td>${esc(classeNom(e.classe_id))}</td><td>${esc(e.telephone_parent || "–")}</td>
-        <td class="num">${badge}</td></tr>`;
+        ${gestion ? `<td class="num">${badge}</td>` : ""}</tr>`;
     }),
     q || classeId ? "Aucun résultat" : "Aucun élève inscrit");
 }
+
+$("#btn-modele").addEventListener("click", () =>
+  ouvrirFichier("/eleves/modele-import.xlsx", "modele_import_eleves.xlsx"));
+
+$("#f-import").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const btn = ev.target.querySelector("button:not([type=button])");
+  const zone = $("#import-resultat");
+  btn.disabled = true;
+  try {
+    const r = await api("/eleves/import", { method: "POST", body: new FormData(ev.target) });
+    if (r.erreurs.length) {
+      zone.innerHTML = `<div class="erreurs"><b>Rien n'a été importé.</b> Corrige ces lignes puis réessaie :
+        <ul>${r.erreurs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>`;
+    } else {
+      zone.innerHTML = "";
+      toast(`${r.importes} élève(s) importé(s) ✔`);
+      ev.target.reset();
+      rafraichir();
+    }
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+});
 
 // ---------- Paiements ----------
 async function afficherImpayes() {
@@ -352,7 +604,7 @@ async function afficherImpayes() {
       <td class="num">${argent(s.total_paye)}</td>
       <td class="num"><span class="badge bad">${argent(s.reste_a_payer)}</span></td>
       <td><button class="link" data-historique="${s.eleve_id}">Historique</button></td></tr>`),
-    "Aucun impayé 🎉");
+    eleves.length ? "Aucun impayé 🎉" : "Aucun élève");
 }
 
 async function afficherHistorique(eleveId) {
@@ -360,26 +612,41 @@ async function afficherHistorique(eleveId) {
   const p = await api(`/eleves/${eleveId}/paiements`);
   $("#historique-nom").textContent = e ? `${e.prenom} ${e.nom}` : "";
   table($("#t-historique"),
-    ["Date", "Mode", "Référence", { label: "Montant", num: true }],
-    p.map((x) => `<tr><td>${esc(new Date(x.date_paiement).toLocaleDateString("fr-FR"))}</td>
+    ["N° reçu", "Date", "Mode", "Référence", { label: "Montant", num: true }, ""],
+    p.map((x) => `<tr><td>${esc(x.numero_recu)}</td>
+      <td>${esc(new Date(x.date_paiement).toLocaleDateString("fr-FR"))}</td>
       <td>${esc(MODES[x.mode] || x.mode)}</td><td>${esc(x.reference || "–")}</td>
-      <td class="num">${argent(x.montant)}</td></tr>`),
+      <td class="num">${argent(x.montant)}</td>
+      <td><button class="link" data-recu="${x.id}">📄 Reçu</button></td></tr>`),
     "Aucun paiement");
   $("#historique-card").hidden = false;
   $("#historique-card").scrollIntoView({ behavior: "smooth" });
 }
 
-// ---------- Bulletin ----------
+// ---------- Notes & bulletins ----------
 async function afficherBulletin() {
   const id = $("#b-eleve").value;
-  if (!id) { $("#bulletin").innerHTML = `<p class="empty">Aucun élève</p>`; return; }
-  const b = await api(`/eleves/${id}/bulletin?trimestre=${$("#b-trimestre").value}`);
+  if (!id) {
+    $("#bulletin").innerHTML = `<p class="empty">Aucun élève</p>`;
+    $("#t-notes").innerHTML = "";
+    return;
+  }
+  const trimestre = $("#b-trimestre").value;
+  const [b, notes] = await Promise.all([
+    api(`/eleves/${id}/bulletin?trimestre=${trimestre}`),
+    api(`/notes?eleve_id=${id}&trimestre=${trimestre}`),
+  ]);
   const moy = b.moyenne_generale;
+  const rang = b.rang ? `${b.rang}${b.rang === 1 ? "er" : "e"} / ${b.effectif}` : "–";
   $("#bulletin").innerHTML = `
     <div class="bulletin-head">
-      <div><strong>${esc(b.nom_complet)}</strong><br><span style="color:var(--muted)">${esc(b.classe)} — Trimestre ${b.trimestre}</span></div>
-      <div>Moyenne générale<br><span class="moyenne" style="color:${moy == null ? "inherit" : moy >= 10 ? "var(--ok)" : "var(--bad)"}">
-        ${moy == null ? "–" : moy.toFixed(2) + " / 20"}</span></div>
+      <div><strong>${esc(b.nom_complet)}</strong><br>
+        <span style="color:var(--muted)">${esc(b.classe)} — Trimestre ${b.trimestre}</span><br>
+        <span class="badge info">Rang : ${rang}</span></div>
+      <div style="text-align:right">Moyenne générale<br>
+        <span class="moyenne" style="color:${moy == null ? "inherit" : moy >= 10 ? "var(--ok)" : "var(--bad)"}">
+        ${moy == null ? "–" : moy.toFixed(2) + " / 20"}</span><br>
+        <span style="font-size:.85rem;color:var(--muted)">${esc(b.appreciation)}</span></div>
     </div>
     <div class="table-wrap"><table id="t-bulletin"></table></div>`;
   table($("#t-bulletin"),
@@ -387,14 +654,81 @@ async function afficherBulletin() {
     b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="num">${m.coefficient}</td>
       <td class="num">${m.moyenne.toFixed(2)}</td></tr>`),
     "Aucune note pour ce trimestre");
+  table($("#t-notes"),
+    ["Matière", { label: "Note", num: true }, { label: "Coef.", num: true }, ""],
+    notes.map((n) => `<tr><td>${esc(n.matiere)}</td><td class="num">${n.valeur}</td>
+      <td class="num">${n.coefficient}</td>
+      <td class="num"><button class="link danger" data-suppr-note="${n.id}">Supprimer</button></td></tr>`),
+    "Aucune note");
 }
+
+$("#btn-bulletin-pdf").addEventListener("click", () => {
+  const id = $("#b-eleve").value;
+  if (id) ouvrirFichier(`/eleves/${id}/bulletin.pdf?trimestre=${$("#b-trimestre").value}`, "bulletin.pdf");
+});
+$("#btn-bulletins-classe").addEventListener("click", () => {
+  const id = $("#bc-classe").value;
+  if (id) ouvrirFichier(`/classes/${id}/bulletins.pdf?trimestre=${$("#bc-trimestre").value}`, "bulletins_classe.pdf");
+});
+$("#t-notes").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.supprNote;
+  if (!id) return;
+  try { await api(`/notes/${id}`, { method: "DELETE" }); toast("Note supprimée"); afficherBulletin(); }
+  catch (err) { toast(err.message, true); }
+});
+
+// ---------- Équipe ----------
+async function afficherEquipe() {
+  const users = await api("/utilisateurs");
+  table($("#t-users"),
+    ["Nom", "E-mail", "Rôle", "Statut", ""],
+    users.map((u) => `<tr><td>${esc(u.nom)}</td><td>${esc(u.email)}</td>
+      <td>${esc(ROLES[u.role] || u.role)}</td>
+      <td>${u.actif ? '<span class="badge ok">Actif</span>' : '<span class="badge bad">Désactivé</span>'}</td>
+      <td class="num">${u.id === moi.utilisateur.id ? "<em style='color:var(--muted)'>toi</em>" :
+        `<button class="link ${u.actif ? "danger" : ""}" data-user="${u.id}" data-actif="${!u.actif}">
+          ${u.actif ? "Désactiver" : "Réactiver"}</button>`}</td></tr>`));
+}
+
+$("#t-users").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.user;
+  if (!id) return;
+  try {
+    await api(`/utilisateurs/${id}/actif?actif=${ev.target.dataset.actif}`, { method: "PATCH" });
+    afficherEquipe();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Paramètres ----------
+function afficherParametres() {
+  const f = $("#f-ecole");
+  for (const k of ["nom", "adresse", "telephone", "devise", "annee_scolaire"]) f.elements[k].value = moi.ecole[k] ?? "";
+}
+
+$("#f-ecole").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const data = Object.fromEntries(new FormData(ev.target));
+  try {
+    moi.ecole = await api("/ecole", { method: "PATCH", body: JSON.stringify(data) });
+    $("#nom-ecole").textContent = "🏫 " + moi.ecole.nom;
+    toast("Informations enregistrées ✔");
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---------- Navigation ----------
 const vues = {
   dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
-  paiements: afficherImpayes, notes: afficherBulletin,
+  paiements: afficherImpayes, notes: afficherBulletin, equipe: afficherEquipe,
+  parametres: afficherParametres,
 };
-let vueActive = "dashboard";
+let vueActive = null;
+
+function ouvrirOnglet(nom) {
+  vueActive = nom;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === nom));
+  document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("active", s.id === nom));
+  rafraichir();
+}
 
 async function rafraichir() {
   try {
@@ -405,35 +739,32 @@ async function rafraichir() {
 }
 
 document.querySelectorAll("nav button").forEach((btn) =>
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("nav button, section").forEach((el) => el.classList.remove("active"));
-    btn.classList.add("active");
-    vueActive = btn.dataset.tab;
-    $("#" + vueActive).classList.add("active");
-    rafraichir();
-  }));
+  btn.addEventListener("click", () => ouvrirOnglet(btn.dataset.tab)));
 
-// ---------- Formulaires ----------
-function brancherFormulaire(selector, path, message, reset = true) {
+// ---------- Formulaires simples ----------
+function brancherFormulaire(selector, path, message, apres) {
   $(selector).addEventListener("submit", async (ev) => {
     ev.preventDefault();
     try {
-      await api(path, { method: "POST", body: JSON.stringify(formData(ev.target)) });
+      const r = await api(path, { method: "POST", body: JSON.stringify(formData(ev.target)) });
       toast(message);
-      if (reset) {
-        // garde les listes déroulantes, vide les champs texte
-        [...ev.target.elements].forEach((el) => {
-          if (el.tagName === "INPUT" && el.name !== "coefficient") el.value = "";
-        });
-      }
+      [...ev.target.elements].forEach((el) => {
+        if (el.tagName === "INPUT" && el.name !== "coefficient") el.value = "";
+      });
+      apres?.(r);
       rafraichir();
     } catch (err) { toast(err.message, true); }
   });
 }
 brancherFormulaire("#f-classe", "/classes", "Classe créée ✔");
 brancherFormulaire("#f-eleve", "/eleves", "Élève inscrit ✔");
-brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔");
 brancherFormulaire("#f-note", "/notes", "Note ajoutée ✔");
+brancherFormulaire("#f-user", "/utilisateurs", "Compte créé ✔ Donne-lui son e-mail et son mot de passe.");
+brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔", (p) => {
+  $("#dernier-recu").innerHTML = `<div class="recu-pret">
+    <span>Reçu <b>${esc(p.numero_recu)}</b> — ${argent(p.montant)}</span>
+    <button class="btn" data-recu="${p.id}">📄 Imprimer le reçu</button></div>`;
+});
 
 let rechercheTimer;
 $("#q-eleve").addEventListener("input", () => {
@@ -448,8 +779,36 @@ $("#t-impayes").addEventListener("click", (ev) => {
   const id = ev.target.dataset.historique;
   if (id) afficherHistorique(Number(id));
 });
+document.addEventListener("click", (ev) => {
+  const id = ev.target.dataset.recu;
+  if (id) ouvrirFichier(`/paiements/${id}/recu.pdf`, "recu.pdf");
+});
 
-rafraichir();
+// ---------- Démarrage ----------
+async function demarrer(ongletDemande) {
+  if (!store.get()) return afficherAuth("login");
+  try { moi = await api("/auth/moi"); }
+  catch { return afficherAuth("login"); }
+
+  $("#nom-ecole").textContent = "🏫 " + moi.ecole.nom;
+  $("#nom-user").textContent = moi.utilisateur.nom;
+  $("#role-user").textContent = ROLES[moi.utilisateur.role];
+  // Affiche seulement ce que le rôle permet
+  document.querySelectorAll("[data-roles]").forEach((el) =>
+    (el.hidden = !el.dataset.roles.split(" ").includes(moi.utilisateur.role)));
+  // La liste prend toute la largeur quand le formulaire est caché
+  for (const id of ["card-classes", "card-eleves"]) {
+    const card = $("#" + id);
+    card.style.gridColumn = card.previousElementSibling.hidden ? "1 / -1" : "";
+  }
+
+  $("#auth").hidden = true;
+  $("#appli").hidden = false;
+  const premier = [...document.querySelectorAll("nav button")].find((b) => !b.hidden).dataset.tab;
+  ouvrirOnglet(ongletDemande && !$(`nav button[data-tab=${ongletDemande}]`).hidden ? ongletDemande : premier);
+}
+
+demarrer();
 </script>
 </body>
 </html>

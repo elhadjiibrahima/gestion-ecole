@@ -1,15 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import Classe, ClasseCreate, Eleve
+from app.models import Classe, ClasseCreate, Ecole, Eleve, Role, Utilisateur
+from app.pdf import en_tete_pdf, pdf_bulletins
+from app.security import TOUS, exiger_role
+from app.services import bulletins_classe, get_classe
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 
 
 @router.post("", response_model=Classe, status_code=201)
-def creer_classe(data: ClasseCreate, session: Session = Depends(get_session)):
-    classe = Classe.model_validate(data)
+def creer_classe(
+    data: ClasseCreate,
+    user: Utilisateur = Depends(exiger_role(Role.directeur)),
+    session: Session = Depends(get_session),
+):
+    classe = Classe.model_validate(data, update={"ecole_id": user.ecole_id})
     session.add(classe)
     session.commit()
     session.refresh(classe)
@@ -17,14 +24,56 @@ def creer_classe(data: ClasseCreate, session: Session = Depends(get_session)):
 
 
 @router.get("", response_model=list[Classe])
-def lister_classes(session: Session = Depends(get_session)):
-    return session.exec(select(Classe).order_by(Classe.nom)).all()
+def lister_classes(
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
+    return session.exec(
+        select(Classe).where(Classe.ecole_id == user.ecole_id).order_by(Classe.nom)
+    ).all()
+
+
+@router.patch("/{classe_id}", response_model=Classe)
+def modifier_classe(
+    classe_id: int,
+    data: ClasseCreate,
+    user: Utilisateur = Depends(exiger_role(Role.directeur)),
+    session: Session = Depends(get_session),
+):
+    classe = get_classe(session, classe_id, user.ecole_id)
+    classe.sqlmodel_update(data.model_dump())
+    session.add(classe)
+    session.commit()
+    session.refresh(classe)
+    return classe
 
 
 @router.get("/{classe_id}/eleves", response_model=list[Eleve])
-def eleves_de_la_classe(classe_id: int, session: Session = Depends(get_session)):
-    if not session.get(Classe, classe_id):
-        raise HTTPException(404, "Classe introuvable")
+def eleves_de_la_classe(
+    classe_id: int,
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
+    get_classe(session, classe_id, user.ecole_id)
     return session.exec(
         select(Eleve).where(Eleve.classe_id == classe_id).order_by(Eleve.nom)
     ).all()
+
+
+@router.get("/{classe_id}/bulletins.pdf", response_class=Response)
+def bulletins_pdf(
+    classe_id: int,
+    trimestre: int,
+    user: Utilisateur = Depends(exiger_role(*TOUS)),
+    session: Session = Depends(get_session),
+):
+    """Tous les bulletins de la classe dans un seul PDF (une page par élève)."""
+    if trimestre not in (1, 2, 3):
+        raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
+    classe = get_classe(session, classe_id, user.ecole_id)
+    bulletins = bulletins_classe(session, classe, trimestre)
+    if not bulletins:
+        raise HTTPException(400, "Aucun élève dans cette classe")
+    pdf = pdf_bulletins(session.get(Ecole, user.ecole_id), bulletins)
+    return Response(pdf, media_type="application/pdf",
+                    headers=en_tete_pdf(f"bulletins_{classe.nom}_T{trimestre}.pdf"))
