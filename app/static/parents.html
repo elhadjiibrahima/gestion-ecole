@@ -126,7 +126,11 @@ async function api(chemin, options = {}) {
   if (jeton) headers.Authorization = "Bearer " + jeton;
   const r = await fetch(chemin, { ...options, headers });
   if (r.status === 401 && jeton) { garder(null); afficherConnexion(); throw new Error("Session expirée, reconnectez-vous"); }
-  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail; } catch {} throw new Error(m); }
+  if (!r.ok) {
+    let m = r.statusText; try { m = (await r.json()).detail; } catch {}
+    if (r.status === 402) { afficherConnexion(); toast("L'espace parents de l'école est momentanément indisponible.", true); }
+    throw new Error(m);
+  }
   return options.brut ? r : r.json();
 }
 

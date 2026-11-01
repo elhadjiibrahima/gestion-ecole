@@ -8,7 +8,7 @@ from app.database import init_db
 from fastapi.staticfiles import StaticFiles
 
 from app.routers import (
-    absences, annee, auth, caisse, classes, echeancier, eleves, exports, matieres, messages, notes,
+    absences, admin, annee, auth, caisse, classes, echeancier, eleves, exports, matieres, messages, notes,
     paiements, parents, photos, stats,
 )
 
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Gestion École",
     description="API de gestion scolaire : élèves, classes, frais et notes.",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -43,6 +43,7 @@ app.include_router(echeancier.router)
 app.include_router(caisse.router)
 app.include_router(photos.router)
 app.include_router(parents.router)
+app.include_router(admin.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -56,6 +57,12 @@ def interface_web():
 def espace_parents():
     """Page de l'espace parents (sur téléphone)."""
     return FileResponse(STATIC_DIR / "parents.html")
+
+
+@app.get("/admin", include_in_schema=False)
+def espace_admin():
+    """Console du super admin (gestion des écoles et des abonnements)."""
+    return FileResponse(STATIC_DIR / "admin.html")
 
 
 @app.get("/sw.js", include_in_schema=False)

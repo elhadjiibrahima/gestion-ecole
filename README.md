@@ -66,14 +66,44 @@ La base `ecole.db` est créée automatiquement.
 python -m pytest
 ```
 
-## Configuration (variables d'environnement)
+## Configuration et clés secrètes
+
+**Aucune clé n'est écrite dans le code.** Tout ce qui est secret ou propre à une installation se règle par
+des variables d'environnement, ou dans un fichier `.env` à la racine (modèle : `.env.example`).
+Le fichier `.env` et la base `ecole.db` sont exclus de Git (`.gitignore`) : ils ne vont jamais sur GitHub.
 
 | Variable | Rôle | Par défaut |
 |---|---|---|
-| `SECRET_KEY` | Clé de signature des sessions. **À changer en production** (longue chaîne aléatoire) | valeur de dev |
-| `TOKEN_HEURES` | Durée d'une session avant reconnexion | `12` |
+| `SECRET_KEY` | Signe les sessions (64 caractères aléatoires) | créée automatiquement dans `.env` sur un poste de développement |
+| `ENVIRONNEMENT` | `production` : refuse de démarrer sans `SECRET_KEY` | `developpement` |
+| `DATABASE_URL` | Base de données | `sqlite:///./ecole.db` |
+| `ESSAI_JOURS` | Période d'essai d'une nouvelle école | `30` |
+| `CONTACT_ABONNEMENT` | Contact affiché quand l'abonnement expire | – |
+| `INSCRIPTION_PUBLIQUE` | `non` : seules les écoles ouvertes par le super admin existent | `oui` |
+| `TOKEN_HEURES` | Durée d'une session | `12` |
 
-Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
+Générer une clé : `python -m app.cli generer-cle`
+
+Les mots de passe ne sont jamais stockés en clair (PBKDF2-SHA256 avec sel).
+
+## Super admin (éditeur du logiciel)
+
+Le super admin gère toutes les écoles : abonnements, suspensions, assistance. Son compte **ne se crée pas
+depuis le site**, seulement sur le serveur :
+
+```bash
+python -m app.cli creer-superadmin
+```
+
+Puis connexion sur **http://127.0.0.1:8000/admin** :
+- tableau de bord : écoles abonnées, en essai, expirées, qui finissent bientôt, revenus ;
+- encaisser un abonnement (1, 3, 6 ou 12 mois) : l'accès est prolongé à la suite de la date de fin ;
+- corriger une date, suspendre / réactiver une école, réinitialiser le mot de passe d'un directeur,
+  ouvrir une école directement (avec des mois offerts).
+
+Côté école : alerte 7 jours avant la fin ; à l'expiration, l'application est bloquée mais les **exports Excel
+restent disponibles** (l'école peut récupérer ses données) ; une école **suspendue** est entièrement bloquée,
+espace parents compris.
 
 ## Routes principales
 
@@ -118,6 +148,11 @@ Générer une clé : `python -c "import secrets; print(secrets.token_hex(32))"`
 | PUT | `/utilisateurs/{id}/affectations` | Matières × classes d'un enseignant | directeur |
 | GET | `/classes/{id}/resultats-annuels` | Moyennes annuelles, rang, décision | tous |
 | PUT | `/eleves/{id}/reduction` | Réduction / bourse | directeur |
+| POST | `/admin/connexion` | Connexion super admin | public |
+| GET | `/admin/stats`, `/admin/ecoles` | Vue de toutes les écoles | super admin |
+| POST | `/admin/ecoles/{id}/abonnement` | Encaisser et prolonger | super admin |
+| PATCH | `/admin/ecoles/{id}` | Corriger fin / statut / formule | super admin |
+| POST | `/admin/ecoles/{id}/suspendre`, `/reactiver` | Suspendre / réactiver | super admin |
 | GET | `/stats` | Chiffres du tableau de bord | gestion |
 | GET/POST/DELETE | `/notes` | Notes | tous / pédagogie |
 | GET | `/notes/historique?classe_id=&eleve_id=&utilisateur_id=` | Qui a saisi quoi | pédagogie |

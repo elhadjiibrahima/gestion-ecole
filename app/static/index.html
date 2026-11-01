@@ -125,6 +125,7 @@
   .liste-cases label { display: flex; flex-direction: row; gap: 6px; align-items: center; color: var(--text); font-size: .9rem; }
   .liste-cases input { width: auto; }
   #bandeau-reseau { position: sticky; top: 0; z-index: 5; padding: 9px 16px; font-size: .88rem; line-height: 1.6; }
+  #bandeau-abonnement { background: #fef3c7; color: #92400e; padding: 9px 16px; font-size: .88rem; }
   #bandeau-reseau.hors-ligne { background: #1f2937; color: #fff; }
   #bandeau-reseau.attente { background: #fef3c7; color: #92400e; }
   #bandeau-reseau.echec { background: var(--bad-bg); color: var(--bad); }
@@ -198,6 +199,7 @@
 <!-- ===================== APPLICATION ===================== -->
 <div id="appli" hidden>
 <div id="bandeau-reseau" hidden></div>
+<div id="bandeau-abonnement" hidden></div>
 <header>
   <h1 id="nom-ecole">🏫 Gestion École</h1>
   <div class="who">
@@ -646,6 +648,21 @@
 </main>
 </div>
 
+<!-- Accès bloqué (abonnement expiré ou suspendu) -->
+<div id="blocage" hidden style="position:fixed;inset:0;background:rgba(17,24,39,.75);z-index:20;display:grid;place-items:center;padding:16px">
+  <div class="card" style="max-width:480px;width:100%">
+    <h2 id="blocage-titre">🔒 Accès bloqué</h2>
+    <p id="blocage-message" style="margin:0 0 10px"></p>
+    <p id="blocage-contact" class="hint" style="margin:0 0 14px"></p>
+    <div class="row" id="blocage-exports">
+      <button class="btn secondary" data-export-bloque="eleves">⬇ Élèves</button>
+      <button class="btn secondary" data-export-bloque="paiements">⬇ Paiements</button>
+      <button class="btn secondary" data-export-bloque="caisse">⬇ Caisse</button>
+    </div>
+    <button class="btn" id="blocage-quitter" style="margin-top:12px;width:100%">Se déconnecter</button>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -677,6 +694,7 @@ const dateHeure = (d) => {
 function toast(msg, error = false) {
   // Hors connexion, le bandeau du haut le dit déjà : inutile d'afficher une erreur à chaque écran
   if (error && !navigator.onLine && /^Hors connexion/.test(msg)) return;
+  if (error && !$("#blocage").hidden) return;     // l'écran de blocage affiche déjà le message
   const t = $("#toast");
   t.textContent = msg;
   t.className = "show" + (error ? " error" : "");
@@ -804,6 +822,12 @@ async function api(path, options = {}) {
   }
   if (attente && res.status === 503 && res.headers.get("X-Hors-Ligne")) return mettreEnAttente(path, options);
   if (res.status === 401 && token) { deconnexion(); throw new Error("Session expirée, reconnecte-toi"); }
+  if (res.status === 402) {
+    let detail = "Abonnement terminé";
+    try { detail = (await res.json()).detail; } catch {}
+    afficherBlocage({ statut: /suspendu/i.test(detail) ? "suspendu" : "expire", message: detail, contact: moi?.abonnement?.contact });
+    throw new Error(detail);
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -868,8 +892,11 @@ function deconnexion(ev) {
   }
   navigator.serviceWorker?.controller?.postMessage({ type: "vider-donnees" });
   equipeChargee = false;
+  const etaitConnecte = !!moi;
   store.set(null);
   moi = null;
+  // On recharge la page : rien de l'utilisateur précédent ne reste affiché (ordinateur partagé)
+  if (etaitConnecte) { location.reload(); return; }
   afficherAuth("login");
 }
 
@@ -2255,11 +2282,35 @@ document.addEventListener("click", (ev) => {
   if (id) ouvrirFichier(`/paiements/${id}/recu.pdf`, "recu.pdf");
 });
 
+// ---------- Abonnement de l'école ----------
+function afficherBlocage(a) {
+  $("#blocage").hidden = false;
+  $("#blocage-titre").textContent = a.statut === "suspendu" ? "🔒 Accès suspendu" : "🔒 Abonnement expiré";
+  $("#blocage-message").textContent = a.message || "";
+  $("#blocage-contact").textContent = a.contact ? `Pour renouveler : ${a.contact}` : "Contacte l'éditeur du logiciel pour renouveler.";
+  // Une école expirée (pas suspendue) peut récupérer ses données
+  $("#blocage-exports").hidden = a.statut !== "expire" || !peut("directeur", "comptable");
+}
+function majAbonnement() {
+  const a = moi.abonnement, b = $("#bandeau-abonnement");
+  $("#blocage").hidden = true;
+  if (!a) { b.hidden = true; return; }
+  if (a.statut === "expire" || a.statut === "suspendu") { b.hidden = true; return afficherBlocage(a); }
+  b.hidden = !(a.message && peut("directeur"));
+  b.textContent = (a.message || "") + (a.contact ? ` Pour renouveler : ${a.contact}.` : "");
+}
+document.addEventListener("click", (ev) => {
+  const e = ev.target.dataset.exportBloque;
+  if (e) ouvrirFichier(`/export/${e}.xlsx`, `${e}.xlsx`);
+});
+$("#blocage-quitter").addEventListener("click", () => deconnexion());
+
 // ---------- Démarrage ----------
 async function demarrer(ongletDemande) {
   if (!store.get()) return afficherAuth("login");
   try { moi = await api("/auth/moi"); }
   catch { return afficherAuth("login"); }
+  majAbonnement();
 
   titreEcole();
   $("#nom-user").textContent = moi.utilisateur.nom;

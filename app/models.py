@@ -23,6 +23,11 @@ class EcoleBase(SQLModel):
 class Ecole(EcoleBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Abonnement (géré uniquement par le super admin)
+    abonnement_statut: str = "essai"         # essai / actif / suspendu
+    abonnement_fin: Optional[date] = None    # dernier jour d'accès
+    plan: Optional[str] = None
+    motif_suspension: Optional[str] = None
 
 
 class EcoleUpdate(SQLModel):
@@ -102,9 +107,18 @@ class Token(SQLModel):
     token_type: str = "bearer"
 
 
+class AbonnementInfo(SQLModel):
+    statut: str                              # essai / actif / expire / suspendu
+    fin: Optional[date]
+    jours_restants: Optional[int]
+    message: Optional[str] = None
+    contact: Optional[str] = None
+
+
 class Moi(SQLModel):
     utilisateur: UtilisateurPublic
     ecole: Ecole
+    abonnement: Optional[AbonnementInfo] = None
 
 
 # ---------- Classes ----------
@@ -692,3 +706,78 @@ class ResultatAnnuel(SQLModel):
     moyenne_annuelle: Optional[float]
     rang: Optional[int]
     decision: Optional[str]
+
+
+# ---------- Super admin (gestion de toutes les écoles) ----------
+class SuperAdmin(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    nom: str
+    mot_de_passe_hash: str
+    cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PaiementAbonnement(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    montant: int = Field(ge=0)
+    devise: str = "FCFA"
+    mois: int = Field(ge=0)
+    debut: date
+    fin: date
+    mode: str = "especes"
+    reference: Optional[str] = None
+    note: Optional[str] = None
+    date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    saisi_par_id: Optional[int] = Field(default=None, foreign_key="superadmin.id")
+
+
+class ProlongationAbonnement(SQLModel):
+    mois: int = Field(ge=1, le=36)
+    montant: int = Field(ge=0)
+    devise: str = "FCFA"
+    mode: str = "especes"
+    reference: Optional[str] = Field(default=None, max_length=60)
+    note: Optional[str] = Field(default=None, max_length=200)
+    plan: Optional[str] = Field(default=None, max_length=40)
+
+
+class CorrectionAbonnement(SQLModel):
+    fin: Optional[date] = None
+    statut: Optional[Literal["essai", "actif"]] = None
+    plan: Optional[str] = Field(default=None, max_length=40)
+
+
+class Suspension(SQLModel):
+    motif: str = Field(min_length=3, max_length=200)
+
+
+class EcoleAdmin(SQLModel):
+    """Vue d'une école pour le super admin."""
+    id: int
+    nom: str
+    telephone: Optional[str]
+    adresse: Optional[str]
+    cree_le: datetime
+    annee_scolaire: str
+    directeur: Optional[str]
+    email_directeur: Optional[str]
+    nb_eleves: int
+    nb_utilisateurs: int
+    abonnement: AbonnementInfo
+    plan: Optional[str]
+    motif_suspension: Optional[str]
+    total_abonnements: int
+    derniere_activite: Optional[datetime]
+
+
+class StatsPlateforme(SQLModel):
+    nb_ecoles: int
+    actives: int
+    en_essai: int
+    expirees: int
+    suspendues: int
+    expirent_bientot: int
+    nb_eleves: int
+    revenus_total: int
+    revenus_mois: int

@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("PBKDF2_ITERATIONS", "1000")  # tests rapides
+os.environ.setdefault("SECRET_KEY", "cle-de-test-" + "x" * 40)      # jamais une vraie clé
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,9 +15,10 @@ from app.main import app
 @pytest.fixture(autouse=True)
 def compteurs_a_zero():
     """Les compteurs d'essais de connexion ne doivent pas passer d'un test à l'autre."""
-    from app.routers import auth, parents
+    from app.routers import admin, auth, parents
     auth._ECHECS.clear()
     parents._ECHECS.clear()
+    admin._ECHECS.clear()
     yield
 
 

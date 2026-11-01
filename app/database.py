@@ -1,9 +1,9 @@
-import os
+from datetime import date, timedelta
 
 from sqlalchemy import inspect, text
 from sqlmodel import SQLModel, Session, create_engine
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ecole.db")
+from app.config import DATABASE_URL, ESSAI_JOURS
 
 # check_same_thread=False : nécessaire pour SQLite avec FastAPI
 engine = create_engine(
@@ -55,6 +55,9 @@ def migrer(moteur) -> None:
                 SELECT ecole.annee_scolaire FROM eleve JOIN ecole ON ecole.id = eleve.ecole_id
                 WHERE eleve.id = note.eleve_id)
             WHERE annee_scolaire IS NULL"""))
+        # Écoles créées avant les abonnements : période d'essai à partir d'aujourd'hui
+        conn.execute(text("UPDATE ecole SET abonnement_fin = :fin WHERE abonnement_fin IS NULL"),
+                     {"fin": date.today() + timedelta(days=ESSAI_JOURS)})
         conn.execute(text("""
             UPDATE notehistorique SET annee_scolaire = (
                 SELECT annee_scolaire FROM ecole WHERE ecole.id = notehistorique.ecole_id)

@@ -1,4 +1,5 @@
 import time
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
@@ -10,7 +11,9 @@ from app.models import (
     Ecole, EcoleUpdate, InscriptionEcole, Moi, Role, Token, Utilisateur,
     UtilisateurCreate, UtilisateurPublic,
 )
+from app.config import ESSAI_JOURS, INSCRIPTION_PUBLIQUE
 from app.routers.matieres import ajouter_matieres_defaut
+from app.services import etat_abonnement
 from app.security import (
     affectations_de, creer_token, exiger_role, hacher_mot_de_passe, utilisateur_courant,
     verifier_mot_de_passe,
@@ -26,9 +29,17 @@ def _email_libre(session: Session, email: str) -> None:
 
 @router.post("/auth/inscription", response_model=Token, status_code=201)
 def inscrire_ecole(data: InscriptionEcole, session: Session = Depends(get_session)):
-    """Crée une nouvelle école et le compte de son directeur."""
+    """Crée une nouvelle école (en période d'essai) et le compte de son directeur."""
+    if not INSCRIPTION_PUBLIQUE:
+        raise HTTPException(403, "Les inscriptions sont fermées : contacte l'éditeur du logiciel pour ouvrir un compte")
+    return creer_ecole_et_directeur(session, data)
+
+
+def creer_ecole_et_directeur(session: Session, data: InscriptionEcole, statut: str = "essai",
+                             fin: date | None = None) -> Token:
     _email_libre(session, data.email)
-    ecole = Ecole(nom=data.nom_ecole, adresse=data.adresse, telephone=data.telephone, devise=data.devise)
+    ecole = Ecole(nom=data.nom_ecole, adresse=data.adresse, telephone=data.telephone, devise=data.devise,
+                  abonnement_statut=statut, abonnement_fin=fin or date.today() + timedelta(days=ESSAI_JOURS))
     session.add(ecole)
     session.flush()
     directeur = Utilisateur(
@@ -84,7 +95,8 @@ def changer_mot_de_passe(
 
 @router.get("/auth/moi", response_model=Moi)
 def moi(user: Utilisateur = Depends(utilisateur_courant), session: Session = Depends(get_session)):
-    return Moi(utilisateur=public(session, user), ecole=session.get(Ecole, user.ecole_id))
+    ecole = session.get(Ecole, user.ecole_id)
+    return Moi(utilisateur=public(session, user), ecole=ecole, abonnement=etat_abonnement(ecole))
 
 
 def public(session: Session, u: Utilisateur) -> UtilisateurPublic:

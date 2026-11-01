@@ -6,15 +6,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import Role, Utilisateur
 
-# ⚠️ En production, définis la variable d'environnement SECRET_KEY
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-a-changer-en-production")
+from app.config import SECRET_KEY   # lue dans l'environnement ou le fichier .env, jamais dans le code
 ALGORITHM = "HS256"
 DUREE_TOKEN = timedelta(hours=int(os.getenv("TOKEN_HEURES", "12")))
 PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "390000"))
@@ -59,7 +58,7 @@ def utilisateur_courant(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") == "parent":      # un jeton parent n'ouvre pas l'espace du personnel
+        if payload.get("type") in ("parent", "superadmin"):   # autres espaces : pas d'accès au personnel
             raise erreur
         user = session.get(Utilisateur, int(payload["sub"]))
     except (jwt.PyJWTError, KeyError, ValueError):
@@ -69,11 +68,23 @@ def utilisateur_courant(
     return user
 
 
+def verifier_abonnement(session: Session, ecole_id: int, chemin: str = "") -> None:
+    """Bloque l'école si son abonnement est expiré ou suspendu (402).
+    Une école expirée garde l'accès aux exports pour récupérer ses données."""
+    from app.models import Ecole
+    from app.services import etat_abonnement
+    etat = etat_abonnement(session.get(Ecole, ecole_id))
+    if etat.statut == "suspendu" or (etat.statut == "expire" and not chemin.startswith("/export/")):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, etat.message)
+
+
 def exiger_role(*roles: Role):
-    """Dépendance FastAPI : refuse l'accès si le rôle n'est pas autorisé."""
-    def verifier(user: Utilisateur = Depends(utilisateur_courant)) -> Utilisateur:
+    """Dépendance FastAPI : refuse l'accès si le rôle n'est pas autorisé ou si l'abonnement est terminé."""
+    def verifier(request: Request, user: Utilisateur = Depends(utilisateur_courant),
+                 session: Session = Depends(get_session)) -> Utilisateur:
         if user.role not in roles:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Accès refusé pour ton rôle")
+        verifier_abonnement(session, user.ecole_id, request.url.path)
         return user
     return verifier
 
@@ -139,4 +150,29 @@ def eleve_du_parent(token: str = Depends(oauth2_parent), session: Session = Depe
         raise erreur
     if not eleve or not eleve.code_parent or payload.get("cv") != _empreinte_code(eleve.code_parent):
         raise erreur                             # code régénéré ou retiré : accès coupé
+    verifier_abonnement(session, eleve.ecole_id)
     return eleve
+
+
+# ---------- Super admin ----------
+def creer_token_superadmin(admin) -> str:
+    payload = {"sub": str(admin.id), "type": "superadmin",
+               "exp": datetime.now(timezone.utc) + timedelta(hours=8)}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def superadmin_courant(token: str = Depends(OAuth2PasswordBearer(tokenUrl="/admin/connexion")),
+                       session: Session = Depends(get_session)):
+    from app.models import SuperAdmin
+    erreur = HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expirée, reconnecte-toi",
+                           headers={"WWW-Authenticate": "Bearer"})
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "superadmin":
+            raise erreur
+        admin = session.get(SuperAdmin, int(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        raise erreur
+    if not admin:
+        raise erreur
+    return admin

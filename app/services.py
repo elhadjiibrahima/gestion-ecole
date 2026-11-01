@@ -10,6 +10,29 @@ from app.models import (
 )
 
 
+# ---------- Abonnement ----------
+def etat_abonnement(ecole: Ecole):
+    """Statut réel : essai / actif / expire / suspendu, et jours restants."""
+    from app.config import CONTACT_ABONNEMENT
+    from app.models import AbonnementInfo
+    jours = (ecole.abonnement_fin - date.today()).days if ecole.abonnement_fin else None
+    if ecole.abonnement_statut == "suspendu":
+        statut = "suspendu"
+        message = "L'accès de l'école est suspendu" + (f" : {ecole.motif_suspension}" if ecole.motif_suspension else ".")
+    elif jours is not None and jours < 0:
+        statut = "expire"
+        message = (f"L'abonnement de l'école a expiré le {ecole.abonnement_fin:%d/%m/%Y}. "
+                   "Les données restent consultables en export, mais l'application est bloquée jusqu'au renouvellement.")
+    else:
+        statut = ecole.abonnement_statut
+        message = None
+        if jours is not None and jours <= 7:
+            quoi = "La période d'essai" if statut == "essai" else "L'abonnement"
+            message = f"{quoi} se termine dans {jours} jour(s), le {ecole.abonnement_fin:%d/%m/%Y}."
+    return AbonnementInfo(statut=statut, fin=ecole.abonnement_fin, jours_restants=jours, message=message,
+                          contact=CONTACT_ABONNEMENT or None)
+
+
 # ---------- Année scolaire ----------
 def annee_courante(session: Session, ecole_id: int) -> str:
     return session.get(Ecole, ecole_id).annee_scolaire

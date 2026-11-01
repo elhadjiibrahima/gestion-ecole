@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Console super admin — Gestion École</title>
+<style>
+  :root { --bg: #f4f4f7; --card: #fff; --text: #1f2937; --muted: #6b7280; --primary: #4338ca; --primary-light: #e0e7ff;
+          --border: #e5e7eb; --ok: #059669; --ok-bg: #d1fae5; --bad: #dc2626; --bad-bg: #fee2e2; --warn: #b45309; --warn-bg: #fef3c7; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: #1e1b4b; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.1rem; }
+  header button { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+  main { max-width: 1250px; margin: 0 auto; padding: 18px 16px 60px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 1rem; }
+  .kpi .l { color: var(--muted); font-size: .82rem; } .kpi .v { font-size: 1.5rem; font-weight: 700; margin-top: 2px; }
+  .mt { margin-top: 16px; }
+  input, select { padding: 8px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: .92rem; background: #fff; }
+  label { display: grid; gap: 3px; font-size: .8rem; color: var(--muted); }
+  .btn { background: var(--primary); color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: .9rem; }
+  .btn.rouge { background: var(--bad); } .btn.clair { background: var(--primary-light); color: var(--primary); }
+  button.link { background: none; border: none; color: var(--primary); cursor: pointer; padding: 0; font-size: .85rem; }
+  button.link.rouge { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
+  td.n { text-align: right; white-space: nowrap; }
+  .sub { display: block; color: var(--muted); font-size: .78rem; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+  .actif { background: var(--ok-bg); color: var(--ok); } .essai { background: var(--primary-light); color: var(--primary); }
+  .expire { background: var(--bad-bg); color: var(--bad); } .suspendu { background: #1f2937; color: #fff; }
+  .actions { white-space: nowrap; } .actions button + button { margin-left: 10px; }
+  .formligne { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; padding: 10px; background: #f8fafc; border-radius: 8px; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .table-wrap { overflow-x: auto; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 16px;
+           border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; z-index: 10; }
+  #toast.show { opacity: 1; } #toast.error { background: var(--bad); }
+  .connexion { min-height: 100vh; display: grid; place-items: center; background: #1e1b4b; padding: 16px; }
+  .connexion .card { width: 100%; max-width: 380px; }
+  .connexion form { display: grid; gap: 10px; }
+</style>
+</head>
+<body>
+
+<div class="connexion" id="ecran-connexion" hidden>
+  <div class="card">
+    <h2>🔐 Console super admin</h2>
+    <form id="f-connexion">
+      <label>E-mail<input name="email" type="email" autocomplete="username" required></label>
+      <label>Mot de passe<input name="mot_de_passe" type="password" autocomplete="current-password" required></label>
+      <button class="btn">Se connecter</button>
+    </form>
+  </div>
+</div>
+
+<div id="ecran-console" hidden>
+  <header>
+    <h1>🔐 Console super admin — toutes les écoles</h1>
+    <div><button id="btn-mdp">Mon mot de passe</button> <button id="btn-quitter">Déconnexion</button></div>
+  </header>
+  <main>
+    <div class="card" id="carte-mdp" hidden style="max-width:520px;margin-bottom:16px">
+      <h2>Changer mon mot de passe</h2>
+      <form id="f-mdp" class="formligne">
+        <label>Actuel<input name="ancien" type="password" required></label>
+        <label>Nouveau (12 car. min.)<input name="nouveau" type="password" minlength="12" required></label>
+        <button class="btn">Changer</button>
+      </form>
+    </div>
+
+    <div class="grid">
+      <div class="card kpi"><div class="l">Écoles</div><div class="v" id="k-ecoles">–</div></div>
+      <div class="card kpi"><div class="l">Abonnées</div><div class="v" style="color:var(--ok)" id="k-actives">–</div></div>
+      <div class="card kpi"><div class="l">En essai</div><div class="v" style="color:var(--primary)" id="k-essai">–</div></div>
+      <div class="card kpi"><div class="l">Expirées / suspendues</div><div class="v" style="color:var(--bad)" id="k-bloquees">–</div></div>
+      <div class="card kpi"><div class="l">Finissent dans 7 jours</div><div class="v" style="color:var(--warn)" id="k-bientot">–</div></div>
+      <div class="card kpi"><div class="l">Élèves au total</div><div class="v" id="k-eleves">–</div></div>
+      <div class="card kpi"><div class="l">Encaissé ce mois</div><div class="v" id="k-mois">–</div></div>
+      <div class="card kpi"><div class="l">Encaissé au total</div><div class="v" id="k-total">–</div></div>
+    </div>
+
+    <div class="card mt">
+      <div class="toolbar">
+        <h2 style="margin:0">Écoles</h2>
+        <input id="q" placeholder="Rechercher une école, un directeur…" style="min-width:240px">
+        <select id="filtre">
+          <option value="">Tous les statuts</option><option value="expire">Expirées</option><option value="suspendu">Suspendues</option>
+          <option value="essai">En essai</option><option value="actif">Abonnées</option><option value="bientot">Finissent bientôt</option>
+        </select>
+        <button class="btn clair" id="btn-nouvelle" style="margin-left:auto">+ Ouvrir une école</button>
+      </div>
+      <form id="f-nouvelle" class="formligne" hidden style="margin-bottom:12px">
+        <label>Nom de l'école<input name="nom_ecole" required></label>
+        <label>Téléphone<input name="telephone"></label>
+        <label>Directeur<input name="nom_directeur" required></label>
+        <label>E-mail du directeur<input name="email" type="email" required></label>
+        <label>Mot de passe provisoire<input name="mot_de_passe" minlength="8" required></label>
+        <label>Accès<select name="mois_offerts"><option value="">Période d'essai</option><option value="1">1 mois</option>
+          <option value="3">3 mois</option><option value="12">12 mois</option></select></label>
+        <button class="btn">Créer</button>
+      </form>
+      <div class="table-wrap"><table id="t-ecoles"></table></div>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const argent = (n, d = "FCFA") => Number(n || 0).toLocaleString("fr-FR") + " " + d;
+const dateFr = (d) => (d ? new Date(d).toLocaleDateString("fr-FR") : "–");
+const STATUTS = { actif: "Abonnée", essai: "Essai", expire: "Expirée", suspendu: "Suspendue" };
+const MODES = { especes: "Espèces", orange_money: "Orange Money", mtn_momo: "MTN MoMo", virement: "Virement" };
+let jeton = null, ecoles = [];
+try { jeton = sessionStorage.getItem("jeton_admin"); } catch {}   // session du navigateur seulement
+
+function toast(m, e = false) { const t = $("#toast"); t.textContent = m; t.className = "show" + (e ? " error" : ""); clearTimeout(t._t); t._t = setTimeout(() => (t.className = ""), 3500); }
+function garder(j) { jeton = j; try { j ? sessionStorage.setItem("jeton_admin", j) : sessionStorage.removeItem("jeton_admin"); } catch {} }
+
+async function api(chemin, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(jeton ? { Authorization: "Bearer " + jeton } : {}) };
+  const r = await fetch(chemin, { ...options, headers });
+  if (r.status === 401 && jeton) { garder(null); afficherConnexion(); throw new Error("Session expirée"); }
+  if (!r.ok) {
+    let m = r.statusText;
+    try { const j = await r.json(); m = Array.isArray(j.detail) ? j.detail.map((d) => d.msg).join(", ") : j.detail; } catch {}
+    throw new Error(m);
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+function afficherConnexion() { $("#ecran-console").hidden = true; $("#ecran-connexion").hidden = false; }
+
+$("#f-connexion").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    const r = await api("/admin/connexion", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(ev.target))) });
+    garder(r.access_token); ev.target.reset(); charger();
+  } catch (e) { toast(e.message, true); }
+});
+$("#btn-quitter").addEventListener("click", () => { garder(null); afficherConnexion(); });
+$("#btn-mdp").addEventListener("click", () => ($("#carte-mdp").hidden = !$("#carte-mdp").hidden));
+$("#f-mdp").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try { await api("/admin/mot-de-passe", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(ev.target))) });
+        ev.target.reset(); $("#carte-mdp").hidden = true; toast("Mot de passe changé ✔"); }
+  catch (e) { toast(e.message, true); }
+});
+$("#btn-nouvelle").addEventListener("click", () => ($("#f-nouvelle").hidden = !$("#f-nouvelle").hidden));
+$("#f-nouvelle").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = Object.fromEntries(new FormData(ev.target));
+  const mois = d.mois_offerts; delete d.mois_offerts;
+  try {
+    await api("/admin/ecoles" + (mois ? "?mois_offerts=" + mois : ""), { method: "POST", body: JSON.stringify(d) });
+    toast(`École « ${d.nom_ecole} » ouverte ✔ Donne au directeur son e-mail et son mot de passe.`);
+    ev.target.reset(); ev.target.hidden = true; charger();
+  } catch (e) { toast(e.message, true); }
+});
+
+async function charger() {
+  if (!jeton) return afficherConnexion();
+  let s;
+  try { [s, ecoles] = await Promise.all([api("/admin/stats"), api("/admin/ecoles")]); } catch { return afficherConnexion(); }
+  $("#ecran-connexion").hidden = true; $("#ecran-console").hidden = false;
+  $("#k-ecoles").textContent = s.nb_ecoles; $("#k-actives").textContent = s.actives; $("#k-essai").textContent = s.en_essai;
+  $("#k-bloquees").textContent = s.expirees + s.suspendues; $("#k-bientot").textContent = s.expirent_bientot;
+  $("#k-eleves").textContent = s.nb_eleves.toLocaleString("fr-FR");
+  $("#k-mois").textContent = argent(s.revenus_mois); $("#k-total").textContent = argent(s.revenus_total);
+  dessiner();
+}
+
+function dessiner() {
+  const q = $("#q").value.trim().toLowerCase(), f = $("#filtre").value;
+  const liste = ecoles.filter((e) => (!q || [e.nom, e.directeur, e.email_directeur, e.telephone].join(" ").toLowerCase().includes(q))
+    && (!f || (f === "bientot" ? ["actif", "essai"].includes(e.abonnement.statut) && e.abonnement.jours_restants <= 7 : e.abonnement.statut === f)));
+  const lignes = liste.map((e) => {
+    const a = e.abonnement, j = a.jours_restants;
+    const reste = a.statut === "suspendu" ? esc(e.motif_suspension || "")
+      : j == null ? "" : j < 0 ? `depuis ${-j} jour(s)` : `${j} jour(s) restant(s)`;
+    return `<tr><td><b>${esc(e.nom)}</b><span class="sub">${esc(e.telephone || "")}${e.adresse ? " · " + esc(e.adresse) : ""}</span>
+        <span class="sub">créée le ${dateFr(e.cree_le)} · ${esc(e.annee_scolaire)}</span></td>
+      <td>${esc(e.directeur || "–")}<span class="sub">${esc(e.email_directeur || "")}</span></td>
+      <td class="n">${e.nb_eleves}<span class="sub">${e.nb_utilisateurs} compte(s)</span></td>
+      <td><span class="badge ${a.statut}">${STATUTS[a.statut] || a.statut}</span>${e.plan ? `<span class="sub">${esc(e.plan)}</span>` : ""}</td>
+      <td>${dateFr(a.fin)}<span class="sub" style="${j != null && j <= 7 ? "color:var(--bad)" : ""}">${reste}</span></td>
+      <td class="n">${argent(e.total_abonnements)}<span class="sub">${e.derniere_activite ? "actif le " + dateFr(e.derniere_activite) : "aucune activité"}</span></td>
+      <td class="actions"><button class="link" data-act="prolonger" data-id="${e.id}">Encaisser / prolonger</button><button class="link" data-act="corriger" data-id="${e.id}">Corriger</button>
+        <br>${a.statut === "suspendu" ? `<button class="link" data-act="reactiver" data-id="${e.id}">Réactiver</button>`
+          : `<button class="link rouge" data-act="suspendre" data-id="${e.id}">Suspendre</button>`}<button class="link" data-act="historique" data-id="${e.id}">Historique</button><button class="link" data-act="mdp" data-id="${e.id}">Mdp directeur</button></td></tr>
+      <tr data-panneau="${e.id}" hidden><td colspan="7"></td></tr>`;
+  });
+  $("#t-ecoles").innerHTML = `<tr><th>École</th><th>Directeur</th><th class="n">Élèves</th><th>Statut</th><th>Fin d'accès</th><th class="n">Payé</th><th></th></tr>`
+    + (lignes.join("") || `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Aucune école</td></tr>`);
+}
+$("#q").addEventListener("input", dessiner);
+$("#filtre").addEventListener("change", dessiner);
+
+function panneau(id, html) {
+  document.querySelectorAll("[data-panneau]").forEach((tr) => { if (tr.dataset.panneau !== String(id)) tr.hidden = true; });
+  const tr = $(`[data-panneau="${id}"]`);
+  tr.hidden = false; tr.firstElementChild.innerHTML = html;
+  tr.querySelector("input")?.focus();
+}
+
+$("#t-ecoles").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-act]");
+  if (!b) return;
+  const id = b.dataset.id, e = ecoles.find((x) => x.id === Number(id));
+  try {
+    if (b.dataset.act === "prolonger") panneau(id, `<form class="formligne" data-form="prolonger" data-id="${id}">
+        <label>Durée<select name="mois"><option value="1">1 mois</option><option value="3">3 mois</option><option value="6">6 mois</option><option value="12" selected>12 mois</option></select></label>
+        <label>Montant reçu<input name="montant" type="number" min="0" required></label>
+        <label>Mode<select name="mode"><option value="especes">Espèces</option><option value="orange_money">Orange Money</option><option value="mtn_momo">MTN MoMo</option><option value="virement">Virement</option></select></label>
+        <label>Référence<input name="reference"></label>
+        <label>Formule<input name="plan" value="${esc(e.plan || "")}" placeholder="ex : Standard"></label>
+        <label>Note<input name="note"></label>
+        <button class="btn">Enregistrer le paiement</button>
+        <span class="sub">L'accès est prolongé à partir de la fin actuelle (ou d'aujourd'hui si elle est passée).</span></form>`);
+    if (b.dataset.act === "corriger") panneau(id, `<form class="formligne" data-form="corriger" data-id="${id}">
+        <label>Fin d'accès<input name="fin" type="date" value="${esc(e.abonnement.fin || "")}" required></label>
+        <label>Statut<select name="statut"><option value="essai" ${e.abonnement.statut === "essai" ? "selected" : ""}>Essai</option>
+          <option value="actif" ${e.abonnement.statut === "actif" ? "selected" : ""}>Abonnée</option></select></label>
+        <button class="btn">Corriger</button><span class="sub">Sans paiement (geste commercial, erreur de date…).</span></form>`);
+    if (b.dataset.act === "suspendre") panneau(id, `<form class="formligne" data-form="suspendre" data-id="${id}">
+        <label style="flex:1">Motif (affiché à l'école)<input name="motif" required minlength="3" placeholder="ex : abonnement impayé"></label>
+        <button class="btn rouge">Suspendre l'accès</button></form>`);
+    if (b.dataset.act === "mdp") panneau(id, `<form class="formligne" data-form="mdp" data-id="${id}">
+        <label>Nouveau mot de passe du directeur (${esc(e.email_directeur || "")})<input name="nouveau" minlength="8" required></label>
+        <button class="btn">Changer</button></form>`);
+    if (b.dataset.act === "reactiver") { await api(`/admin/ecoles/${id}/reactiver`, { method: "POST" }); toast("École réactivée ✔"); charger(); }
+    if (b.dataset.act === "historique") {
+      const h = await api(`/admin/ecoles/${id}/abonnements`);
+      panneau(id, h.length ? `<table><tr><th>Date</th><th>Période</th><th class="n">Montant</th><th>Mode</th><th>Référence / note</th></tr>${h.map((p) =>
+        `<tr><td>${dateFr(p.date)}</td><td>${p.mois} mois : ${dateFr(p.debut)} → ${dateFr(p.fin)}</td><td class="n">${argent(p.montant, p.devise)}</td>
+         <td>${esc(MODES[p.mode] || p.mode)}</td><td>${esc(p.reference || "")}${p.note ? `<span class="sub">${esc(p.note)}</span>` : ""}</td></tr>`).join("")}</table>`
+        : `<span class="sub">Aucun paiement d'abonnement.</span>`);
+    }
+  } catch (err) { toast(err.message, true); }
+});
+
+$("#t-ecoles").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, id = f.dataset.id, d = Object.fromEntries(new FormData(f));
+  try {
+    if (f.dataset.form === "prolonger") {
+      await api(`/admin/ecoles/${id}/abonnement`, { method: "POST", body: JSON.stringify({ ...d, mois: Number(d.mois), montant: Number(d.montant) }) });
+      toast("Paiement enregistré, accès prolongé ✔");
+    }
+    if (f.dataset.form === "corriger") { await api(`/admin/ecoles/${id}`, { method: "PATCH", body: JSON.stringify(d) }); toast("Corrigé ✔"); }
+    if (f.dataset.form === "suspendre") { await api(`/admin/ecoles/${id}/suspendre`, { method: "POST", body: JSON.stringify(d) }); toast("Accès suspendu"); }
+    if (f.dataset.form === "mdp") { await api(`/admin/ecoles/${id}/directeur/mot-de-passe`, { method: "POST", body: JSON.stringify(d) }); toast("Mot de passe du directeur changé ✔"); }
+    charger();
+  } catch (err) { toast(err.message, true); }
+});
+
+charger();
+</script>
+</body>
+</html>
