@@ -7,7 +7,7 @@ from app.database import get_session
 from app.excel import lire_import_eleves, modele_import_eleves
 from app.models import (
     Bulletin, Classe, Ecole, Eleve, EleveCreate, EleveInscrit, EleveUpdate, ResultatImport,
-    Reduction, Role, Solde, Utilisateur,
+    AvisSaisie, Depart, Reduction, Role, Solde, Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_bulletins
 from app.security import GESTION, TOUS, exiger_role
@@ -35,7 +35,7 @@ def inscrire_eleve(
     session.add(eleve)
     _attribuer_matricule(session, eleve)
     p = data.paiement
-    paiement = creer_paiement(session, eleve, p.montant, p.mode, p.reference, None, user.id)
+    paiement = creer_paiement(session, eleve, p.montant, p.mode, p.reference, None, user.id, p.type_frais_id)
     session.commit()  # si le paiement est refusé, rien n'est enregistré
     session.refresh(eleve)
     session.refresh(paiement)
@@ -145,6 +145,72 @@ def modifier_eleve(
     if "classe_id" in changes:
         get_classe(session, changes["classe_id"], user.ecole_id, code=400)
     eleve.sqlmodel_update(changes)
+    session.add(eleve)
+    session.commit()
+    session.refresh(eleve)
+    return eleve
+
+
+@router.put("/{eleve_id}/avis-conseil", response_model=Bulletin)
+def avis_du_conseil(
+    eleve_id: int,
+    trimestre: int,
+    data: AvisSaisie,
+    user: Utilisateur = Depends(exiger_role(Role.directeur)),
+    session: Session = Depends(get_session),
+):
+    """Avis du conseil de classe sur le bulletin (texte vide = l'effacer)."""
+    from app.models import AvisConseil
+    if trimestre not in (1, 2, 3):
+        raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
+    annee = session.get(Ecole, user.ecole_id).annee_scolaire
+    avis = session.exec(select(AvisConseil).where(AvisConseil.eleve_id == eleve.id, AvisConseil.trimestre == trimestre,
+                                                  AvisConseil.annee_scolaire == annee)).first()
+    texte = data.texte.strip()
+    if avis and not texte:
+        session.delete(avis)
+    elif avis:
+        avis.texte, avis.utilisateur_id = texte, user.id
+        session.add(avis)
+    elif texte:
+        session.add(AvisConseil(eleve_id=eleve.id, trimestre=trimestre, annee_scolaire=annee, texte=texte,
+                                utilisateur_id=user.id))
+    session.commit()
+    return bulletin_eleve(session, eleve, trimestre)
+
+
+@router.post("/{eleve_id}/depart", response_model=Eleve)
+def marquer_depart(
+    eleve_id: int,
+    data: Depart,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    """L'élève quitte l'école en cours d'année : il sort des listes, des impayés et des appels.
+    Ses paiements, notes et absences restent consultables (case « Anciens élèves »)."""
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
+    if not eleve.actif:
+        raise HTTPException(400, "Cet élève a déjà quitté l'école")
+    eleve.actif = False
+    eleve.annee_sortie = session.get(Ecole, user.ecole_id).annee_scolaire
+    eleve.date_depart = data.date_depart or date.today()
+    eleve.motif_depart = data.motif.strip()
+    session.add(eleve)
+    session.commit()
+    session.refresh(eleve)
+    return eleve
+
+
+@router.post("/{eleve_id}/retour", response_model=Eleve)
+def reintegrer(
+    eleve_id: int,
+    user: Utilisateur = Depends(exiger_role(*GESTION)),
+    session: Session = Depends(get_session),
+):
+    """Annule un départ (erreur, retour de l'élève)."""
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
+    eleve.actif, eleve.annee_sortie, eleve.date_depart, eleve.motif_depart = True, None, None, None
     session.add(eleve)
     session.commit()
     session.refresh(eleve)

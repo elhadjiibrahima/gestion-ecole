@@ -15,11 +15,20 @@ from app.services import calculer_solde, creer_paiement, get_eleve, soldes_ecole
 router = APIRouter(tags=["Paiements"])
 
 
+def nom_frais(session: Session, type_frais_id: int | None) -> str:
+    if type_frais_id is None:
+        return "Scolarité"
+    from app.models import TypeFrais
+    t = session.get(TypeFrais, type_frais_id)
+    return t.nom if t else "?"
+
+
 def details_paiements(session: Session, paiements: list[Paiement]) -> list[PaiementDetail]:
     ids = {p.enregistre_par_id for p in paiements} | {p.annule_par_id for p in paiements}
     noms = {u.id: u.nom for u in session.exec(select(Utilisateur).where(Utilisateur.id.in_(ids - {None})))} if ids else {}
     return [
-        PaiementDetail(**p.model_dump(include=set(PaiementDetail.model_fields) - {"enregistre_par", "annule_par"}),
+        PaiementDetail(**p.model_dump(include=set(PaiementDetail.model_fields) - {"enregistre_par", "annule_par", "frais"}),
+                       frais=nom_frais(session, p.type_frais_id),
                        enregistre_par=noms.get(p.enregistre_par_id), annule_par=noms.get(p.annule_par_id))
         for p in paiements
     ]
@@ -48,7 +57,7 @@ def enregistrer_paiement(
     if not eleve.actif:
         raise HTTPException(400, "Cet élève ne fait plus partie de l'école")
     paiement = creer_paiement(session, eleve, data.montant, data.mode, data.reference,
-                              data.date_paiement, user.id)
+                              data.date_paiement, user.id, data.type_frais_id)
     paiement.cle_client = data.cle_client
     session.commit()
     session.refresh(paiement)
@@ -102,6 +111,7 @@ def recu_pdf(
     pdf = pdf_recu(
         session.get(Ecole, user.ecole_id), paiement, eleve,
         session.get(Classe, eleve.classe_id), solde, caissier.nom if caissier else None,
+        nom_frais(session, paiement.type_frais_id),
     )
     return Response(pdf, media_type="application/pdf", headers=en_tete_pdf(f"recu_{paiement.numero_recu}.pdf"))
 

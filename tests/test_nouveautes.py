@@ -72,7 +72,8 @@ def test_exports(client, dir_headers, setup):
     r = client.get("/export/paiements.xlsx", headers=dir_headers)
     assert "attachment" in r.headers["content-disposition"]
     ws = load_workbook(io.BytesIO(r.content))["Paiements"]
-    assert [ws.cell(i, 11).value for i in (2, 3)] == ["Valide", "ANNULÉ"] and ws["L3"].value == "doublon"
+    assert [ws.cell(i, 12).value for i in (2, 3)] == ["Valide", "ANNULÉ"] and ws["M3"].value == "doublon"
+    assert ws["G2"].value == "Scolarité"
 
     wb = load_workbook(io.BytesIO(client.get("/export/notes.xlsx?trimestre=1", headers=dir_headers).content))
     ws = wb["6ème A"]

@@ -10,6 +10,16 @@ from app.models import (
 )
 
 
+# ---------- Logo et cachet ----------
+def images_ecole(session: Session, ecole_id: int) -> dict:
+    """{"logo": PNG ou None, "cachet": PNG ou None} pour les documents PDF."""
+    from app.models import ImageEcole
+    images = {"logo": None, "cachet": None}
+    for i in session.exec(select(ImageEcole).where(ImageEcole.ecole_id == ecole_id)).all():
+        images[i.type] = i.image
+    return images
+
+
 # ---------- Abonnement ----------
 def etat_abonnement(ecole: Ecole):
     """Statut réel : essai / actif / expire / suspendu, et jours restants."""
@@ -74,14 +84,19 @@ def get_eleve(session: Session, eleve_id: int, ecole_id: int, code: int = 404) -
 
 # ---------- Paiements ----------
 def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference, date_paiement,
-                   utilisateur_id: int) -> Paiement:
-    """Enregistre un paiement (sans commit). Refuse un montant supérieur au reste à payer."""
-    reste = calculer_solde(session, eleve).reste_a_payer
-    if reste == 0:
-        raise HTTPException(400, "Cet élève a déjà payé la totalité de ses frais")
-    if montant > reste:
-        raise HTTPException(400, f"Montant trop élevé : il ne reste que {reste:,} à payer".replace(",", " "))
-    paiement = Paiement(eleve_id=eleve.id, montant=montant, mode=mode, reference=reference,
+                   utilisateur_id: int, type_frais_id: int | None = None) -> Paiement:
+    """Enregistre un paiement (sans commit) pour la scolarité ou un autre frais.
+    Refuse un montant supérieur au reste à payer de ce frais."""
+    solde = calculer_solde(session, eleve)
+    ligne = next((l for l in solde.lignes if l.type_frais_id == type_frais_id and l.du > 0), None)
+    if ligne is None:
+        raise HTTPException(400, "Ce frais ne concerne pas cet élève")
+    nom = "ses frais de scolarité" if type_frais_id is None else f"« {ligne.nom} »"
+    if ligne.reste == 0:
+        raise HTTPException(400, f"Cet élève a déjà payé la totalité de {nom}")
+    if montant > ligne.reste:
+        raise HTTPException(400, f"Montant trop élevé : il ne reste que {ligne.reste:,} à payer pour {nom}".replace(",", " "))
+    paiement = Paiement(eleve_id=eleve.id, type_frais_id=type_frais_id, montant=montant, mode=mode, reference=reference,
                         date_paiement=date_paiement or date.today(), enregistre_par_id=utilisateur_id,
                         annee_scolaire=annee_courante(session, eleve.ecole_id))
     session.add(paiement)
@@ -126,32 +141,65 @@ def frais_eleve(classe: Classe, eleve: Eleve) -> tuple[int, int]:
     return classe.frais_annuels - reduction, reduction
 
 
+def frais_annexes(session: Session, eleve: Eleve) -> list:
+    """Autres frais dus par l'élève cette année : les obligatoires + les facultatifs souscrits."""
+    from app.models import SouscriptionFrais, TypeFrais
+    annee = annee_courante(session, eleve.ecole_id)
+    souscrits = set(session.exec(select(SouscriptionFrais.type_frais_id).where(
+        SouscriptionFrais.eleve_id == eleve.id, SouscriptionFrais.annee_scolaire == annee)).all())
+    types = session.exec(select(TypeFrais).where(TypeFrais.ecole_id == eleve.ecole_id, TypeFrais.actif == True)  # noqa: E712
+                         .order_by(TypeFrais.ordre, TypeFrais.id)).all()
+    return [t for t in types if t.obligatoire or t.id in souscrits]
+
+
 def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | None = None) -> Solde:
+    from app.models import LigneFrais, TypeFrais
     classe = session.get(Classe, eleve.classe_id)
-    frais, reduction = frais_eleve(classe, eleve)
-    total, nb, dernier = session.exec(
-        select(func.coalesce(func.sum(Paiement.montant), 0), func.count(Paiement.id),
-               func.max(Paiement.date_paiement))
+    scolarite, reduction = frais_eleve(classe, eleve)
+    annee = annee_courante(session, eleve.ecole_id)
+    par_type = {t: (s or 0, n) for t, s, n in session.exec(
+        select(Paiement.type_frais_id, func.sum(Paiement.montant), func.count(Paiement.id))
         .where(Paiement.eleve_id == eleve.id, Paiement.annule == False,  # noqa: E712
-               Paiement.annee_scolaire == annee_courante(session, eleve.ecole_id))
-    ).one()
-    reste = max(frais - total, 0)
+               Paiement.annee_scolaire == annee)
+        .group_by(Paiement.type_frais_id)).all()}
+    nb = sum(n for _, n in par_type.values())
+    dernier = session.exec(select(func.max(Paiement.date_paiement)).where(
+        Paiement.eleve_id == eleve.id, Paiement.annule == False, Paiement.annee_scolaire == annee)).one()  # noqa: E712
+    # Une ligne par frais : scolarité, puis les autres frais dus (ou déjà payés)
+    paye_sco = par_type.get(None, (0, 0))[0]
+    lignes = [LigneFrais(type_frais_id=None, nom="Scolarité", du=scolarite, paye=paye_sco,
+                         reste=max(scolarite - paye_sco, 0))]
+    annexes = frais_annexes(session, eleve)
+    ids_annexes = {t.id for t in annexes}
+    for t in annexes:
+        p = par_type.get(t.id, (0, 0))[0]
+        lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=t.montant, paye=p, reste=max(t.montant - p, 0)))
+    for tid, (p, _) in par_type.items():   # payé pour un frais qui ne s'applique plus : on le montre quand même
+        if tid is not None and tid not in ids_annexes:
+            t = session.get(TypeFrais, tid)
+            lignes.append(LigneFrais(type_frais_id=tid, nom=t.nom if t else "?", du=0, paye=p, reste=0))
+    du_total = sum(l.du for l in lignes)
+    total = sum(l.paye for l in lignes)
+    reste = sum(l.reste for l in lignes)
+    reste_annexes = sum(l.reste for l in lignes[1:])
     statut = (StatutPaiement.a_jour if reste == 0
               else StatutPaiement.partiel if total > 0 else StatutPaiement.rien_paye)
+    # L'échéancier porte sur la scolarité ; les autres frais sont dus dès maintenant
     if tranches is None:
         tranches = tranches_annee(session, eleve.ecole_id)
     if tranches:
-        echeances = calculer_echeances(frais, total, tranches)
-        exigible = sum(e.montant for e in echeances if e.date_limite < date.today())
+        echeances = calculer_echeances(scolarite, paye_sco, tranches)
+        exigible_sco = sum(e.montant for e in echeances if e.date_limite < date.today())
         prochaine = next((e for e in echeances if e.statut == "a_venir"), None)
-    else:   # pas d'échéancier : tout est dû
-        echeances, exigible, prochaine = [], frais, None
+    else:
+        echeances, exigible_sco, prochaine = [], scolarite, None
     return Solde(
-        montant_exigible=exigible,
-        retard=max(exigible - total, 0),
+        montant_exigible=exigible_sco + sum(l.du for l in lignes[1:]),
+        retard=max(exigible_sco - paye_sco, 0) + reste_annexes,
         prochaine_echeance=prochaine.date_limite if prochaine else None,
         prochain_montant=prochaine.reste if prochaine else 0,
         echeances=echeances,
+        lignes=lignes,
         frais_classe=classe.frais_annuels,
         reduction=reduction,
         reduction_motif=eleve.reduction_motif if reduction else None,
@@ -160,7 +208,7 @@ def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | Non
         nom_complet=f"{eleve.prenom} {eleve.nom}",
         classe_id=classe.id,
         classe=classe.nom,
-        frais_annuels=frais,
+        frais_annuels=du_total,
         total_paye=total,
         reste_a_payer=reste,
         nb_paiements=nb,
@@ -266,6 +314,30 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
                    if a.type == type_ and (justifiee is None or a.justifiee == justifiee))
 
     annuels = {r.eleve_id: r for r in resultats_annuels(session, classe, inclure)} if trimestre == 3 else {}
+    # Statistiques de la classe par matière (élèves inscrits)
+    from app.models import AppreciationMatiere, AvisConseil
+    par_matiere: dict[str, list[tuple[int, float]]] = {}
+    for e, lignes, _ in resultats:
+        if e.id in classes_ids:
+            for l in lignes:
+                par_matiere.setdefault(l.matiere, []).append((e.id, l.moyenne))
+    appreciations = {(a.eleve_id, a.matiere.lower()): a.texte for a in session.exec(
+        select(AppreciationMatiere).where(AppreciationMatiere.eleve_id.in_(ids), AppreciationMatiere.trimestre == trimestre,
+                                          AppreciationMatiere.annee_scolaire == annee)).all()} if ids else {}
+    avis = {a.eleve_id: a.texte for a in session.exec(
+        select(AvisConseil).where(AvisConseil.eleve_id.in_(ids), AvisConseil.trimestre == trimestre,
+                                  AvisConseil.annee_scolaire == annee)).all()} if ids else {}
+    generales = [g for e, _, g in resultats if g is not None and e.id in classes_ids]
+    moyenne_classe = round(sum(generales) / len(generales), 2) if generales else None
+    for e, lignes, _ in resultats:
+        for l in lignes:
+            valeurs = [v for _, v in par_matiere.get(l.matiere, [])]
+            if valeurs:
+                l.moyenne_classe = round(sum(valeurs) / len(valeurs), 2)
+                l.min_classe, l.max_classe = min(valeurs), max(valeurs)
+                if e.id in classes_ids:
+                    l.rang_matiere = sorted(valeurs, reverse=True).index(l.moyenne) + 1
+            l.appreciation = appreciations.get((e.id, l.matiere.lower()))
     bulletins = []
     for e, lignes, g in resultats:
         b = Bulletin(
@@ -274,6 +346,7 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
             moyenne_generale=g, rang=rang(e, g), effectif=len(classes_ids), appreciation=appreciation(g),
             absences=compte(e, TypeAbsence.absence), absences_justifiees=compte(e, TypeAbsence.absence, True),
             retards=compte(e, TypeAbsence.retard),
+            avis_conseil=avis.get(e.id), moyenne_classe=moyenne_classe,
         )
         if e.id in annuels:
             a = annuels[e.id]

@@ -16,9 +16,12 @@ from app.main import app
 def compteurs_a_zero():
     """Les compteurs d'essais de connexion ne doivent pas passer d'un test à l'autre."""
     from app.routers import admin, auth, parents
+    from app import notifications
     auth._ECHECS.clear()
+    auth._DEMANDES.clear()
     parents._ECHECS.clear()
     admin._ECHECS.clear()
+    notifications.SIMULES.clear()
     yield
 
 

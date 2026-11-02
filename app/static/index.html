@@ -30,6 +30,33 @@
   nav button { background: none; border: none; padding: 14px 14px; cursor: pointer;
                font-size: .95rem; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; }
   nav button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  #groupes { border-bottom: none; }
+  #groupes button { font-weight: 600; color: var(--text); padding: 12px 14px; border-bottom: none; border-radius: 8px 8px 0 0; }
+  #groupes button.active { background: var(--primary-light); color: var(--primary); }
+  #sous-menu { background: var(--primary-light); border-bottom: 1px solid #c7d2fe; }
+  #sous-menu button { padding: 10px 12px; font-size: .9rem; }
+  #sous-menu button.hors-groupe { display: none; }
+  #sous-menu.seul { display: none; }
+  @media (max-width: 640px) {
+    main { padding: 12px 8px 60px; }
+    .card { padding: 12px; }
+    th, td { padding: 7px 5px; }
+    table { font-size: .85rem; }
+    .kpi .value { font-size: 1.1rem !important; }
+    header { padding: 10px 12px; }
+    header h1 { font-size: .98rem; }
+    #groupes button { padding: 10px 10px; font-size: .88rem; }
+    .toolbar input, .toolbar select { max-width: none; flex: 1 1 140px; }
+    .toolbar input[type=checkbox] { flex: 0 0 auto; }
+    .actions { white-space: normal; }
+    .row { flex-wrap: wrap; }
+    .row > label { flex: 1 1 130px; }
+  }
+  .menu-actions { position: relative; display: inline-block; }
+  .menu-actions .menu { position: absolute; right: 0; top: 100%; z-index: 6; background: #fff; border: 1px solid var(--border);
+                        border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 6px; min-width: 190px; text-align: left; }
+  .menu-actions .menu button { display: block; width: 100%; text-align: left; padding: 7px 10px; border-radius: 6px; margin: 0 !important; }
+  .menu-actions .menu button:hover { background: var(--primary-light); }
   main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
   section.tab { display: none; }
   section.tab.active { display: block; }
@@ -47,6 +74,7 @@
   .stack { display: grid; gap: 16px; align-content: start; }
   .mt { margin-top: 16px; }
   @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
+  .two > *, .two-eq > *, .stack > * { min-width: 0; }
   form { display: grid; gap: 10px; }
   label { font-size: .85rem; color: var(--muted); display: grid; gap: 4px; }
   input, select { padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px;
@@ -121,6 +149,10 @@
   .msg .boutons { display: flex; gap: 8px; flex-wrap: wrap; }
   a.btn { text-decoration: none; display: inline-block; }
   .btn.wa { background: #16a34a; }
+  .apercu-image { width: 140px; height: 100px; border: 1px dashed var(--border); border-radius: 8px; display: grid;
+    place-items: center; color: var(--muted); font-size: .8rem; background: #fff; overflow: hidden; }
+  .apercu-image img { max-width: 100%; max-height: 100%; }
+  table.grille input.appr { width: 170px; text-align: left; font-size: .85rem; padding: 6px 8px; }
   .liste-cases { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; }
   .liste-cases label { display: flex; flex-direction: row; gap: 6px; align-items: center; color: var(--text); font-size: .9rem; }
   .liste-cases input { width: auto; }
@@ -141,6 +173,9 @@
   .bulletin-head > div:first-child { flex: 1; min-width: 200px; }
   .bulletin-head > div:last-child { margin-left: auto; }
   .bulletin-head .sub { color: var(--muted); font-size: .8rem; }
+  table.emploi td { vertical-align: top; min-width: 110px; }
+  table.emploi .cours { background: #eef2ff; border-radius: 6px; padding: 4px 6px; font-size: .82rem; line-height: 1.25; position: relative; }
+  table.emploi .cours button { position: absolute; top: 0; right: 2px; padding: 0 4px; }
   table.grille input.note { width: 64px; }
   table.grille tr.verrou td { color: var(--muted); background: #fafafa; }
   table.grille td.moy { font-weight: 700; }
@@ -172,7 +207,26 @@
         <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required></label>
         <button class="btn">Se connecter</button>
       </form>
+      <div class="switch"><button class="link" data-auth="oubli">Mot de passe oublié ?</button></div>
       <div class="switch">Nouvelle école ? <button class="link" data-auth="signup">Créer un compte</button></div>
+    </div>
+
+    <div class="card" id="box-oubli" hidden>
+      <h2>Mot de passe oublié</h2>
+      <div id="oubli-indispo" class="hint" hidden>La récupération automatique n'est pas activée sur ce serveur.
+        Demande au directeur de l'école : il peut te donner un nouveau mot de passe depuis Réglages → Équipe.</div>
+      <form id="f-oubli">
+        <p class="hint" style="margin:0">Tu reçois un code à 6 chiffres par SMS (si ton téléphone est enregistré dans « Mon compte ») ou par e-mail.</p>
+        <label>E-mail du compte<input name="email" type="email" autocomplete="username" required></label>
+        <button class="btn">Recevoir un code</button>
+      </form>
+      <form id="f-reinit" hidden>
+        <p class="hint" style="margin:0" id="reinit-info"></p>
+        <label>Code reçu<input name="code" inputmode="numeric" maxlength="6" minlength="6" autocomplete="one-time-code" required></label>
+        <label>Nouveau mot de passe (8 caractères min.)<input name="nouveau" type="password" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn">Changer le mot de passe</button>
+      </form>
+      <div class="switch"><button class="link" data-auth="login">← Retour à la connexion</button></div>
     </div>
 
     <div class="card" id="box-signup" hidden>
@@ -209,18 +263,27 @@
   </div>
 </header>
 
-<nav>
-  <button data-tab="dashboard" data-roles="directeur comptable">Tableau de bord</button>
-  <button data-tab="classes">Classes</button>
-  <button data-tab="eleves">Élèves</button>
-  <button data-tab="paiements" data-roles="directeur comptable">Paiements</button>
-  <button data-tab="caisse" data-roles="directeur comptable">Caisse</button>
-  <button data-tab="parents" data-roles="directeur comptable">Parents</button>
-  <button data-tab="notes" data-roles="directeur enseignant">Notes & bulletins</button>
-  <button data-tab="absences" data-roles="directeur enseignant surveillant">Absences</button>
-  <button data-tab="equipe" data-roles="directeur">Équipe</button>
-  <button data-tab="parametres" data-roles="directeur">Paramètres</button>
-  <button data-tab="compte">Mon compte</button>
+<nav id="groupes">
+  <button data-groupe-btn="accueil">🏠 Accueil</button>
+  <button data-groupe-btn="eleves">👨‍🎓 Élèves</button>
+  <button data-groupe-btn="argent">💰 Argent</button>
+  <button data-groupe-btn="scolarite">📚 Scolarité</button>
+  <button data-groupe-btn="reglages">⚙️ Réglages</button>
+</nav>
+<nav id="sous-menu">
+  <button data-tab="dashboard" data-groupe="accueil" data-roles="directeur comptable">Tableau de bord</button>
+  <button data-tab="eleves" data-groupe="eleves">Élèves</button>
+  <button data-tab="classes" data-groupe="eleves">Classes</button>
+  <button data-tab="paiements" data-groupe="argent" data-roles="directeur comptable">Paiements</button>
+  <button data-tab="caisse" data-groupe="argent" data-roles="directeur comptable">Caisse</button>
+  <button data-tab="paie" data-groupe="argent" data-roles="directeur comptable">Paie</button>
+  <button data-tab="parents" data-groupe="argent" data-roles="directeur comptable">Messages aux parents</button>
+  <button data-tab="notes" data-groupe="scolarite" data-roles="directeur enseignant">Notes & bulletins</button>
+  <button data-tab="absences" data-groupe="scolarite" data-roles="directeur enseignant surveillant">Absences</button>
+  <button data-tab="emploi" data-groupe="scolarite">Emploi du temps</button>
+  <button data-tab="equipe" data-groupe="reglages" data-roles="directeur">Équipe</button>
+  <button data-tab="parametres" data-groupe="reglages" data-roles="directeur">Paramètres</button>
+  <button data-tab="compte" data-groupe="reglages">Mon compte</button>
 </nav>
 
 <main>
@@ -279,6 +342,7 @@
             <fieldset style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;gap:10px;margin:0">
               <legend style="font-size:.85rem;font-weight:600;padding:0 4px">Premier paiement (obligatoire)</legend>
               <div id="i-frais" class="hint" style="font-size:.85rem;margin:0"></div>
+              <label id="i-pour-zone" hidden>Pour<select name="type_frais_id" id="i-pour"></select></label>
               <label>Montant versé<input name="montant" type="number" min="1" required></label>
               <div class="row">
                 <label>Mode
@@ -336,6 +400,7 @@
           <label>1. Classe<select id="p-classe" class="sel-classes"></select></label>
           <label>2. Élève<select name="eleve_id" id="p-eleve" required></select></label>
           <div id="p-solde" class="hint" style="font-size:.85rem;margin-top:-4px"></div>
+          <label id="p-frais-zone" hidden>3. Pour<select name="type_frais_id" id="p-frais"></select></label>
           <label>Montant<input name="montant" type="number" min="1" required></label>
           <label>Mode
             <select name="mode">
@@ -459,6 +524,7 @@
         <form id="f-user">
           <label>Nom<input name="nom" required></label>
           <label>E-mail<input name="email" type="email" required></label>
+          <label>Téléphone (facultatif)<input name="telephone" placeholder="+224 6.." maxlength="30"></label>
           <label>Rôle
             <select name="role" id="u-role">
               <option value="comptable">Comptable</option>
@@ -505,6 +571,40 @@
         <p class="hint" style="margin:0">L'indicatif est ajouté aux numéros des parents écrits sans (pour WhatsApp).</p>
         <button class="btn">Enregistrer</button>
       </form>
+    </div>
+    <div class="two-eq mt">
+      <div class="card">
+        <h2>Logo et cachet</h2>
+        <p class="hint">Le logo s'imprime en haut des reçus, bulletins et cartes ; le cachet (ou la signature scannée) en bas.
+          Une image PNG sur fond transparent donne le meilleur résultat.</p>
+        <div class="row" style="align-items:start">
+          <div style="display:grid;gap:6px;justify-items:start">
+            <b>Logo</b>
+            <div class="apercu-image" id="apercu-logo">Aucune image</div>
+            <input type="file" accept="image/*" data-image-ecole="logo" hidden>
+            <div><button class="link" data-choisir-image="logo">📁 Choisir…</button>
+              <button class="link danger" data-retirer-image="logo">Retirer</button></div></div>
+          <div style="display:grid;gap:6px;justify-items:start">
+            <b>Cachet / signature</b>
+            <div class="apercu-image" id="apercu-cachet">Aucune image</div>
+            <input type="file" accept="image/*" data-image-ecole="cachet" hidden>
+            <div><button class="link" data-choisir-image="cachet">📁 Choisir…</button>
+              <button class="link danger" data-retirer-image="cachet">Retirer</button></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Autres frais</h2>
+        <p class="hint">Frais d'inscription, cantine, transport, tenue… « Pour tous » : dû par chaque élève.
+          Sinon, choisis les élèves concernés dans Élèves → Actions → « Cantine, transport… ».</p>
+        <div class="table-wrap"><table id="t-types-frais"></table></div>
+        <form id="f-type-frais" class="row" style="align-items:end;margin-top:10px">
+          <label style="flex:2">Nom<input name="nom" placeholder="ex : Cantine" required minlength="2" maxlength="40"></label>
+          <label>Montant annuel<input name="montant" type="number" min="0" required></label>
+          <label style="flex:0 0 auto;flex-direction:row;gap:6px;align-items:center;color:var(--text)">
+            <input type="checkbox" name="obligatoire" style="width:auto" checked> Pour tous</label>
+          <button class="btn" style="flex:0 0 auto">Ajouter</button>
+        </form>
+      </div>
     </div>
     <div class="card mt" style="max-width:720px">
       <h2>Échéancier de paiement</h2>
@@ -629,7 +729,74 @@
           <input type="checkbox" id="m-retard" style="width:auto"> Seulement en retard d'échéance</label>
         <span id="m-resume" style="color:var(--muted);font-size:.85rem"></span>
       </div>
+      <div class="toolbar" id="m-groupe" hidden>
+        <button class="btn" id="btn-sms-groupe" hidden>📤 Envoyer tout par SMS</button>
+        <button class="btn wa" id="btn-assistant">▶ Envoyer un par un (WhatsApp)</button>
+        <span class="hint" id="m-groupe-info" style="margin:0"></span>
+      </div>
+      <div id="m-assistant" hidden></div>
       <div id="m-liste"></div>
+    </div>
+  </section>
+
+  <!-- ===== Emploi du temps ===== -->
+  <section class="tab" id="emploi">
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0">Emploi du temps</h2>
+        <select id="e-mode"></select>
+        <select id="e-classe" class="sel-classes"></select>
+        <select id="e-ens" hidden></select>
+        <button class="btn secondary" id="btn-emploi-pdf">📄 PDF</button>
+      </div>
+      <div class="table-wrap"><table id="t-emploi" class="emploi"></table></div>
+    </div>
+    <div class="card mt" data-roles="directeur" style="max-width:860px">
+      <h2>Ajouter un cours</h2>
+      <p class="hint">Le logiciel refuse un cours qui chevauche un autre cours de la même classe, du même enseignant ou dans la même salle.</p>
+      <form id="f-creneau" class="row" style="align-items:end;flex-wrap:wrap">
+        <label>Classe<select name="classe_id" id="cr-classe" class="sel-classes" required></select></label>
+        <label>Jour<select name="jour" id="cr-jour"></select></label>
+        <label>Début<input name="debut" type="time" value="08:00" required></label>
+        <label>Fin<input name="fin" type="time" value="09:00" required></label>
+        <label>Matière<select name="matiere_id" id="cr-matiere" required></select></label>
+        <label>Enseignant<select name="enseignant_id" id="cr-ens"></select></label>
+        <label>Salle<input name="salle" maxlength="30" placeholder="facultatif"></label>
+        <button class="btn" style="flex:0 0 auto">Ajouter</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===== Paie ===== -->
+  <section class="tab" id="paie">
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0">Paie du personnel</h2>
+        <label style="flex-direction:row;align-items:center;gap:6px">Mois<input type="month" id="paie-mois" style="width:auto"></label>
+        <span class="hint" id="paie-total" style="margin:0 0 0 auto"></span>
+      </div>
+      <p class="hint">Salaire fixe par mois, ou paiement à l'heure (les heures sont proposées d'après l'emploi du temps).
+        Les avances non remboursées sont retirées automatiquement de la fiche. Payer une fiche l'ajoute aux dépenses de la caisse.</p>
+      <div class="table-wrap"><table id="t-paie"></table></div>
+    </div>
+    <div class="two-eq mt">
+      <div class="card">
+        <h2>Donner une avance</h2>
+        <form id="f-avance">
+          <label>Personne<select name="utilisateur_id" id="av-qui" required></select></label>
+          <div class="row">
+            <label>Montant<input name="montant" type="number" min="1" required></label>
+            <label>Mode<select name="mode"><option value="especes">Espèces</option><option value="orange_money">Orange Money</option>
+              <option value="mtn_momo">MTN MoMo</option><option value="virement">Virement</option></select></label>
+          </div>
+          <label>Motif<input name="motif" maxlength="120" placeholder="facultatif"></label>
+          <button class="btn">Enregistrer l'avance</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Avances</h2>
+        <div class="table-wrap" style="max-height:360px;overflow-y:auto"><table id="t-avances"></table></div>
+      </div>
     </div>
   </section>
 
@@ -642,6 +809,14 @@
         <label>Nouveau mot de passe (8 caractères min.)<input name="nouveau" type="password" minlength="8" autocomplete="new-password" required></label>
         <label>Confirmer le nouveau mot de passe<input name="confirmation" type="password" minlength="8" autocomplete="new-password" required></label>
         <button class="btn">Changer le mot de passe</button>
+      </form>
+    </div>
+    <div class="card mt" style="max-width:460px">
+      <h2>Mon téléphone</h2>
+      <p class="hint">Sert à recevoir un code par SMS si tu oublies ton mot de passe.</p>
+      <form id="f-tel" class="row" style="align-items:end">
+        <label>Téléphone<input name="telephone" placeholder="+224 6.." maxlength="30"></label>
+        <button class="btn" style="flex:0 0 auto">Enregistrer</button>
       </form>
     </div>
   </section>
@@ -884,6 +1059,7 @@ function afficherAuth(mode = "login") {
   $("#auth").hidden = false;
   $("#box-login").hidden = mode !== "login";
   $("#box-signup").hidden = mode !== "signup";
+  $("#box-oubli").hidden = mode !== "oubli";
 }
 
 function deconnexion(ev) {
@@ -925,6 +1101,38 @@ $("#f-signup").addEventListener("submit", async (ev) => {
 });
 
 $("#btn-logout").addEventListener("click", deconnexion);
+
+// ---------- Mot de passe oublié ----------
+document.querySelectorAll('[data-auth="oubli"]').forEach((b) => b.addEventListener("click", async () => {
+  $("#f-oubli").hidden = false; $("#f-reinit").hidden = true;
+  try {
+    const r = await api("/auth/recuperation");
+    const ok = r.sms || r.email;
+    $("#oubli-indispo").hidden = ok; $("#f-oubli").hidden = !ok;
+  } catch { /* on laisse le formulaire */ }
+}));
+let emailOubli = "";
+$("#f-oubli").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  emailOubli = ev.target.elements.email.value.trim();
+  try {
+    const r = await api("/auth/mot-de-passe-oublie", { method: "POST", body: JSON.stringify({ email: emailOubli }) });
+    $("#reinit-info").textContent = r.message;
+    $("#f-oubli").hidden = true; $("#f-reinit").hidden = false;
+    $("#f-reinit").elements.code.focus();
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-reinit").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await api("/auth/reinitialiser", { method: "POST", body: JSON.stringify({ email: emailOubli, code: f.elements.code.value.trim(), nouveau: f.elements.nouveau.value }) });
+    f.reset();
+    toast("Mot de passe changé ✔ Connecte-toi avec le nouveau.");
+    afficherAuth("login");
+    $("#f-login").elements.username.value = emailOubli;
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---------- Données en cache ----------
 let classes = [], eleves = [];
@@ -982,12 +1190,43 @@ async function afficherDashboard() {
 async function afficherClasses() {
   const counts = {};
   eleves.forEach((e) => (counts[e.classe_id] = (counts[e.classe_id] || 0) + 1));
+  const dir = peut("directeur");
   table($("#t-classes"),
-    ["Classe", "Niveau", { label: "Élèves", num: true }, { label: "Frais annuels", num: true }],
+    ["Classe", "Niveau", { label: "Élèves", num: true }, { label: "Frais annuels", num: true }, ...(dir ? [""] : [])],
     classes.map((c) => `<tr><td>${esc(c.nom)}</td><td>${esc(c.niveau)}</td>
-      <td class="num">${counts[c.id] || 0}</td><td class="num">${argent(c.frais_annuels)}</td></tr>`),
+      <td class="num">${counts[c.id] || 0}</td><td class="num">${argent(c.frais_annuels)}</td>
+      ${dir ? `<td class="actions"><button class="link" data-modif-classe="${c.id}">✏️ Modifier</button>${counts[c.id]
+        ? "" : `<button class="link danger" data-suppr-classe="${c.id}">🗑 Supprimer</button>`}</td>` : ""}</tr>`),
     peut("directeur") ? "Crée ta première classe à gauche" : "Aucune classe");
 }
+
+$("#t-classes").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  if (d.modifClasse) {
+    const c = classes.find((x) => x.id === Number(d.modifClasse));
+    panneauSous(ev.target.closest("tr"), `<form class="row" data-form-classe="${c.id}" style="align-items:end">
+      <label>Nom<input name="nom" value="${esc(c.nom)}" required></label>
+      <label>Niveau<input name="niveau" value="${esc(c.niveau)}" required></label>
+      <label>Frais annuels<input name="frais_annuels" type="number" min="0" value="${c.frais_annuels}" required></label>
+      <button class="btn" style="flex:0 0 auto">Enregistrer</button></form>
+      <span class="sub">Changer les frais annuels change le reste à payer de tous les élèves de la classe.</span>`);
+  }
+  if (d.supprClasse) {
+    const c = classes.find((x) => x.id === Number(d.supprClasse));
+    if (!confirm(`Supprimer la classe ${c.nom} ?`)) return;
+    try { await api(`/classes/${c.id}`, { method: "DELETE" }); toast("Classe supprimée"); rafraichir(); }
+    catch (err) { toast(err.message, true); }
+  }
+});
+$("#t-classes").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const id = ev.target.dataset.formClasse;
+  try {
+    await api(`/classes/${id}`, { method: "PATCH", body: JSON.stringify(formData(ev.target)) });
+    toast("Classe modifiée ✔");
+    rafraichir();
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---------- Élèves ----------
 async function afficherEleves() {
@@ -1010,7 +1249,8 @@ async function afficherEleves() {
   try { (await api("/photos/miniatures" + (classeId ? "?classe_id=" + classeId : ""))).forEach((m) => (minis[m.eleve_id] = m.data_url)); }
   catch {}
   const entetes = ["", "Matricule", "Nom", "Classe", "Parent"];
-  if (gestion) entetes.push({ label: "Frais", num: true }, "");
+  if (gestion) entetes.push({ label: "Frais", num: true });
+  if (peut("directeur", "comptable")) entetes.push("");
   $("#btn-cartes").disabled = $("#btn-codes").disabled = !classeId;
   $("#btn-cartes").title = $("#btn-codes").title = classeId ? "" : "Choisis d'abord une classe";
   table($("#t-eleves"), entetes,
@@ -1025,19 +1265,98 @@ async function afficherEleves() {
       const reduc = e.reduction_pct || e.reduction_montant
         ? `<span class="badge violet" title="${esc(e.reduction_motif || "")}">−${e.reduction_pct ? e.reduction_pct + " %" : ""}${e.reduction_pct && e.reduction_montant ? " −" : ""}${e.reduction_montant ? argent(e.reduction_montant) : ""}</span>
            <span class="sub">${esc(e.reduction_motif || "")}</span>` : "";
-      return `<tr><td style="width:40px">${photo}</td><td>${esc(e.matricule)}${anciens && e.annee_sortie ? `<span class="sub">sorti en ${esc(e.annee_sortie)}</span>` : ""}</td>
+      const actions = anciens
+        ? (peut("directeur", "comptable") ? [`<button class="link" data-retour="${e.id}">↩ Réintégrer l'élève</button>`] : [])
+        : [`<button class="link" data-modifier="${e.id}">✏️ Modifier</button>`,
+           `<button class="link" data-choix-frais="${e.id}">💳 Cantine, transport…</button>`,
+           ...(peut("directeur") ? [`<button class="link" data-reduction="${e.id}">💸 Réduction / bourse</button>`] : []),
+           `<button class="link" data-photo="${e.id}">📷 Photo</button>`,
+           `<button class="link" data-carte="${e.id}">🪪 Carte scolaire</button>`,
+           `<button class="link" data-code="${e.id}">🔑 Code parent</button>`,
+           `<button class="link danger" data-depart="${e.id}">🚪 Départ de l'école</button>`];
+      return `<tr data-eleve-ligne="${e.id}"><td style="width:40px">${photo}</td><td>${esc(e.matricule)}${anciens && e.annee_sortie
+          ? `<span class="sub">sorti${e.date_depart ? " le " + new Date(e.date_depart).toLocaleDateString("fr-FR") : " en " + esc(e.annee_sortie)}${e.motif_depart ? " : " + esc(e.motif_depart) : ""}</span>` : ""}</td>
         <td>${esc(e.nom)} ${esc(e.prenom)} ${reduc}</td>
         <td>${esc(classeNom(e.classe_id))}</td><td>${esc(e.telephone_parent || "–")}</td>
-        ${gestion ? `<td class="num">${badge}</td>
-        <td class="actions">${peut("directeur") ? `<button class="link" data-reduction="${e.id}">💸 Réduction</button>` : ""}<button class="link" data-photo="${e.id}">📷 Photo</button><button class="link" data-carte="${e.id}">🪪 Carte</button><button class="link" data-code="${e.id}">🔑 Code</button></td>` : ""}</tr>`;
+        ${gestion ? `<td class="num">${badge}</td>` : ""}
+        ${peut("directeur", "comptable") ? `<td class="actions">${menuActions(actions)}</td>` : ""}</tr>`;
     }),
     anciens ? "Aucun ancien élève" : q || classeId ? "Aucun résultat" : "Aucun élève inscrit");
 }
 
+$("#t-eleves").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, data = Object.fromEntries(new FormData(f));
+  try {
+    if (f.dataset.formModif) {
+      data.classe_id = Number(data.classe_id);
+      for (const k of ["date_naissance", "telephone_parent"]) if (data[k] === "") data[k] = null;
+      await api(`/eleves/${f.dataset.formModif}`, { method: "PATCH", body: JSON.stringify(data) });
+      toast("Élève modifié ✔");
+    }
+    if (f.dataset.formDepart) {
+      await api(`/eleves/${f.dataset.formDepart}/depart`, { method: "POST", body: JSON.stringify(data) });
+      toast("Départ enregistré : l'élève est dans « Anciens élèves »");
+    }
+    if (f.dataset.formFrais) {
+      const types = [...f.querySelectorAll("input:checked")].map((c) => Number(c.value));
+      await api(`/eleves/${f.dataset.formFrais}/frais`, { method: "PUT", body: JSON.stringify(types) });
+      toast("Frais de l'élève enregistrés ✔");
+    }
+    rafraichir();
+  } catch (err) { toast(err.message, true); }
+});
+
 // ---------- Photos, cartes, codes parents ----------
 let photoPour = null;
+// Panneau sous une ligne de tableau (formulaire de modification…)
+function panneauSous(tr, html) {
+  tr.parentElement.querySelectorAll("tr.panneau").forEach((x) => x.remove());
+  tr.insertAdjacentHTML("afterend", `<tr class="panneau"><td colspan="${tr.children.length}" style="background:#f8fafc">${html}</td></tr>`);
+  const p = tr.nextElementSibling;
+  p.querySelector("input, select")?.focus();
+  return p;
+}
+
 $("#t-eleves").addEventListener("click", async (ev) => {
   const d = ev.target.dataset;
+  const ligne = ev.target.closest("tr.panneau")?.previousElementSibling || ev.target.closest("tr");
+  try {
+    if (d.modifier) {
+      const e = eleves.find((x) => x.id === Number(d.modifier));
+      return panneauSous(ligne, `<form class="row" data-form-modif="${e.id}" style="align-items:end">
+        <label>Nom<input name="nom" value="${esc(e.nom)}" required></label>
+        <label>Prénom<input name="prenom" value="${esc(e.prenom)}" required></label>
+        <label>Né(e) le<input name="date_naissance" type="date" value="${esc(e.date_naissance || "")}"></label>
+        <label>Téléphone parent<input name="telephone_parent" value="${esc(e.telephone_parent || "")}"></label>
+        <label>Classe<select name="classe_id">${classes.map((c) => `<option value="${c.id}" ${c.id === e.classe_id ? "selected" : ""}>${esc(c.nom)}</option>`).join("")}</select></label>
+        <button class="btn" style="flex:0 0 auto">Enregistrer</button></form>`);
+    }
+    if (d.depart) {
+      const e = eleves.find((x) => x.id === Number(d.depart));
+      return panneauSous(ligne, `<form class="row" data-form-depart="${e.id}" style="align-items:end">
+        <label style="flex:3">Pourquoi ${esc(e.prenom)} ${esc(e.nom)} quitte l'école ?<input name="motif" required minlength="3" placeholder="Déménagement, transfert, renvoi…"></label>
+        <label>Date<input name="date_depart" type="date" value="${aujourdhui()}"></label>
+        <button class="btn" style="flex:0 0 auto;background:var(--bad)">Confirmer le départ</button></form>
+        <span class="sub">L'élève sort des listes, des impayés et des appels. Son historique reste dans « Anciens élèves ».</span>`);
+    }
+    if (d.choixFrais) {
+      const liste = await api(`/eleves/${d.choixFrais}/frais`);
+      const facultatifs = liste.filter((f) => !f.obligatoire);
+      return panneauSous(ligne, facultatifs.length ? `<form data-form-frais="${d.choixFrais}">
+        <div class="liste-cases">${facultatifs.map((f) => `<label><input type="checkbox" value="${f.type_frais_id}" ${f.souscrit ? "checked" : ""}>
+          ${esc(f.nom)} (${argent(f.montant)})</label>`).join("")}</div>
+        <button class="btn">Enregistrer</button> <span class="sub" style="display:inline">Frais obligatoires (dus par tous) : ${
+          liste.filter((f) => f.obligatoire).map((f) => esc(f.nom)).join(", ") || "aucun"}</span></form>`
+        : `<p class="hint" style="margin:0">Aucun frais au choix. Le directeur les crée dans Réglages → Paramètres → « Autres frais ».</p>`);
+    }
+    if (d.retour) {
+      await api(`/eleves/${d.retour}/retour`, { method: "POST" });
+      toast("Élève réintégré ✔");
+      $("#anciens").checked = false;
+      return rafraichir();
+    }
+  } catch (err) { return toast(err.message, true); }
   if (d.reduction) {
     const e = eleves.find((x) => x.id === Number(d.reduction)) || {};
     const td = ev.target.closest("td");
@@ -1134,14 +1453,31 @@ $("#f-import").addEventListener("submit", async (ev) => {
 });
 
 // ---------- Inscription (élève + premier paiement) ----------
-function afficherFraisInscription() {
-  const c = classes.find((x) => x.id === Number($("#i-classe").value));
-  const montant = $("#f-eleve").elements.montant;
-  $("#i-frais").textContent = c ? `Frais annuels de ${c.nom} : ${argent(c.frais_annuels)}` : "";
-  montant.max = c ? c.frais_annuels : "";
-  montant.placeholder = c ? "Maximum " + argent(c.frais_annuels) : "";
+let typesFrais = [];
+async function chargerTypesFrais() {
+  try { typesFrais = await api("/frais"); } catch { typesFrais = []; }
+  return typesFrais;
 }
-$("#i-classe").addEventListener("change", afficherFraisInscription);
+async function afficherFraisInscription(recharger = true) {
+  if (recharger && peut("directeur", "comptable")) await chargerTypesFrais();
+  const c = classes.find((x) => x.id === Number($("#i-classe").value));
+  const sel = $("#i-pour");
+  const avant = sel.value;
+  const obligatoires = typesFrais.filter((t) => t.obligatoire);
+  sel.innerHTML = `<option value="">Scolarité</option>` +
+    obligatoires.map((t) => `<option value="${t.id}" data-max="${t.montant}">${esc(t.nom)} (${argent(t.montant)})</option>`).join("");
+  if ([...sel.options].some((o) => o.value === avant)) sel.value = avant;
+  $("#i-pour-zone").hidden = !obligatoires.length;
+  const opt = sel.selectedOptions[0];
+  const max = opt?.dataset.max ? Number(opt.dataset.max) : c?.frais_annuels;
+  const montant = $("#f-eleve").elements.montant;
+  $("#i-frais").textContent = c ? `Frais annuels de ${c.nom} : ${argent(c.frais_annuels)}` +
+    (obligatoires.length ? ` + ${obligatoires.map((t) => `${t.nom} ${argent(t.montant)}`).join(", ")}` : "") : "";
+  montant.max = max ?? "";
+  montant.placeholder = max != null ? "Maximum " + argent(max) : "";
+}
+$("#i-classe").addEventListener("change", () => afficherFraisInscription(false));
+$("#i-pour").addEventListener("change", () => afficherFraisInscription(false));
 
 $("#f-eleve").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -1149,7 +1485,7 @@ $("#f-eleve").addEventListener("submit", async (ev) => {
   const corps = {
     nom: d.nom, prenom: d.prenom, classe_id: d.classe_id,
     date_naissance: d.date_naissance, telephone_parent: d.telephone_parent,
-    paiement: { montant: d.montant, mode: d.mode, reference: d.reference },
+    paiement: { montant: d.montant, mode: d.mode, reference: d.reference, type_frais_id: d.type_frais_id ?? null },
   };
   try {
     const r = await api("/eleves", { method: "POST", body: JSON.stringify(corps) });
@@ -1207,17 +1543,28 @@ async function afficherSoldePaiement() {
   const id = $("#p-eleve").value;
   const zone = $("#p-solde");
   const montant = $("#f-paiement").elements.montant;
-  if (!id) { zone.innerHTML = infoListePaiement; montant.placeholder = ""; return; }
+  const choix = $("#p-frais");
+  if (!id) { zone.innerHTML = infoListePaiement; montant.placeholder = ""; $("#p-frais-zone").hidden = true; choix.innerHTML = ""; return; }
   try {
     const s = await api(`/eleves/${id}/solde`);
+    // Plusieurs frais (scolarité, cantine…) : on choisit ce qui est payé
+    const dus = (s.lignes || []).filter((l) => l.reste > 0);
+    $("#p-frais-zone").hidden = (s.lignes || []).length < 2;
+    choix.innerHTML = dus.map((l) => `<option value="${l.type_frais_id ?? ""}" data-reste="${l.reste}">${esc(l.nom)} — reste ${argent(l.reste)}</option>`).join("");
     zone.innerHTML = (s.reste_a_payer
       ? `Déjà payé : ${argent(s.total_paye)} · <b style="color:var(--bad)">reste ${argent(s.reste_a_payer)}</b>`
       : `<b style="color:var(--ok)">✔ Frais entièrement payés</b>`) +
       (s.retard ? `<br><b style="color:var(--bad)">⚠ En retard de ${argent(s.retard)} sur l'échéancier</b>` : "") +
       (s.prochaine_echeance ? `<br>Prochaine échéance : ${new Date(s.prochaine_echeance).toLocaleDateString("fr-FR")} (${argent(s.prochain_montant)})` : "");
-    montant.placeholder = s.reste_a_payer ? "Reste à payer : " + argent(s.reste_a_payer) : "";
+    majPlaceholderFrais(s.reste_a_payer);
   } catch (err) { toast(err.message, true); }
 }
+function majPlaceholderFrais(defaut) {
+  const opt = $("#p-frais").selectedOptions[0];
+  const reste = opt ? Number(opt.dataset.reste) : defaut;
+  $("#f-paiement").elements.montant.placeholder = reste ? "Reste à payer : " + argent(reste) : "";
+}
+$("#p-frais").addEventListener("change", () => majPlaceholderFrais());
 
 $("#p-classe").addEventListener("change", () => remplirElevesPaiement());
 $("#p-eleve").addEventListener("change", afficherSoldePaiement);
@@ -1401,7 +1748,7 @@ async function chargerGrille() {
   const texte = (v) => (v ?? "–");
   table($("#t-grille"),
     ["Matière", { label: "Coef.", num: true }, ...Array.from({ length: nb }, (_, k) => ({ label: `Devoir ${k + 1}`, num: true })),
-     { label: "Compo.", num: true }, { label: "Moy.", num: true }],
+     { label: "Compo.", num: true }, { label: "Moy.", num: true }, "Appréciation"],
     grille.map((c, i) => {
       const ok = c.modifiable && c.matiere_id;
       return `<tr class="${ok ? "" : "verrou"}">
@@ -1410,7 +1757,9 @@ async function chargerGrille() {
       <td class="num">${c.coefficient}</td>
       ${Array.from({ length: nb }, (_, k) => `<td class="num">${ok ? champ(i, "d" + k, c.devoirs[k]) : texte(c.devoirs[k])}</td>`).join("")}
       <td class="num">${ok ? champ(i, "c", c.composition) : texte(c.composition)}</td>
-      <td class="num moy" data-moy="${i}">${c.valeur == null ? "–" : c.valeur.toFixed(2)}</td></tr>`;
+      <td class="num moy" data-moy="${i}">${c.valeur == null ? "–" : c.valeur.toFixed(2)}</td>
+      <td>${ok ? `<input class="appr" data-i="${i}" data-k="a" maxlength="120" value="${esc(c.appreciation || "")}" placeholder="ex : Bon travail">`
+        : `<span class="sub" style="margin:0">${esc(c.appreciation || "")}</span>`}</td></tr>`;
     }),
     peut("directeur") ? "Aucune matière : ajoute-les ci-dessous" : "Aucune matière définie par le directeur");
   majMoyenne();
@@ -1424,7 +1773,8 @@ async function chargerGrille() {
 function lireLigne(c, i) {
   const nb = moi.ecole.nb_devoirs;
   const lire = (k, defaut) => { const inp = $(`#t-grille input[data-i="${i}"][data-k="${k}"]`); return inp ? inp.value.trim() : (defaut ?? ""); };
-  return { devoirs: Array.from({ length: nb }, (_, k) => lire("d" + k, c.devoirs[k])), composition: lire("c", c.composition) };
+  return { devoirs: Array.from({ length: nb }, (_, k) => lire("d" + k, c.devoirs[k])), composition: lire("c", c.composition),
+           appreciation: lire("a", c.appreciation) };
 }
 function moyenneLigne({ devoirs, composition }) {
   const p = moi.ecole.poids_composition;
@@ -1439,7 +1789,7 @@ function majMoyenne() {
   let pts = 0, coefs = 0, ok = true;
   grille.forEach((c, i) => {
     const ligne = lireLigne(c, i);
-    document.querySelectorAll(`#t-grille input[data-i="${i}"]`).forEach((inp) => {
+    document.querySelectorAll(`#t-grille input.note[data-i="${i}"]`).forEach((inp) => {
       const v = inp.value.trim(), valide = noteValide(v);
       ok &&= valide;
       const k = inp.dataset.k;
@@ -1467,7 +1817,7 @@ async function enregistrerGrille({ silencieux = false } = {}) {
     const l = lireLigne(c, i);
     const num = (v) => (v === "" ? null : Number(v));
     return { matiere_id: c.matiere_id, devoirs: l.devoirs.map(num), composition: num(l.composition),
-             effacer_composition: l.composition === "" };
+             effacer_composition: l.composition === "", appreciation: l.appreciation };
   }).filter(Boolean);
   try {
     const rep = await api(`/notes/grille?eleve_id=${grilleCle.eleve}&trimestre=${grilleCle.trimestre}`,
@@ -1477,7 +1827,7 @@ async function enregistrerGrille({ silencieux = false } = {}) {
       grille.forEach((c, i) => {
         if (!$(`#t-grille input[data-i="${i}"]`)) return;
         const l = lireLigne(c, i), num = (v) => (v === "" ? null : Number(v));
-        c.devoirs = l.devoirs.map(num); c.composition = num(l.composition);
+        c.devoirs = l.devoirs.map(num); c.composition = num(l.composition); c.appreciation = l.appreciation;
       });
       majMoyenne();
       $("#n-etat").textContent = "⏳ Gardé hors connexion";
@@ -1620,16 +1970,36 @@ async function afficherBulletin() {
       <div style="text-align:right">Moyenne générale<br>
         <span class="moyenne" style="color:${moy == null ? "inherit" : moy >= 10 ? "var(--ok)" : "var(--bad)"}">
         ${moy == null ? "–" : moy.toFixed(2) + " / 20"}</span><br>
-        <span style="font-size:.85rem;color:var(--muted)">${esc(b.appreciation)}</span></div>
+        <span style="font-size:.85rem;color:var(--muted)">${esc(b.appreciation)}</span>
+        ${b.moyenne_classe != null ? `<span class="sub">Moyenne de la classe : ${b.moyenne_classe.toFixed(2)}</span>` : ""}</div>
     </div>
-    <div class="table-wrap"><table id="t-bulletin"></table></div>`;
+    <div class="table-wrap"><table id="t-bulletin"></table></div>
+    ${peut("directeur") ? `<form id="f-avis" class="mt" style="display:grid;gap:6px">
+        <label>Avis du conseil de classe<textarea name="texte" rows="2" maxlength="300"
+          placeholder="ex : Travail sérieux, félicitations du conseil">${esc(b.avis_conseil || "")}</textarea></label>
+        <button class="btn secondary" style="justify-self:start">Enregistrer l'avis</button></form>`
+      : b.avis_conseil ? `<p class="mt"><b>Avis du conseil :</b> ${esc(b.avis_conseil)}</p>` : ""}`;
+  const f2 = (v) => (v == null ? "–" : v.toFixed(2));
   table($("#t-bulletin"),
-    ["Matière", { label: "Coef.", num: true }, { label: "Moyenne", num: true }, { label: "Points", num: true }],
+    ["Matière", { label: "Coef.", num: true }, { label: "Moy.", num: true }, { label: "Classe", num: true },
+     { label: "Min–Max", num: true }, { label: "Rang", num: true }, "Appréciation"],
     b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="num">${m.coefficient}</td>
-      <td class="num ${m.moyenne < 10 ? "faible" : ""}" style="${m.moyenne < 10 ? "color:var(--bad)" : ""}">${m.moyenne.toFixed(2)}</td>
-      <td class="num">${(m.moyenne * m.coefficient).toFixed(2)}</td></tr>`),
+      <td class="num" style="${m.moyenne < 10 ? "color:var(--bad)" : ""}"><b>${m.moyenne.toFixed(2)}</b></td>
+      <td class="num">${f2(m.moyenne_classe)}</td>
+      <td class="num" style="white-space:nowrap">${m.min_classe == null ? "–" : `${f2(m.min_classe)}–${f2(m.max_classe)}`}</td>
+      <td class="num">${m.rang_matiere ?? "–"}</td><td style="font-size:.85rem">${esc(m.appreciation || "")}</td></tr>`),
     "Aucune note pour ce trimestre");
 }
+
+$("#bulletin").addEventListener("submit", async (ev) => {
+  if (ev.target.id !== "f-avis") return;
+  ev.preventDefault();
+  try {
+    await api(`/eleves/${$("#n-eleve").value}/avis-conseil?trimestre=${$("#n-trimestre").value}`,
+      { method: "PUT", body: JSON.stringify({ texte: ev.target.elements.texte.value }) });
+    toast("Avis du conseil enregistré ✔");
+  } catch (err) { toast(err.message, true); }
+});
 
 $("#btn-bulletin-pdf").addEventListener("click", () => {
   const id = $("#n-eleve").value;
@@ -1833,8 +2203,82 @@ async function afficherParametres() {
   for (const k of ["nom", "adresse", "telephone", "devise", "indicatif_tel", "nb_devoirs", "poids_composition", "seuil_admission"])
     f.elements[k].value = moi.ecole[k] ?? "";
   dessinerTranches(await api("/tranches"));
+  afficherImagesEcole();
+  afficherTypesFrais();
   await afficherPassages();
 }
+
+// ---------- Logo et cachet ----------
+async function afficherImagesEcole() {
+  for (const t of ["logo", "cachet"]) {
+    const z = $("#apercu-" + t);
+    try {
+      const res = await api(`/ecole/${t}?v=${Date.now()}`, { raw: true });
+      const url = URL.createObjectURL(await res.blob());
+      z.innerHTML = `<img src="${url}" alt="${t}">`;
+    } catch { z.textContent = "Aucune image"; }
+  }
+}
+$("#parametres").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  if (d.choisirImage) $(`[data-image-ecole="${d.choisirImage}"]`).click();
+  if (d.retirerImage) {
+    try { await api(`/ecole/${d.retirerImage}`, { method: "DELETE" }); toast("Image retirée"); afficherImagesEcole(); }
+    catch (err) { toast(err.message, true); }
+  }
+});
+$("#parametres").addEventListener("change", async (ev) => {
+  const t = ev.target.dataset.imageEcole;
+  if (!t || !ev.target.files[0]) return;
+  const fd = new FormData();
+  fd.append("fichier", ev.target.files[0]);
+  try {
+    await api(`/ecole/${t}`, { method: "PUT", body: fd });
+    toast(t === "logo" ? "Logo enregistré ✔ Il apparaît sur les documents" : "Cachet enregistré ✔");
+    afficherImagesEcole();
+  } catch (err) { toast(err.message, true); }
+  ev.target.value = "";
+});
+
+// ---------- Autres frais (cantine, transport…) ----------
+async function afficherTypesFrais() {
+  const liste = await chargerTypesFrais();
+  table($("#t-types-frais"), ["Frais", { label: "Montant", num: true }, "Qui paie", ""],
+    liste.map((t) => `<tr data-type-frais="${t.id}">
+      <td><input data-tf="nom" value="${esc(t.nom)}" aria-label="Nom"></td>
+      <td class="num"><input data-tf="montant" type="number" min="0" value="${t.montant}" style="width:110px;text-align:right" aria-label="Montant"></td>
+      <td><select data-tf="obligatoire"><option value="1" ${t.obligatoire ? "selected" : ""}>Tous les élèves</option>
+        <option value="0" ${t.obligatoire ? "" : "selected"}>Élèves choisis</option></select></td>
+      <td class="actions"><button class="link" data-enreg-tf="${t.id}">Enregistrer</button><button class="link danger" data-suppr-tf="${t.id}">Supprimer</button></td></tr>`),
+    "Seulement la scolarité pour l'instant");
+}
+$("#t-types-frais").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  try {
+    if (d.enregTf) {
+      const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-tf="${k}"]`).value;
+      await api(`/frais/${d.enregTf}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), montant: Number(v("montant")), obligatoire: v("obligatoire") === "1" }) });
+      toast("Frais modifié ✔");
+    }
+    if (d.supprTf) {
+      if (!confirm("Supprimer ce frais ? Les paiements déjà faits restent dans l'historique.")) return;
+      await api(`/frais/${d.supprTf}`, { method: "DELETE" });
+      toast("Frais supprimé");
+    }
+    if (d.enregTf || d.supprTf) afficherTypesFrais();
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-type-frais").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await api("/frais", { method: "POST", body: JSON.stringify({ nom: f.elements.nom.value, montant: Number(f.elements.montant.value),
+      obligatoire: f.elements.obligatoire.checked }) });
+    toast("Frais ajouté ✔");
+    f.reset();
+    afficherTypesFrais();
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---------- Échéancier ----------
 function ligneTranche(t = {}) {
@@ -2048,6 +2492,7 @@ async function afficherMessages() {
   $("#m-retard-label").hidden = type !== "impaye";
   if (type !== "impaye" && !cid) {
     $("#m-resume").textContent = "";
+    messages = []; $("#m-groupe").hidden = true; $("#m-assistant").hidden = true;
     zone.innerHTML = `<p class="empty">Choisis une classe</p>`;
     return;
   }
@@ -2068,8 +2513,71 @@ async function afficherMessages() {
            <a class="btn secondary" href="${esc(m.lien_sms)}" data-envoi="${i}" data-canal="sms">SMS</a>` : ""}
         <button class="btn secondary" data-copier="${i}">Copier le texte</button></div></div>`).join("")
     : `<p class="empty">${type === "impaye" ? "Aucun impayé 🎉" : "Aucun élève dans cette classe"}</p>`;
+  majEnvoiGroupe();
 }
 for (const id of ["#m-type", "#m-classe", "#m-trimestre", "#m-retard"]) $(id).addEventListener("change", afficherMessages);
+
+// Envoi groupé : par SMS automatique (si un fournisseur est configuré sur le serveur), sinon assistant WhatsApp
+let capacitesSms = null;
+async function majEnvoiGroupe() {
+  if (capacitesSms === null) { try { capacitesSms = await api("/messages/capacites"); } catch { capacitesSms = { sms: false }; } }
+  const avecNumero = messages.filter((m) => m.lien_whatsapp).length;
+  $("#m-groupe").hidden = !avecNumero;
+  $("#btn-sms-groupe").hidden = !capacitesSms.sms;
+  $("#btn-sms-groupe").textContent = `📤 Envoyer les ${avecNumero} par SMS`;
+  $("#m-groupe-info").textContent = capacitesSms.sms ? "Les SMS partent directement du serveur (payant)."
+    : "Un clic par parent : WhatsApp s'ouvre avec le message, tu appuies sur Envoyer puis tu reviens ici.";
+  $("#m-assistant").hidden = true;
+}
+let assistantPos = 0;
+function dessinerAssistant() {
+  const liste = messages.filter((m) => m.lien_whatsapp);
+  const z = $("#m-assistant");
+  z.hidden = false;
+  if (assistantPos >= liste.length) {
+    z.innerHTML = `<div class="recu-pret"><span>✔ Terminé : ${liste.length} message(s) ouverts</span>
+      <button class="btn secondary" data-assistant-fin>Fermer</button></div>`;
+    return;
+  }
+  const m = liste[assistantPos];
+  z.innerHTML = `<div class="msg" style="border-color:var(--primary)">
+    <div class="tete"><span>Message <b>${assistantPos + 1} / ${liste.length}</b> — <b>${esc(m.eleve)}</b> · ${esc(m.classe)}</span>
+      <span style="font-size:.85rem;color:var(--muted)">${esc(m.telephone || "")}</span></div>
+    <div class="texte">${esc(m.texte)}</div>
+    <div class="boutons"><a class="btn wa" href="${esc(m.lien_whatsapp)}" target="_blank" rel="noopener" data-assistant-ouvrir>Ouvrir WhatsApp et passer au suivant ▶</a>
+      <button class="btn secondary" data-assistant-sauter>Passer</button>
+      <button class="btn secondary" data-assistant-fin>Arrêter</button></div></div>`;
+}
+$("#btn-assistant").addEventListener("click", () => { assistantPos = 0; dessinerAssistant(); });
+$("#m-assistant").addEventListener("click", (ev) => {
+  const liste = messages.filter((m) => m.lien_whatsapp);
+  if (ev.target.closest("[data-assistant-ouvrir]")) {
+    const m = liste[assistantPos];
+    api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: m.eleve_id, type: $("#m-type").value, canal: "whatsapp" }) }).catch(() => {});
+    assistantPos++;
+    setTimeout(dessinerAssistant, 300);     // laisse le lien s'ouvrir
+  }
+  if (ev.target.dataset.assistantSauter !== undefined) { assistantPos++; dessinerAssistant(); }
+  if (ev.target.dataset.assistantFin !== undefined) { $("#m-assistant").hidden = true; afficherMessages(); }
+});
+$("#btn-sms-groupe").addEventListener("click", async () => {
+  const n = messages.filter((m) => m.lien_whatsapp).length;
+  if (!confirm(`Envoyer ${n} SMS maintenant ? Chaque SMS est facturé par l'opérateur.`)) return;
+  const btn = $("#btn-sms-groupe");
+  btn.disabled = true; btn.textContent = "Envoi en cours…";
+  const type = $("#m-type").value, cid = $("#m-classe").value;
+  try {
+    const r = await api("/messages/envoyer-groupe", { method: "POST", body: JSON.stringify({
+      type, classe_id: cid ? Number(cid) : null, trimestre: type === "bulletin" ? Number($("#m-trimestre").value) : null,
+      en_retard: type === "impaye" && $("#m-retard").checked, eleve_ids: messages.map((m) => m.eleve_id) }) });
+    toast(`✔ ${r.envoyes} SMS envoyé(s)` + (r.sans_numero ? ` · ${r.sans_numero} sans numéro` : "") + (r.echecs.length ? ` · ${r.echecs.length} échec(s)` : ""),
+      r.echecs.length > 0);
+    if (r.echecs.length) $("#m-assistant").hidden = false, $("#m-assistant").innerHTML =
+      `<div class="msg"><b>Échecs :</b><ul>${r.echecs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>`;
+    else afficherMessages();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+});
 $("#m-liste").addEventListener("click", async (ev) => {
   const lien = ev.target.closest("[data-envoi]");
   const copier = ev.target.dataset.copier;
@@ -2160,6 +2668,14 @@ $("#t-depenses").addEventListener("click", async (ev) => {
 });
 
 // ---------- Mon compte ----------
+$("#f-tel").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    moi = { ...moi, ...(await api("/auth/moi", { method: "PATCH", body: JSON.stringify({ telephone: ev.target.elements.telephone.value }) })) };
+    toast("Téléphone enregistré ✔");
+  } catch (err) { toast(err.message, true); }
+});
+
 $("#f-mdp").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const d = Object.fromEntries(new FormData(ev.target));
@@ -2182,19 +2698,207 @@ $("#f-ecole").addEventListener("submit", async (ev) => {
   } catch (err) { toast(err.message, true); }
 });
 
+
+// ---------- Emploi du temps ----------
+const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+let enseignants = [];
+async function afficherEmploi() {
+  const dir = peut("directeur"), ens = peut("enseignant");
+  const mode = $("#e-mode");
+  if (!mode.options.length) {
+    mode.innerHTML = (ens ? `<option value="moi">Mon emploi du temps</option>` : "") +
+      `<option value="classe">Par classe</option>` + (dir ? `<option value="enseignant">Par enseignant</option>` : "");
+    $("#cr-jour").innerHTML = JOURS.map((j, i) => `<option value="${i + 1}">${j}</option>`).join("");
+  }
+  if (dir) {
+    const [users, mats] = await Promise.all([api("/utilisateurs"), api("/matieres")]);
+    enseignants = users.filter((u) => u.role === "enseignant" && u.actif);
+    const opts = enseignants.map((u) => `<option value="${u.id}">${esc(u.nom)}</option>`).join("");
+    const avant = $("#e-ens").value;
+    $("#e-ens").innerHTML = opts || `<option value="">Aucun enseignant</option>`;
+    if (avant) $("#e-ens").value = avant;
+    $("#cr-ens").innerHTML = `<option value="">— Personne —</option>` + opts;
+    $("#cr-matiere").innerHTML = mats.map((m) => `<option value="${m.id}">${esc(m.nom)}</option>`).join("");
+  }
+  $("#e-classe").hidden = mode.value !== "classe";
+  $("#e-ens").hidden = mode.value !== "enseignant";
+  const params = new URLSearchParams();
+  if (mode.value === "classe") { if (!$("#e-classe").value) return table($("#t-emploi"), [], [], "Crée d'abord une classe"); params.set("classe_id", $("#e-classe").value); }
+  if (mode.value === "enseignant") { if (!$("#e-ens").value) return table($("#t-emploi"), [], [], "Aucun enseignant"); params.set("enseignant_id", $("#e-ens").value); }
+  const liste = await api("/emploi-du-temps?" + params);
+  const plages = [...new Set(liste.map((c) => `${c.debut}–${c.fin}`))].sort();
+  const parClasse = mode.value === "classe";
+  table($("#t-emploi"), ["Heure", ...JOURS],
+    plages.map((pl) => `<tr><td style="white-space:nowrap"><b>${pl}</b></td>${JOURS.map((_, j) => `<td>${liste
+      .filter((c) => c.jour === j + 1 && `${c.debut}–${c.fin}` === pl)
+      .map((c) => `<div class="cours"><b>${esc(c.matiere)}</b><br>${esc(parClasse ? (c.enseignant || "") : c.classe)}${
+        c.salle ? `<br><span style="color:var(--muted)">Salle ${esc(c.salle)}</span>` : ""}${
+        dir ? `<button class="link danger" data-suppr-creneau="${c.id}" title="Retirer">×</button>` : ""}</div>`).join("")}</td>`).join("")}</tr>`),
+    dir ? "Aucun cours : ajoute-les ci-dessous" : "Aucun cours enregistré");
+  if (dir && parClasse) $("#cr-classe").value = $("#e-classe").value;
+}
+for (const id of ["#e-mode", "#e-classe", "#e-ens"]) $(id).addEventListener("change", afficherEmploi);
+$("#btn-emploi-pdf").addEventListener("click", () => {
+  const m = $("#e-mode").value;
+  const q = m === "classe" ? "?classe_id=" + $("#e-classe").value : m === "enseignant" ? "?enseignant_id=" + $("#e-ens").value : "";
+  ouvrirFichier("/emploi-du-temps.pdf" + q, "emploi_du_temps.pdf");
+});
+$("#t-emploi").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.supprCreneau;
+  if (!id) return;
+  try { await api(`/creneaux/${id}`, { method: "DELETE" }); toast("Cours retiré"); afficherEmploi(); }
+  catch (err) { toast(err.message, true); }
+});
+$("#f-creneau").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = formData(ev.target);
+  d.jour = Number(d.jour);
+  try {
+    await api("/creneaux", { method: "POST", body: JSON.stringify(d) });
+    toast("Cours ajouté ✔");
+    // On avance l'heure pour enchaîner la saisie du cours suivant
+    const f = ev.target, duree = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+    const fmt = (n) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+    const a = duree(f.elements.debut.value), b = duree(f.elements.fin.value);
+    f.elements.debut.value = fmt(b); f.elements.fin.value = fmt(Math.min(b + (b - a), 23 * 60 + 59));
+    if ($("#e-mode").value !== "classe") $("#e-mode").value = "classe";
+    $("#e-classe").value = String(d.classe_id);
+    afficherEmploi();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Paie ----------
+let personnel = [];
+const ROLES_FR = { directeur: "Directeur", comptable: "Comptable", enseignant: "Enseignant", surveillant: "Surveillant" };
+async function afficherPaie() {
+  const mois = $("#paie-mois");
+  if (!mois.value) mois.value = aujourdhui().slice(0, 7);
+  const dir = peut("directeur");
+  personnel = await api(`/paie/personnel?mois=${mois.value}`);
+  const total = personnel.reduce((t, p) => t + (p.fiche?.net || 0), 0);
+  const payees = personnel.filter((p) => p.fiche?.payee).length;
+  $("#paie-total").textContent = `Total des fiches : ${argent(total)} · ${payees} payée(s)`;
+  table($("#t-paie"),
+    ["Nom", "Contrat", { label: "Heures prévues", num: true }, { label: "Avances dues", num: true }, { label: "Net du mois", num: true }, ""],
+    personnel.map((p) => {
+      const f = p.fiche;
+      const contrat = dir
+        ? `<select data-ct-type style="width:auto"><option value="mensuel" ${p.contrat_type !== "horaire" ? "selected" : ""}>Par mois</option>
+             <option value="horaire" ${p.contrat_type === "horaire" ? "selected" : ""}>Par heure</option></select>
+           <input data-ct-montant type="number" min="0" value="${p.contrat_montant ?? ""}" placeholder="montant" style="width:100px">
+           <button class="link" data-enreg-contrat="${p.utilisateur_id}">OK</button>`
+        : p.contrat_type ? `${argent(p.contrat_montant)} ${p.contrat_type === "horaire" ? "/ heure" : "/ mois"}` : "<span class='sub'>pas de contrat</span>";
+      const actions = !f
+        ? (p.contrat_type ? [`<button class="link" data-preparer="${p.utilisateur_id}">🧾 Préparer la fiche</button>`] : [])
+        : [`<button class="link" data-fiche-pdf="${f.id}">📄 Fiche de paie</button>`,
+           ...(f.payee ? [] : [`<button class="link" data-payer-fiche="${f.id}">💵 Payer</button>`,
+                              `<button class="link danger" data-suppr-fiche="${f.id}">🗑 Supprimer la fiche</button>`])];
+      return `<tr data-personne="${p.utilisateur_id}"><td>${esc(p.nom)}<span class="sub">${ROLES_FR[p.role] || p.role}</span></td>
+        <td style="white-space:nowrap">${contrat}</td>
+        <td class="num">${p.heures_prevues ?? "–"}</td>
+        <td class="num">${p.avances_en_cours ? argent(p.avances_en_cours) : "–"}</td>
+        <td class="num">${f ? `<b>${argent(f.net)}</b><span class="sub">${f.payee ? `<span class="badge ok">payée</span>` : `<span class="badge warn">à payer</span>`}</span>` : "–"}</td>
+        <td class="actions">${actions.length ? menuActions(actions) : ""}</td></tr>`;
+    }), "Aucun membre du personnel");
+  $("#av-qui").innerHTML = personnel.map((p) => `<option value="${p.utilisateur_id}">${esc(p.nom)}</option>`).join("");
+  const avances = await api("/paie/avances");
+  const nom = (id) => personnel.find((p) => p.utilisateur_id === id)?.nom || "?";
+  table($("#t-avances"), ["Date", "Personne", { label: "Montant", num: true }, "État"],
+    avances.map((a) => `<tr><td>${new Date(a.jour).toLocaleDateString("fr-FR")}</td><td>${esc(nom(a.utilisateur_id))}${a.motif ? `<span class="sub">${esc(a.motif)}</span>` : ""}</td>
+      <td class="num">${argent(a.montant)}</td><td>${a.deduite_sur ? `<span class="badge ok">retirée du salaire</span>` : `<span class="badge warn">à retirer</span>`}</td></tr>`),
+    "Aucune avance");
+}
+$("#paie-mois").addEventListener("change", afficherPaie);
+$("#t-paie").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset, tr = ev.target.closest("tr.panneau")?.previousElementSibling || ev.target.closest("tr");
+  try {
+    if (d.enregContrat) {
+      await api(`/paie/contrats/${d.enregContrat}`, { method: "PUT", body: JSON.stringify({
+        type: tr.querySelector("[data-ct-type]").value, montant: Number(tr.querySelector("[data-ct-montant]").value || 0) }) });
+      toast("Contrat enregistré ✔");
+      return afficherPaie();
+    }
+    if (d.preparer) {
+      const p = personnel.find((x) => x.utilisateur_id === Number(d.preparer));
+      return panneauSous(tr, `<form class="row" data-form-fiche="${p.utilisateur_id}" style="align-items:end">
+        ${p.contrat_type === "horaire" ? `<label>Heures faites<input name="heures" type="number" min="0" max="400" step="0.5" value="${p.heures_prevues ?? ""}"></label>` : ""}
+        <label>Primes<input name="primes" type="number" min="0" value="0"></label>
+        <label>Retenues<input name="retenues" type="number" min="0" value="0"></label>
+        <label style="flex:2">Note<input name="note" maxlength="120" placeholder="facultatif"></label>
+        <button class="btn" style="flex:0 0 auto">Calculer la fiche</button></form>
+        ${p.avances_en_cours ? `<span class="sub">${argent(p.avances_en_cours)} d'avances seront retirées.</span>` : ""}`);
+    }
+    if (d.payerFiche) {
+      return panneauSous(tr, `<form class="row" data-form-payer="${d.payerFiche}" style="align-items:end">
+        <label>Mode<select name="mode"><option value="especes">Espèces</option><option value="orange_money">Orange Money</option>
+          <option value="mtn_momo">MTN MoMo</option><option value="virement">Virement</option></select></label>
+        <button class="btn" style="flex:0 0 auto">Confirmer le paiement</button></form>`);
+    }
+    if (d.fichePdf) return ouvrirFichier(`/paie/fiches/${d.fichePdf}.pdf`, "fiche_paie.pdf");
+    if (d.supprFiche) {
+      if (!confirm("Supprimer cette fiche ? Les avances retirées redeviennent à retirer.")) return;
+      await api(`/paie/fiches/${d.supprFiche}`, { method: "DELETE" });
+      toast("Fiche supprimée");
+      return afficherPaie();
+    }
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-paie").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, data = formData(f);
+  try {
+    if (f.dataset.formFiche) {
+      await api("/paie/fiches", { method: "POST", body: JSON.stringify({ ...data, utilisateur_id: Number(f.dataset.formFiche), mois: $("#paie-mois").value }) });
+      toast("Fiche de paie prête ✔");
+    }
+    if (f.dataset.formPayer) {
+      await api(`/paie/fiches/${f.dataset.formPayer}/payer`, { method: "POST", body: JSON.stringify(data) });
+      toast("Salaire payé ✔ Ajouté aux dépenses de la caisse");
+    }
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-avance").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("/paie/avances", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    toast("Avance enregistrée ✔ Elle sera retirée de la prochaine fiche");
+    ev.target.elements.montant.value = ""; ev.target.elements.motif.value = "";
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+
 // ---------- Navigation ----------
 const vues = {
   dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
   paiements: afficherSuivi, notes: chargerGrille, equipe: afficherEquipe,
   parametres: afficherParametres, absences: afficherAbsences, parents: afficherMessages, caisse: afficherCaisse,
-  compte: () => {},
+  emploi: afficherEmploi, paie: afficherPaie,
+  compte: () => { $("#f-tel").elements.telephone.value = moi.utilisateur.telephone || ""; },
 };
 let vueActive = null;
+
+// Menu à deux niveaux : 5 groupes, puis les écrans du groupe
+function majMenu(nom) {
+  const groupe = $(`#sous-menu [data-tab="${nom}"]`)?.dataset.groupe;
+  const onglets = [...document.querySelectorAll("#sous-menu button[data-tab]")];
+  onglets.forEach((b) => b.classList.toggle("hors-groupe", b.dataset.groupe !== groupe));
+  document.querySelectorAll("#groupes button").forEach((g) => {
+    g.classList.toggle("active", g.dataset.groupeBtn === groupe);
+    g.hidden = !onglets.some((b) => b.dataset.groupe === g.dataset.groupeBtn && !b.hidden);
+  });
+  $("#sous-menu").classList.toggle("seul", onglets.filter((b) => b.dataset.groupe === groupe && !b.hidden).length < 2);
+}
+document.querySelectorAll("#groupes button").forEach((g) => g.addEventListener("click", () => {
+  const premier = [...document.querySelectorAll(`#sous-menu button[data-groupe="${g.dataset.groupeBtn}"]`)].find((b) => !b.hidden);
+  if (premier) ouvrirOnglet(premier.dataset.tab);
+}));
 
 function ouvrirOnglet(nom) {
   if (vueActive === "notes" && nom !== "notes" && grilleModifiee) enregistrerGrille({ silencieux: true });
   vueActive = nom;
-  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === nom));
+  majMenu(nom);
+  document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === nom));
   document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("active", s.id === nom));
   rafraichir();
 }
@@ -2220,7 +2924,7 @@ async function rafraichir() {
   } catch (err) { toast(err.message, true); }
 }
 
-document.querySelectorAll("nav button").forEach((btn) =>
+document.querySelectorAll("nav button[data-tab]").forEach((btn) =>
   btn.addEventListener("click", () => ouvrirOnglet(btn.dataset.tab)));
 
 // ---------- Formulaires simples ----------
@@ -2242,6 +2946,7 @@ brancherFormulaire("#f-classe", "/classes", "Classe créée ✔");
 $("#f-user").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const d = Object.fromEntries(new FormData(ev.target));
+  if (!d.telephone) delete d.telephone;
   if (d.role === "enseignant") {
     d.affectations = lireAffectations($('[data-matrice="nouveau"]'));
     if (!d.affectations.length) return toast("Coche au moins une matière dans une classe pour l'enseignant", true);
@@ -2249,7 +2954,7 @@ $("#f-user").addEventListener("submit", async (ev) => {
   try {
     await api("/utilisateurs", { method: "POST", body: JSON.stringify(d) });
     toast("Compte créé ✔ Donne-lui son e-mail et son mot de passe.");
-    ["nom", "email", "mot_de_passe"].forEach((k) => (ev.target.elements[k].value = ""));
+    ["nom", "email", "telephone", "mot_de_passe"].forEach((k) => (ev.target.elements[k].value = ""));
     afficherEquipe();
   } catch (err) { toast(err.message, true); }
 });
@@ -2305,6 +3010,17 @@ document.addEventListener("click", (ev) => {
 });
 $("#blocage-quitter").addEventListener("click", () => deconnexion());
 
+// ---------- Petits menus « Actions ▾ » ----------
+document.addEventListener("click", (ev) => {
+  const ouvrir = ev.target.closest("[data-ouvrir-menu]");
+  document.querySelectorAll(".menu-actions .menu").forEach((m) => {
+    if (!ouvrir || m !== ouvrir.nextElementSibling) m.hidden = true;
+  });
+  if (ouvrir) ouvrir.nextElementSibling.hidden = !ouvrir.nextElementSibling.hidden;
+});
+const menuActions = (boutons) => boutons.length
+  ? `<div class="menu-actions"><button class="link" data-ouvrir-menu>Actions ▾</button><div class="menu" hidden>${boutons.join("")}</div></div>` : "";
+
 // ---------- Démarrage ----------
 async function demarrer(ongletDemande) {
   if (!store.get()) return afficherAuth("login");
@@ -2326,7 +3042,7 @@ async function demarrer(ongletDemande) {
 
   $("#auth").hidden = true;
   $("#appli").hidden = false;
-  const premier = [...document.querySelectorAll("nav button")].find((b) => !b.hidden).dataset.tab;
+  const premier = [...document.querySelectorAll("nav button[data-tab]")].find((b) => !b.hidden).dataset.tab;
   ouvrirOnglet(ongletDemande && !$(`nav button[data-tab=${ongletDemande}]`).hidden ? ongletDemande : premier);
 }
 

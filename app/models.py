@@ -62,6 +62,7 @@ class Utilisateur(UtilisateurBase, table=True):
     ecole_id: int = Field(foreign_key="ecole.id", index=True)
     mot_de_passe_hash: str
     actif: bool = True
+    telephone: Optional[str] = None          # pour recevoir un code si le mot de passe est oublié
 
 
 class AffectationSaisie(SQLModel):
@@ -74,6 +75,7 @@ class UtilisateurCreate(SQLModel):
     email: EmailStr
     role: Role
     mot_de_passe: str = Field(min_length=8)
+    telephone: Optional[str] = Field(default=None, max_length=30)
     affectations: list[AffectationSaisie] = []   # enseignant : matières × classes
 
 
@@ -81,6 +83,7 @@ class UtilisateurPublic(UtilisateurBase):
     id: int
     ecole_id: int
     actif: bool
+    telephone: Optional[str] = None
     affectations: list[AffectationSaisie] = []
 
 
@@ -154,6 +157,8 @@ class Eleve(EleveBase, table=True):
     matricule: Optional[str] = Field(default=None, unique=True, index=True)
     actif: bool = True                       # False : a quitté l'école (fin de cycle, départ)
     annee_sortie: Optional[str] = None
+    date_depart: Optional[Date] = None       # départ en cours d'année
+    motif_depart: Optional[str] = None
     code_parent: Optional[str] = Field(default=None, index=True, exclude=True)   # jamais renvoyé dans les listes
     reduction_pct: float = 0                 # réduction sur les frais (2e enfant, enfant d'enseignant…)
     reduction_montant: int = 0               # ou montant fixe (bourse)
@@ -166,6 +171,11 @@ class EleveUpdate(SQLModel):
     date_naissance: Optional[Date] = None
     telephone_parent: Optional[str] = None
     classe_id: Optional[int] = None
+
+
+class Depart(SQLModel):
+    motif: str = Field(min_length=3, max_length=120)
+    date_depart: Optional[Date] = None
 
 
 class ResultatImport(SQLModel):
@@ -183,6 +193,7 @@ class ModePaiement(str, Enum):
 
 class PaiementBase(SQLModel):
     eleve_id: int = Field(foreign_key="eleve.id", index=True)
+    type_frais_id: Optional[int] = Field(default=None, foreign_key="typefrais.id")   # vide = scolarité
     montant: int = Field(gt=0)
     mode: ModePaiement = ModePaiement.especes
     reference: Optional[str] = None          # n° de transaction Orange Money, etc.
@@ -216,6 +227,8 @@ class PaiementDetail(SQLModel):
     reference: Optional[str]
     date_paiement: Date
     annee_scolaire: Optional[str]
+    type_frais_id: Optional[int] = None
+    frais: str = "Scolarité"
     enregistre_par: Optional[str]
     annule: bool
     annule_le: Optional[datetime]
@@ -230,6 +243,7 @@ class PaiementCreate(PaiementBase):
 # ---------- Inscription (élève + premier paiement) ----------
 class PaiementInitial(SQLModel):
     """Premier versement, obligatoire à l'inscription."""
+    type_frais_id: Optional[int] = None      # vide = scolarité ; ex : frais d'inscription
     montant: int = Field(gt=0)
     mode: ModePaiement = ModePaiement.especes
     reference: Optional[str] = None
@@ -301,6 +315,7 @@ class CaseNote(SQLModel):
     composition: Optional[float] = None
     valeur: Optional[float] = None           # moyenne de la matière
     modifiable: bool = True                  # l'utilisateur peut-il saisir cette matière ?
+    appreciation: Optional[str] = None
     saisi_par: Optional[str] = None          # dernière personne à avoir modifié la case
     saisi_le: Optional[datetime] = None
 
@@ -342,6 +357,7 @@ class SaisieNote(SQLModel):
     composition: Optional[float] = Field(default=None, ge=0, le=20)
     valeur: Optional[float] = Field(default=None, ge=0, le=20)   # ancienne saisie (une note) = composition
     effacer_composition: bool = False
+    appreciation: Optional[str] = Field(default=None, max_length=120)   # None : ne pas toucher
 
 
 # ---------- Réponses calculées ----------
@@ -349,6 +365,14 @@ class StatutPaiement(str, Enum):
     a_jour = "a_jour"            # tout payé
     partiel = "partiel"          # a commencé à payer
     rien_paye = "rien_paye"      # aucun paiement
+
+
+class LigneFrais(SQLModel):
+    type_frais_id: Optional[int]             # None : scolarité
+    nom: str
+    du: int
+    paye: int
+    reste: int
 
 
 class Echeance(SQLModel):
@@ -378,7 +402,8 @@ class Solde(SQLModel):
     prochaine_echeance: Optional[Date] = None
     prochain_montant: int = 0
     echeances: list[Echeance] = []
-    frais_classe: int = 0                    # frais de la classe avant réduction
+    lignes: list[LigneFrais] = []            # détail par type de frais
+    frais_classe: int = 0                    # scolarité de la classe avant réduction
     reduction: int = 0
     reduction_motif: Optional[str] = None
 
@@ -387,6 +412,11 @@ class LigneBulletin(SQLModel):
     matiere: str
     moyenne: float
     coefficient: int
+    moyenne_classe: Optional[float] = None
+    min_classe: Optional[float] = None
+    max_classe: Optional[float] = None
+    rang_matiere: Optional[int] = None
+    appreciation: Optional[str] = None       # écrite par l'enseignant
 
 
 class Bulletin(SQLModel):
@@ -408,6 +438,8 @@ class Bulletin(SQLModel):
     moyenne_annuelle: Optional[float] = None
     rang_annuel: Optional[int] = None
     decision: Optional[str] = None           # Admis(e) / Redouble
+    avis_conseil: Optional[str] = None       # avis du conseil de classe (directeur)
+    moyenne_classe: Optional[float] = None   # moyenne générale de la classe
 
 
 # ---------- Coefficients spécifiques à une classe ----------
@@ -659,6 +691,7 @@ class AbsenceParent(SQLModel):
 
 
 class PaiementParent(SQLModel):
+    frais: str = "Scolarité"
     id: int
     numero_recu: Optional[str]
     date_paiement: Date
@@ -783,3 +816,243 @@ class StatsPlateforme(SQLModel):
     nb_eleves: int
     revenus_total: int
     revenus_mois: int
+
+
+# ---------- Autres frais (inscription, cantine, transport…) ----------
+class TypeFrais(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    nom: str
+    montant: int = Field(ge=0)
+    obligatoire: bool = True                 # True : tous les élèves ; False : seulement ceux inscrits
+    actif: bool = True
+    ordre: int = 0
+
+
+class TypeFraisSaisie(SQLModel):
+    nom: str = Field(min_length=2, max_length=40)
+    montant: int = Field(ge=0)
+    obligatoire: bool = True
+
+
+class SouscriptionFrais(SQLModel, table=True):
+    """Élève inscrit à un frais facultatif (cantine, transport…) pour une année."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    eleve_id: int = Field(foreign_key="eleve.id", index=True)
+    type_frais_id: int = Field(foreign_key="typefrais.id", index=True)
+    annee_scolaire: str = Field(index=True)
+
+
+class FraisEleve(SQLModel):
+    type_frais_id: int
+    nom: str
+    montant: int
+    obligatoire: bool
+    souscrit: bool
+
+
+# ---------- Logo et cachet de l'école ----------
+class ImageEcole(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    type: str                                # logo / cachet
+    image: bytes = Field(sa_column=Column(LargeBinary, nullable=False))   # PNG
+
+
+# ---------- Bulletin : appréciations et conseil de classe ----------
+class AppreciationMatiere(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    eleve_id: int = Field(foreign_key="eleve.id", index=True)
+    matiere: str
+    trimestre: int
+    annee_scolaire: str = Field(index=True)
+    texte: str
+    utilisateur_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+
+
+class AvisConseil(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    eleve_id: int = Field(foreign_key="eleve.id", index=True)
+    trimestre: int
+    annee_scolaire: str = Field(index=True)
+    texte: str
+    utilisateur_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+
+
+class AvisSaisie(SQLModel):
+    texte: str = Field(default="", max_length=300)
+
+
+# ---------- Emploi du temps ----------
+JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+
+
+class Creneau(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    classe_id: int = Field(foreign_key="classe.id", index=True)
+    jour: int = Field(ge=1, le=6)            # 1 = lundi … 6 = samedi
+    debut: str                               # « 08:00 »
+    fin: str                                 # « 09:00 »
+    matiere_id: int = Field(foreign_key="matiere.id")
+    enseignant_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id", index=True)
+    salle: Optional[str] = None
+
+
+class CreneauSaisie(SQLModel):
+    classe_id: int
+    jour: int = Field(ge=1, le=6)
+    debut: str = Field(min_length=4, max_length=5)
+    fin: str = Field(min_length=4, max_length=5)
+    matiere_id: int
+    enseignant_id: Optional[int] = None
+    salle: Optional[str] = Field(default=None, max_length=30)
+
+
+class CreneauDetail(SQLModel):
+    id: int
+    classe_id: int
+    classe: str
+    jour: int
+    debut: str
+    fin: str
+    matiere_id: int
+    matiere: str
+    enseignant_id: Optional[int]
+    enseignant: Optional[str]
+    salle: Optional[str]
+
+
+# ---------- Paie du personnel ----------
+class ContratPaie(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True, unique=True)
+    type: str = "mensuel"                    # mensuel (salaire fixe) / horaire (taux par heure)
+    montant: int = Field(ge=0)
+
+
+class ContratSaisie(SQLModel):
+    type: Literal["mensuel", "horaire"]
+    montant: int = Field(ge=0)
+
+
+class Avance(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True)
+    jour: Date
+    montant: int = Field(gt=0)
+    motif: Optional[str] = None
+    deduite_sur: Optional[int] = Field(default=None, foreign_key="fichepaie.id")   # fiche qui l'a remboursée
+    depense_id: Optional[int] = Field(default=None, foreign_key="depense.id")
+
+
+class AvanceSaisie(SQLModel):
+    utilisateur_id: int
+    montant: int = Field(gt=0)
+    motif: Optional[str] = Field(default=None, max_length=120)
+    jour: Optional[Date] = None
+    mode: ModePaiement = ModePaiement.especes
+
+
+class FichePaie(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True)
+    mois: str = Field(index=True)            # 2026-11
+    type: str
+    heures: Optional[float] = None
+    taux: int                                # salaire mensuel ou taux horaire
+    brut: int
+    primes: int = 0
+    retenues: int = 0
+    avances_deduites: int = 0
+    net: int
+    note: Optional[str] = None
+    payee: bool = False
+    paye_le: Optional[Date] = None
+    depense_id: Optional[int] = Field(default=None, foreign_key="depense.id")
+
+
+class FicheSaisie(SQLModel):
+    utilisateur_id: int
+    mois: str = Field(min_length=7, max_length=7)
+    heures: Optional[float] = Field(default=None, ge=0, le=400)
+    primes: int = Field(default=0, ge=0)
+    retenues: int = Field(default=0, ge=0)
+    note: Optional[str] = Field(default=None, max_length=120)
+
+
+class PaiementFiche(SQLModel):
+    mode: ModePaiement = ModePaiement.especes
+
+
+class FicheDetail(SQLModel):
+    id: int
+    utilisateur_id: int
+    nom: str
+    role: str
+    mois: str
+    type: str
+    heures: Optional[float]
+    taux: int
+    brut: int
+    primes: int
+    retenues: int
+    avances_deduites: int
+    net: int
+    note: Optional[str]
+    payee: bool
+    paye_le: Optional[Date]
+
+
+class LignePersonnel(SQLModel):
+    utilisateur_id: int
+    nom: str
+    role: str
+    contrat_type: Optional[str]
+    contrat_montant: Optional[int]
+    heures_prevues: Optional[float]          # d'après l'emploi du temps, pour le mois choisi
+    avances_en_cours: int
+    fiche: Optional[FicheDetail]
+
+
+# ---------- Mot de passe oublié ----------
+class CodeReinitialisation(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True)
+    code_hash: str
+    expire_le: datetime
+    essais: int = 0
+    utilise: bool = False
+    cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DemandeCode(SQLModel):
+    email: str
+
+
+class Reinitialisation(SQLModel):
+    email: str
+    code: str = Field(min_length=6, max_length=6)
+    nouveau: str = Field(min_length=8)
+
+
+class ProfilSaisie(SQLModel):
+    telephone: Optional[str] = Field(default=None, max_length=30)
+
+
+# ---------- Envoi groupé ----------
+class EnvoiGroupe(SQLModel):
+    type: Literal["impaye", "bulletin", "acces"]
+    classe_id: Optional[int] = None
+    trimestre: Optional[int] = None
+    en_retard: bool = False
+    eleve_ids: Optional[list[int]] = None    # vide : tous les messages de la liste
+
+
+class ResultatEnvoi(SQLModel):
+    envoyes: int
+    sans_numero: int
+    echecs: list[str]

@@ -89,13 +89,13 @@ def export_paiements(user: Utilisateur = Depends(exiger_role(*GESTION)), session
     for p, e, c in rows:
         d = details[p.id]
         lignes.append([p.numero_recu, p.date_paiement, p.annee_scolaire, e.matricule, f"{e.nom} {e.prenom}", c.nom,
-                       p.montant, MODES.get(p.mode.value, p.mode.value), p.reference, d.enregistre_par,
+                       d.frais, p.montant, MODES.get(p.mode.value, p.mode.value), p.reference, d.enregistre_par,
                        "ANNULÉ" if p.annule else "Valide", p.motif_annulation, d.annule_par])
     wb = Workbook()
-    _feuille(wb, "Paiements", ["N° reçu", "Date", "Année scolaire", "Matricule", "Élève", "Classe",
+    _feuille(wb, "Paiements", ["N° reçu", "Date", "Année scolaire", "Matricule", "Élève", "Classe", "Frais",
                                f"Montant ({ecole.devise})", "Mode", "Référence", "Enregistré par",
                                "État", "Motif d'annulation", "Annulé par"],
-             lignes, {2: "DD/MM/YYYY", 7: "#,##0"})
+             lignes, {2: "DD/MM/YYYY", 8: "#,##0"})
     return _reponse(wb, f"paiements_{_suffixe(ecole)}.xlsx")
 
 

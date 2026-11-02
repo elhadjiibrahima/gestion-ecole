@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import (
-    CaseNote, Classe, Ecole, Eleve, LigneHistorique, Note, NoteCreate, NoteHistorique, Role, SaisieNote,
+    AppreciationMatiere, CaseNote, Classe, Ecole, Eleve, LigneHistorique, Note, NoteCreate, NoteHistorique, Role, SaisieNote,
     Utilisateur,
 )
 from app.security import PEDAGOGIE, TOUS, affectations_de, exiger_role
@@ -107,6 +107,9 @@ def _grille(session: Session, eleve: Eleve, trimestre: int, user: Utilisateur) -
     ).all()
     derniere = {h.matiere.lower(): (nom, h.date) for h, nom in traces}
     affectations = affectations_de(session, user) if user.role == Role.enseignant else None
+    appreciations = {a.matiere.lower(): a.texte for a in session.exec(
+        select(AppreciationMatiere).where(AppreciationMatiere.eleve_id == eleve.id, AppreciationMatiere.trimestre == trimestre,
+                                          AppreciationMatiere.annee_scolaire == ecole.annee_scolaire)).all()}
 
     def case(matiere_id, nom, coef, ns):
         devoirs: list = [None] * nb
@@ -125,7 +128,7 @@ def _grille(session: Session, eleve: Eleve, trimestre: int, user: Utilisateur) -
                         composition=round(sum(compos) / len(compos), 2) if compos else None,
                         valeur=round(moy, 2) if moy is not None else None,
                         modifiable=_peut_saisir(session, user, matiere_id, eleve.classe_id, affectations),
-                        saisi_par=par, saisi_le=le)
+                        saisi_par=par, saisi_le=le, appreciation=appreciations.get(nom.lower()))
 
     cases = []
     for m, coef in matieres_classe(session, session.get(Classe, eleve.classe_id)):
@@ -198,6 +201,19 @@ def enregistrer_grille(
                 session.add(Note(eleve_id=eleve.id, matiere=m.nom, coefficient=coef, valeur=valeur,
                                  trimestre=trimestre, annee_scolaire=annee, type=type_, numero=numero))
             _tracer(session, user, eleve, m.nom, trimestre, ancienne, valeur, _libelle(type_, numero))
+        if s.appreciation is not None:   # appréciation de l'enseignant pour cette matière
+            ancienne_app = session.exec(select(AppreciationMatiere).where(
+                AppreciationMatiere.eleve_id == eleve.id, AppreciationMatiere.matiere == m.nom,
+                AppreciationMatiere.trimestre == trimestre, AppreciationMatiere.annee_scolaire == annee)).first()
+            texte = s.appreciation.strip()
+            if ancienne_app and not texte:
+                session.delete(ancienne_app)
+            elif ancienne_app and ancienne_app.texte != texte:
+                ancienne_app.texte, ancienne_app.utilisateur_id = texte, user.id
+                session.add(ancienne_app)
+            elif texte and not ancienne_app:
+                session.add(AppreciationMatiere(eleve_id=eleve.id, matiere=m.nom, trimestre=trimestre,
+                                                annee_scolaire=annee, texte=texte, utilisateur_id=user.id))
         # le coefficient suit celui de la classe
         for n in existantes:
             if n.coefficient != coef:

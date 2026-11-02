@@ -13,6 +13,7 @@ from app.pdf import en_tete_pdf, pdf_bulletins, pdf_cartes, pdf_recu
 from app.security import (
     GESTION, creer_token_parent, eleve_du_parent, exiger_role, generer_code_parent, normaliser_code,
 )
+from app.routers.paiements import nom_frais
 from app.services import annee_courante, bulletin_eleve, calculer_solde, get_classe, get_eleve
 
 router = APIRouter(tags=["Espace parents"])
@@ -56,7 +57,8 @@ def espace(eleve: Eleve = Depends(eleve_du_parent), session: Session = Depends(g
         a_photo=session.get(PhotoEleve, eleve.id) is not None,
         solde=calculer_solde(session, eleve),
         paiements=[PaiementParent(id=p.id, numero_recu=p.numero_recu, date_paiement=p.date_paiement,
-                                  montant=p.montant, mode=p.mode, annule=p.annule) for p in paiements],
+                                  montant=p.montant, mode=p.mode, annule=p.annule,
+                                  frais=nom_frais(session, p.type_frais_id)) for p in paiements],
         bulletins=[bulletin_eleve(session, eleve, t) for t in (1, 2, 3)],
         absences=[AbsenceParent(jour=a.jour, type=a.type, justifiee=a.justifiee, motif=a.motif) for a in absences],
     )
@@ -77,7 +79,8 @@ def recu(paiement_id: int, eleve: Eleve = Depends(eleve_du_parent), session: Ses
         raise HTTPException(404, "Reçu introuvable")
     caissier = session.get(Utilisateur, p.enregistre_par_id) if p.enregistre_par_id else None
     pdf = pdf_recu(session.get(Ecole, eleve.ecole_id), p, eleve, session.get(Classe, eleve.classe_id),
-                   calculer_solde(session, eleve), caissier.nom if caissier else None)
+                   calculer_solde(session, eleve), caissier.nom if caissier else None,
+                   nom_frais(session, p.type_frais_id))
     return Response(pdf, media_type="application/pdf", headers=en_tete_pdf(f"recu_{p.numero_recu}.pdf"))
 
 

@@ -103,3 +103,21 @@ def resultats_de_l_annee(
     """Moyennes des 3 trimestres, moyenne annuelle, rang et décision (admis / redouble)."""
     classe = get_classe(session, classe_id, user.ecole_id)
     return sorted(resultats_annuels(session, classe), key=lambda r: (r.rang is None, r.rang or 0, r.eleve))
+
+
+@router.delete("/{classe_id}", status_code=204)
+def supprimer_classe(
+    classe_id: int,
+    user: Utilisateur = Depends(exiger_role(Role.directeur)),
+    session: Session = Depends(get_session),
+):
+    """Supprime une classe créée par erreur (seulement si aucun élève n'y a jamais été inscrit)."""
+    from app.models import Affectation, CoefficientClasse
+    classe = get_classe(session, classe_id, user.ecole_id)
+    if session.exec(select(Eleve.id).where(Eleve.classe_id == classe_id).limit(1)).first():
+        raise HTTPException(400, "Impossible : des élèves sont (ou ont été) inscrits dans cette classe")
+    for modele in (Affectation, CoefficientClasse):
+        for x in session.exec(select(modele).where(modele.classe_id == classe_id)).all():
+            session.delete(x)
+    session.delete(classe)
+    session.commit()

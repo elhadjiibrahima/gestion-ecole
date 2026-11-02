@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, func, select
 
 from app.database import get_session
-from app.models import Ecole, Eleve, JournalMessage, MessageEnvoye, MessageParent, Utilisateur
+import httpx
+
+from app.models import (
+    Ecole, Eleve, EnvoiGroupe, JournalMessage, MessageEnvoye, MessageParent, ResultatEnvoi, Utilisateur,
+)
+from app.notifications import envoyer_sms, fournisseur_sms, sms_disponible
 from app.security import GESTION, exiger_role
 from app.services import bulletins_classe, get_classe, get_eleve, soldes_ecole
 
@@ -145,6 +150,49 @@ def acces_parents(
                  f"Matricule : {eleve.matricule} — Code : {code}. Ce code est personnel, ne le partagez pas.")
         messages.append(_message(ecole, eleve, classe.nom, texte, derniers.get(eleve.id)))
     return messages
+
+
+@router.get("/capacites")
+def capacites(user: Utilisateur = Depends(exiger_role(*GESTION))):
+    """Le serveur peut-il envoyer des SMS tout seul ?"""
+    return {"sms": sms_disponible(), "fournisseur": fournisseur_sms() or None}
+
+
+@router.post("/envoyer-groupe", response_model=ResultatEnvoi)
+def envoyer_groupe(data: EnvoiGroupe, request: Request, user: Utilisateur = Depends(exiger_role(*GESTION)),
+                   session: Session = Depends(get_session)):
+    """Envoie par SMS tous les messages de la liste (ou ceux des élèves choisis), d'un coup."""
+    if not sms_disponible():
+        raise HTTPException(400, "Aucun fournisseur de SMS configuré sur le serveur")
+    if data.type == "impaye":
+        messages = rappels_impayes(data.classe_id, data.en_retard, user, session)
+    elif data.type == "bulletin":
+        if not data.classe_id or not data.trimestre:
+            raise HTTPException(400, "Choisis une classe et un trimestre")
+        messages = annonces_bulletins(data.classe_id, data.trimestre, user, session)
+    else:
+        if not data.classe_id:
+            raise HTTPException(400, "Choisis une classe")
+        messages = acces_parents(data.classe_id, request, user, session)
+    if data.eleve_ids is not None:
+        messages = [m for m in messages if m.eleve_id in set(data.eleve_ids)]
+    if len(messages) > 500:
+        raise HTTPException(400, "500 messages au maximum par envoi : choisis une classe")
+    envoyes, sans_numero, echecs = 0, 0, []
+    with httpx.Client() as client:
+        for m in messages:
+            if not m.telephone_international:
+                sans_numero += 1
+                continue
+            ok, erreur = envoyer_sms(m.telephone_international, m.texte, client)
+            if ok:
+                envoyes += 1
+                session.add(MessageEnvoye(ecole_id=user.ecole_id, eleve_id=m.eleve_id, type=data.type, canal="sms",
+                                          utilisateur_id=user.id))
+            else:
+                echecs.append(f"{m.eleve} : {erreur}")
+    session.commit()
+    return ResultatEnvoi(envoyes=envoyes, sans_numero=sans_numero, echecs=echecs)
 
 
 @router.post("/journal", status_code=204)

@@ -36,6 +36,16 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Espace parents** (`/espace-parents`) : avec le matricule et un code, le parent suit sur son téléphone les frais, l'échéancier, les reçus, les notes, les bulletins et les absences ; codes distribués en PDF ou par WhatsApp
 - **Mode hors connexion** : application installable sur téléphone ; les écrans déjà consultés restent lisibles, et les paiements, notes et appels faits sans réseau sont envoyés automatiquement au retour de la connexion (sans doublon)
 - **Mots de passe** : chacun change le sien, le directeur réinitialise ceux de l'équipe
+- **Modifier un élève ou une classe** (nom, date de naissance, téléphone, changement de classe, frais) ; supprimer une classe créée par erreur
+- **Départ en cours d'année** (motif, date) : l'élève sort des listes et des impayés, son historique reste ; réintégration possible
+- **Plusieurs types de frais** : scolarité + frais d'inscription, cantine, transport… pour tous ou pour les élèves choisis ; chaque paiement indique ce qu'il règle
+- **Envoi groupé** des rappels par SMS (fournisseur payant à configurer), ou assistant WhatsApp « un clic par parent »
+- **Logo et cachet** de l'école sur les reçus, bulletins, cartes et fiches de paie
+- **Bulletin complet** : moyenne, min et max de la classe et rang par matière, appréciation de l'enseignant, avis du conseil de classe
+- **Menu simplifié** en 5 groupes, utilisable sur téléphone
+- **Mot de passe oublié** : code à 6 chiffres par SMS ou e-mail (si configuré), sinon le directeur réinitialise
+- **Emploi du temps** par classe et par enseignant, contrôle des chevauchements (classe, enseignant, salle), PDF
+- **Paie** : salaire mensuel ou à l'heure (heures proposées d'après l'emploi du temps), primes, retenues, avances retirées automatiquement, fiche de paie PDF, salaire ajouté aux dépenses de la caisse
 - **Nouvelle année scolaire** : passage en classe supérieure proposé automatiquement, redoublants, élèves de fin de cycle ; frais remis à zéro, historique conservé
 
 ## Installation
@@ -81,6 +91,10 @@ Le fichier `.env` et la base `ecole.db` sont exclus de Git (`.gitignore`) : ils 
 | `CONTACT_ABONNEMENT` | Contact affiché quand l'abonnement expire | – |
 | `INSCRIPTION_PUBLIQUE` | `non` : seules les écoles ouvertes par le super admin existent | `oui` |
 | `TOKEN_HEURES` | Durée d'une session | `12` |
+| `SMS_FOURNISSEUR` | `orange` (API SMS Orange, payant) ou `simulation` ; vide = pas de SMS automatiques | – |
+| `ORANGE_CLIENT_ID`, `ORANGE_CLIENT_SECRET` | Identifiants de l'API Orange (secrets) | – |
+| `ORANGE_EXPEDITEUR`, `ORANGE_NOM_EXPEDITEUR` | Numéro et nom d'expéditeur des SMS | – |
+| `SMTP_HOTE`, `SMTP_PORT`, `SMTP_UTILISATEUR`, `SMTP_MOT_DE_PASSE`, `SMTP_EXPEDITEUR` | Serveur d'e-mail pour les codes « mot de passe oublié » (`SMTP_HOTE=simulation` pour tester) | – |
 
 Générer une clé : `python -m app.cli generer-cle`
 
