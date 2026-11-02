@@ -20,6 +20,11 @@ class EcoleBase(SQLModel):
     nb_devoirs: int = 2                      # colonnes « devoir » dans la grille de notes
     poids_composition: float = 2             # moyenne = (devoirs + composition × poids) / (1 + poids)
     seuil_admission: float = 10              # moyenne annuelle minimale pour passer
+    # Paiement de la scolarité : « mensuel » (une mensualité par mois) ou « tranches » (échéancier libre)
+    mode_paiement: str = "mensuel"
+    nb_mois: int = 9                         # mois payés dans l'année (ex : octobre à juin)
+    mois_debut: int = 10                     # 10 = octobre
+    jour_limite: int = 5                     # la mensualité est due avant le 5 du mois
 
 
 class Ecole(EcoleBase, table=True):
@@ -41,6 +46,10 @@ class EcoleUpdate(SQLModel):
     nb_devoirs: Optional[int] = Field(default=None, ge=0, le=6)
     poids_composition: Optional[float] = Field(default=None, ge=0, le=10)
     seuil_admission: Optional[float] = Field(default=None, ge=0, le=20)
+    mode_paiement: Optional[Literal["mensuel", "tranches"]] = None
+    nb_mois: Optional[int] = Field(default=None, ge=1, le=12)
+    mois_debut: Optional[int] = Field(default=None, ge=1, le=12)
+    jour_limite: Optional[int] = Field(default=None, ge=1, le=28)
 
 
 # ---------- Utilisateurs ----------
@@ -63,6 +72,7 @@ class Utilisateur(UtilisateurBase, table=True):
     mot_de_passe_hash: str
     actif: bool = True
     telephone: Optional[str] = None          # pour recevoir un code si le mot de passe est oublié
+    poste_id: Optional[int] = Field(default=None, foreign_key="poste.id")   # paie : vide = poste de son rôle
 
 
 class AffectationSaisie(SQLModel):
@@ -130,7 +140,9 @@ class Moi(SQLModel):
 class ClasseBase(SQLModel):
     nom: str = Field(index=True)            # ex : "6ème A"
     niveau: str                              # ex : "Collège"
-    frais_annuels: int = Field(ge=0)         # montant total à payer par élève
+    frais_annuels: int = Field(default=0, ge=0)   # scolarité de l'année par élève
+    mensualite: int = Field(default=0, ge=0)      # paiement mensuel : frais_annuels = mensualité × nombre de mois
+    frais_inscription: int = Field(default=0, ge=0)   # inscription / réinscription, due chaque année
 
 
 class Classe(ClasseBase, table=True):
@@ -827,6 +839,7 @@ class TypeFrais(SQLModel, table=True):
     obligatoire: bool = True                 # True : tous les élèves ; False : seulement ceux inscrits
     actif: bool = True
     ordre: int = 0
+    code: Optional[str] = None               # « inscription » : montant fixé par classe
 
 
 class TypeFraisSaisie(SQLModel):
@@ -924,17 +937,33 @@ class CreneauDetail(SQLModel):
 
 
 # ---------- Paie du personnel ----------
-class ContratPaie(SQLModel, table=True):
+class Poste(SQLModel, table=True):
+    """Poste de travail et son salaire, fixé par le directeur (ex : Enseignant, 3 000 / heure)."""
     id: Optional[int] = Field(default=None, primary_key=True)
     ecole_id: int = Field(foreign_key="ecole.id", index=True)
-    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True, unique=True)
-    type: str = "mensuel"                    # mensuel (salaire fixe) / horaire (taux par heure)
-    montant: int = Field(ge=0)
+    nom: str
+    type: str = "mensuel"                    # mensuel (salaire fixe) / horaire (taux par heure de cours)
+    montant: int = Field(default=0, ge=0)
+    role: Optional[str] = None               # poste attribué par défaut aux comptes de ce rôle
 
 
-class ContratSaisie(SQLModel):
+class PosteSaisie(SQLModel):
+    nom: str = Field(min_length=2, max_length=40)
     type: Literal["mensuel", "horaire"]
     montant: int = Field(ge=0)
+
+
+class PosteDetail(SQLModel):
+    id: int
+    nom: str
+    type: str
+    montant: int
+    role: Optional[str]
+    effectif: int
+
+
+class ChoixPoste(SQLModel):
+    poste_id: int
 
 
 class Avance(SQLModel, table=True):
@@ -1011,6 +1040,8 @@ class LignePersonnel(SQLModel):
     utilisateur_id: int
     nom: str
     role: str
+    poste_id: Optional[int]
+    poste: Optional[str]
     contrat_type: Optional[str]
     contrat_montant: Optional[int]
     heures_prevues: Optional[float]          # d'après l'emploi du temps, pour le mois choisi

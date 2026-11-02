@@ -149,6 +149,10 @@
   .msg .boutons { display: flex; gap: 8px; flex-wrap: wrap; }
   a.btn { text-decoration: none; display: inline-block; }
   .btn.wa { background: #16a34a; }
+  .mois-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .mois-chips .mois { font-size: .75rem; padding: 2px 6px; border-radius: 999px; background: #f3f4f6; color: var(--muted); }
+  .mois-chips .mois.payee { background: var(--ok-bg); color: var(--ok); }
+  .mois-chips .mois.en_retard { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
   .apercu-image { width: 140px; height: 100px; border: 1px dashed var(--border); border-radius: 8px; display: grid;
     place-items: center; color: var(--muted); font-size: .8rem; background: #fff; overflow: hidden; }
   .apercu-image img { max-width: 100%; max-height: 100%; }
@@ -316,7 +320,10 @@
         <form id="f-classe">
           <label>Nom<input name="nom" placeholder="6ème A" required></label>
           <label>Niveau<input name="niveau" placeholder="Collège" required></label>
-          <label>Frais annuels<input name="frais_annuels" type="number" min="0" required></label>
+          <label data-mode="mensuel">Mensualité (par mois)<input name="mensualite" type="number" min="0" required></label>
+          <label data-mode="tranches">Frais de scolarité de l'année<input name="frais_annuels" type="number" min="0" required></label>
+          <label>Frais d'inscription<input name="frais_inscription" type="number" min="0" placeholder="0 si aucun"></label>
+          <p class="hint" style="margin:0" data-mode="mensuel" id="hint-mensuel"></p>
           <button class="btn">Créer la classe</button>
         </form>
       </div>
@@ -594,7 +601,7 @@
       </div>
       <div class="card">
         <h2>Autres frais</h2>
-        <p class="hint">Frais d'inscription, cantine, transport, tenue… « Pour tous » : dû par chaque élève.
+        <p class="hint">Cantine, transport, tenue… (les frais d'inscription se règlent dans chaque classe). « Pour tous » : dû par chaque élève.
           Sinon, choisis les élèves concernés dans Élèves → Actions → « Cantine, transport… ».</p>
         <div class="table-wrap"><table id="t-types-frais"></table></div>
         <form id="f-type-frais" class="row" style="align-items:end;margin-top:10px">
@@ -607,16 +614,33 @@
       </div>
     </div>
     <div class="card mt" style="max-width:720px">
-      <h2>Échéancier de paiement</h2>
-      <p class="hint">Découpe les frais annuels en tranches avec une date limite. Un élève n'est « en retard » que si une
-        tranche est dépassée. Sans tranche, tout est dû dès l'inscription.</p>
-      <div class="table-wrap"><table id="t-tranches"></table></div>
-      <div class="toolbar" style="margin-top:10px">
-        <button class="link" id="btn-ajout-tranche">+ Ajouter une tranche</button>
-        <button class="link" id="btn-tranches-type">Proposer 3 tranches (40 / 30 / 30 %)</button>
-        <span id="tranches-total" style="margin-left:auto;font-size:.9rem"></span>
+      <h2>Paiement de la scolarité</h2>
+      <form id="f-mode-paiement" style="gap:12px">
+        <div class="seg" role="radiogroup">
+          <label style="display:flex;flex-direction:row;gap:6px;align-items:center;padding:7px 12px;color:var(--text)">
+            <input type="radio" name="mode_paiement" value="mensuel" style="width:auto"> Par mois (conseillé)</label>
+          <label style="display:flex;flex-direction:row;gap:6px;align-items:center;padding:7px 12px;color:var(--text);border-left:1px solid var(--border)">
+            <input type="radio" name="mode_paiement" value="tranches" style="width:auto"> Par tranches</label>
+        </div>
+        <div class="row" id="mp-mensuel">
+          <label>Nombre de mois<input name="nb_mois" type="number" min="1" max="12" required></label>
+          <label>Premier mois<select name="mois_debut"></select></label>
+          <label>À payer avant le<input name="jour_limite" type="number" min="1" max="28" required></label>
+        </div>
+        <p class="hint" style="margin:0" id="mp-explication"></p>
+        <button class="btn" style="justify-self:start">Enregistrer</button>
+      </form>
+      <div id="mp-tranches" class="mt">
+        <p class="hint">Découpe la scolarité en tranches avec une date limite. Un élève n'est « en retard » que si une
+          tranche est dépassée. Sans tranche, tout est dû dès l'inscription.</p>
+        <div class="table-wrap"><table id="t-tranches"></table></div>
+        <div class="toolbar" style="margin-top:10px">
+          <button class="link" id="btn-ajout-tranche">+ Ajouter une tranche</button>
+          <button class="link" id="btn-tranches-type">Proposer 3 tranches (40 / 30 / 30 %)</button>
+          <span id="tranches-total" style="margin-left:auto;font-size:.9rem"></span>
+        </div>
+        <button class="btn" id="btn-tranches">Enregistrer l'échéancier</button>
       </div>
-      <button class="btn" id="btn-tranches">Enregistrer l'échéancier</button>
     </div>
     <div class="card mt">
       <h2>Nouvelle année scolaire</h2>
@@ -775,9 +799,21 @@
         <label style="flex-direction:row;align-items:center;gap:6px">Mois<input type="month" id="paie-mois" style="width:auto"></label>
         <span class="hint" id="paie-total" style="margin:0 0 0 auto"></span>
       </div>
-      <p class="hint">Salaire fixe par mois, ou paiement à l'heure (les heures sont proposées d'après l'emploi du temps).
-        Les avances non remboursées sont retirées automatiquement de la fiche. Payer une fiche l'ajoute aux dépenses de la caisse.</p>
+      <p class="hint">Chacun est payé selon le salaire de son poste. Les avances non remboursées sont retirées automatiquement
+        de la fiche. Payer une fiche l'ajoute aux dépenses de la caisse.</p>
       <div class="table-wrap"><table id="t-paie"></table></div>
+    </div>
+    <div class="card mt">
+      <h2>Postes et salaires</h2>
+      <p class="hint">Le directeur fixe le salaire de chaque poste : par mois, ou par heure de cours (les heures sont
+        proposées d'après l'emploi du temps). Un nouveau salaire s'applique aux prochaines fiches.</p>
+      <div class="table-wrap"><table id="t-postes"></table></div>
+      <form id="f-poste" class="row" data-roles="directeur" style="align-items:end;margin-top:10px">
+        <label style="flex:2">Nouveau poste<input name="nom" placeholder="ex : Enseignant vacataire" required minlength="2" maxlength="40"></label>
+        <label>Payé<select name="type"><option value="mensuel">par mois</option><option value="horaire">par heure</option></select></label>
+        <label>Salaire<input name="montant" type="number" min="0" required></label>
+        <button class="btn" style="flex:0 0 auto">Ajouter</button>
+      </form>
     </div>
     <div class="two-eq mt">
       <div class="card">
@@ -858,7 +894,7 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + (moi?.ecole.devise ?? "");
 const peut = (...roles) => moi && roles.includes(moi.utilisateur.role);
-const titreEcole = () => { $("#nom-ecole").textContent = `🏫 ${moi.ecole.nom} · ${moi.ecole.annee_scolaire}`; };
+const titreEcole = () => { $("#nom-ecole").textContent = `🏫 ${moi.ecole.nom} · ${moi.ecole.annee_scolaire}`; majChampsMode(); };
 const dateHeure = (d) => {
   if (!d) return "";
   const x = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(d) ? d : d + "Z");   // dates du serveur en UTC
@@ -1190,14 +1226,35 @@ async function afficherDashboard() {
 async function afficherClasses() {
   const counts = {};
   eleves.forEach((e) => (counts[e.classe_id] = (counts[e.classe_id] || 0) + 1));
-  const dir = peut("directeur");
+  const dir = peut("directeur"), mensuel = estMensuel();
+  majChampsMode();
   table($("#t-classes"),
-    ["Classe", "Niveau", { label: "Élèves", num: true }, { label: "Frais annuels", num: true }, ...(dir ? [""] : [])],
+    ["Classe", "Niveau", { label: "Élèves", num: true }, ...(mensuel ? [{ label: "Mensualité", num: true }] : []),
+     { label: "Scolarité / an", num: true }, { label: "Inscription", num: true }, ...(dir ? [""] : [])],
     classes.map((c) => `<tr><td>${esc(c.nom)}</td><td>${esc(c.niveau)}</td>
-      <td class="num">${counts[c.id] || 0}</td><td class="num">${argent(c.frais_annuels)}</td>
+      <td class="num">${counts[c.id] || 0}</td>${mensuel ? `<td class="num">${argent(mensualiteDe(c))}</td>` : ""}
+      <td class="num">${argent(c.frais_annuels)}</td><td class="num">${c.frais_inscription ? argent(c.frais_inscription) : "–"}</td>
       ${dir ? `<td class="actions"><button class="link" data-modif-classe="${c.id}">✏️ Modifier</button>${counts[c.id]
         ? "" : `<button class="link danger" data-suppr-classe="${c.id}">🗑 Supprimer</button>`}</td>` : ""}</tr>`),
     peut("directeur") ? "Crée ta première classe à gauche" : "Aucune classe");
+}
+
+// Paiement mensuel ou par tranches (réglé dans Paramètres)
+const estMensuel = () => moi?.ecole?.mode_paiement !== "tranches";
+const mensualiteDe = (c) => c.mensualite || Math.round(c.frais_annuels / (moi.ecole.nb_mois || 9));
+const NOMS_MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+function periodeMois() {
+  const e = moi.ecole, debut = e.mois_debut - 1, fin = (debut + e.nb_mois - 1) % 12;
+  return `${e.nb_mois} mois, de ${NOMS_MOIS[debut]} à ${NOMS_MOIS[fin]}, à payer avant le ${e.jour_limite} du mois`;
+}
+function majChampsMode() {
+  const mode = estMensuel() ? "mensuel" : "tranches";
+  document.querySelectorAll("[data-mode]").forEach((el) => {
+    el.hidden = el.dataset.mode !== mode;
+    el.querySelectorAll("input, select").forEach((i) => (i.disabled = el.hidden));
+  });
+  const h = $("#hint-mensuel");
+  if (h && moi) h.textContent = "Scolarité de l'année = mensualité × " + periodeMois() + ".";
 }
 
 $("#t-classes").addEventListener("click", async (ev) => {
@@ -1207,9 +1264,11 @@ $("#t-classes").addEventListener("click", async (ev) => {
     panneauSous(ev.target.closest("tr"), `<form class="row" data-form-classe="${c.id}" style="align-items:end">
       <label>Nom<input name="nom" value="${esc(c.nom)}" required></label>
       <label>Niveau<input name="niveau" value="${esc(c.niveau)}" required></label>
-      <label>Frais annuels<input name="frais_annuels" type="number" min="0" value="${c.frais_annuels}" required></label>
+      ${estMensuel() ? `<label>Mensualité<input name="mensualite" type="number" min="0" value="${mensualiteDe(c)}" required></label>`
+        : `<label>Scolarité de l'année<input name="frais_annuels" type="number" min="0" value="${c.frais_annuels}" required></label>`}
+      <label>Inscription<input name="frais_inscription" type="number" min="0" value="${c.frais_inscription || 0}"></label>
       <button class="btn" style="flex:0 0 auto">Enregistrer</button></form>
-      <span class="sub">Changer les frais annuels change le reste à payer de tous les élèves de la classe.</span>`);
+      <span class="sub">Changer les frais change le reste à payer de tous les élèves de la classe.</span>`);
   }
   if (d.supprClasse) {
     const c = classes.find((x) => x.id === Number(d.supprClasse));
@@ -1458,25 +1517,32 @@ async function chargerTypesFrais() {
   try { typesFrais = await api("/frais"); } catch { typesFrais = []; }
   return typesFrais;
 }
-async function afficherFraisInscription(recharger = true) {
+async function afficherFraisInscription(recharger = true, reinitialiser = recharger) {
   if (recharger && peut("directeur", "comptable")) await chargerTypesFrais();
   const c = classes.find((x) => x.id === Number($("#i-classe").value));
   const sel = $("#i-pour");
   const avant = sel.value;
-  const obligatoires = typesFrais.filter((t) => t.obligatoire);
-  sel.innerHTML = `<option value="">Scolarité</option>` +
-    obligatoires.map((t) => `<option value="${t.id}" data-max="${t.montant}">${esc(t.nom)} (${argent(t.montant)})</option>`).join("");
-  if ([...sel.options].some((o) => o.value === avant)) sel.value = avant;
+  // L'inscription (montant de la classe) d'abord, puis la scolarité et les autres frais obligatoires
+  const montantDe = (t) => (t.code === "inscription" ? (c?.frais_inscription || 0) : t.montant);
+  const obligatoires = typesFrais.filter((t) => t.obligatoire && montantDe(t) > 0)
+    .sort((a, b) => (b.code === "inscription") - (a.code === "inscription"));
+  const insc = obligatoires.find((t) => t.code === "inscription");
+  const sco = `<option value="">Scolarité${estMensuel() && c ? ` (mensualité ${argent(mensualiteDe(c))})` : ""}</option>`;
+  const autres = obligatoires.map((t) => `<option value="${t.id}" data-max="${montantDe(t)}">${esc(t.nom)} (${argent(montantDe(t))})</option>`);
+  sel.innerHTML = insc ? autres[0] + sco + autres.slice(1).join("") : sco + autres.join("");
+  if (reinitialiser || ![...sel.options].some((o) => o.value === avant)) sel.selectedIndex = 0;
+  else sel.value = avant;
   $("#i-pour-zone").hidden = !obligatoires.length;
   const opt = sel.selectedOptions[0];
   const max = opt?.dataset.max ? Number(opt.dataset.max) : c?.frais_annuels;
   const montant = $("#f-eleve").elements.montant;
-  $("#i-frais").textContent = c ? `Frais annuels de ${c.nom} : ${argent(c.frais_annuels)}` +
-    (obligatoires.length ? ` + ${obligatoires.map((t) => `${t.nom} ${argent(t.montant)}`).join(", ")}` : "") : "";
+  $("#i-frais").textContent = c ? (estMensuel() ? `${c.nom} : ${argent(mensualiteDe(c))} par mois (${argent(c.frais_annuels)} sur l'année)`
+      : `Scolarité de ${c.nom} : ${argent(c.frais_annuels)}`) +
+    (obligatoires.length ? ` + ${obligatoires.map((t) => `${t.nom} ${argent(montantDe(t))}`).join(", ")}` : "") : "";
   montant.max = max ?? "";
   montant.placeholder = max != null ? "Maximum " + argent(max) : "";
 }
-$("#i-classe").addEventListener("change", () => afficherFraisInscription(false));
+$("#i-classe").addEventListener("change", () => afficherFraisInscription(false, true));
 $("#i-pour").addEventListener("change", () => afficherFraisInscription(false));
 
 $("#f-eleve").addEventListener("submit", async (ev) => {
@@ -1555,7 +1621,9 @@ async function afficherSoldePaiement() {
       ? `Déjà payé : ${argent(s.total_paye)} · <b style="color:var(--bad)">reste ${argent(s.reste_a_payer)}</b>`
       : `<b style="color:var(--ok)">✔ Frais entièrement payés</b>`) +
       (s.retard ? `<br><b style="color:var(--bad)">⚠ En retard de ${argent(s.retard)} sur l'échéancier</b>` : "") +
-      (s.prochaine_echeance ? `<br>Prochaine échéance : ${new Date(s.prochaine_echeance).toLocaleDateString("fr-FR")} (${argent(s.prochain_montant)})` : "");
+      (s.prochaine_echeance ? `<br>Prochaine échéance : ${new Date(s.prochaine_echeance).toLocaleDateString("fr-FR")} (${argent(s.prochain_montant)})` : "") +
+      (s.echeances.length ? `<div class="mois-chips">${s.echeances.map((e) => `<span class="mois ${e.statut}" title="${esc(e.nom)} : ${argent(e.paye)} / ${argent(e.montant)}">${
+        e.statut === "payee" ? "✔" : e.paye ? "◐" : e.statut === "en_retard" ? "!" : "○"} ${esc(e.nom)}</span>`).join("")}</div>` : "");
     majPlaceholderFrais(s.reste_a_payer);
   } catch (err) { toast(err.message, true); }
 }
@@ -2202,11 +2270,44 @@ async function afficherParametres() {
   const f = $("#f-ecole");
   for (const k of ["nom", "adresse", "telephone", "devise", "indicatif_tel", "nb_devoirs", "poids_composition", "seuil_admission"])
     f.elements[k].value = moi.ecole[k] ?? "";
-  dessinerTranches(await api("/tranches"));
+  afficherModePaiement();
+  if (!estMensuel()) dessinerTranches(await api("/tranches"));
   afficherImagesEcole();
   afficherTypesFrais();
   await afficherPassages();
 }
+
+// ---------- Mode de paiement de la scolarité ----------
+function afficherModePaiement() {
+  const f = $("#f-mode-paiement"), e = moi.ecole;
+  if (!f.elements.mois_debut.options.length)
+    f.elements.mois_debut.innerHTML = NOMS_MOIS.map((m, i) => `<option value="${i + 1}">${m[0].toUpperCase() + m.slice(1)}</option>`).join("");
+  f.querySelector(`[value="${estMensuel() ? "mensuel" : "tranches"}"]`).checked = true;
+  f.elements.nb_mois.value = e.nb_mois; f.elements.mois_debut.value = e.mois_debut; f.elements.jour_limite.value = e.jour_limite;
+  majModePaiement();
+}
+function majModePaiement() {
+  const f = $("#f-mode-paiement"), mensuel = f.querySelector("[name=mode_paiement]:checked").value === "mensuel";
+  $("#mp-mensuel").hidden = !mensuel;
+  $("#mp-tranches").hidden = mensuel || estMensuel();
+  $("#mp-explication").textContent = mensuel
+    ? "Chaque classe a une mensualité ; l'élève est en retard si le mois n'est pas payé à la date limite. Les paiements remplissent les mois dans l'ordre."
+    : "Les frais de chaque classe sont découpés en tranches (enregistre ce choix, puis définis les tranches).";
+}
+$("#f-mode-paiement").addEventListener("change", majModePaiement);
+$("#f-mode-paiement").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, mensuel = f.querySelector("[name=mode_paiement]:checked").value === "mensuel";
+  const data = { mode_paiement: mensuel ? "mensuel" : "tranches" };
+  if (mensuel) Object.assign(data, { nb_mois: Number(f.elements.nb_mois.value), mois_debut: Number(f.elements.mois_debut.value),
+    jour_limite: Number(f.elements.jour_limite.value) });
+  try {
+    moi.ecole = await api("/ecole", { method: "PATCH", body: JSON.stringify(data) });
+    toast(mensuel ? "Paiement mensuel enregistré ✔ Vérifie la mensualité de chaque classe" : "Paiement par tranches enregistré ✔");
+    classes = await api("/classes");
+    afficherParametres();
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---------- Logo et cachet ----------
 async function afficherImagesEcole() {
@@ -2244,7 +2345,7 @@ $("#parametres").addEventListener("change", async (ev) => {
 async function afficherTypesFrais() {
   const liste = await chargerTypesFrais();
   table($("#t-types-frais"), ["Frais", { label: "Montant", num: true }, "Qui paie", ""],
-    liste.map((t) => `<tr data-type-frais="${t.id}">
+    liste.map((t) => t.code === "inscription" ? `<tr><td><b>${esc(t.nom)}</b></td><td class="num" colspan="2">montant fixé dans chaque classe</td><td></td></tr>` : `<tr data-type-frais="${t.id}">
       <td><input data-tf="nom" value="${esc(t.nom)}" aria-label="Nom"></td>
       <td class="num"><input data-tf="montant" type="number" min="0" value="${t.montant}" style="width:110px;text-align:right" aria-label="Montant"></td>
       <td><select data-tf="obligatoire"><option value="1" ${t.obligatoire ? "selected" : ""}>Tous les élèves</option>
@@ -2768,28 +2869,78 @@ $("#f-creneau").addEventListener("submit", async (ev) => {
 });
 
 // ---------- Paie ----------
-let personnel = [];
+let personnel = [], postes = [];
+function afficherPostes() {
+  const dir = peut("directeur");
+  table($("#t-postes"), ["Poste", "Payé", { label: "Salaire", num: true }, { label: "Personnes", num: true }, ...(dir ? [""] : [])],
+    postes.map((q) => dir ? `<tr data-poste="${q.id}">
+        <td><input data-po="nom" value="${esc(q.nom)}" aria-label="Nom du poste"></td>
+        <td><select data-po="type" style="width:auto"><option value="mensuel" ${q.type === "mensuel" ? "selected" : ""}>par mois</option>
+          <option value="horaire" ${q.type === "horaire" ? "selected" : ""}>par heure</option></select></td>
+        <td class="num"><input data-po="montant" type="number" min="0" value="${q.montant || ""}" placeholder="à définir"
+          style="width:120px;text-align:right;${q.montant ? "" : "border-color:var(--bad)"}"></td>
+        <td class="num">${q.effectif}</td>
+        <td class="actions"><button class="link" data-enreg-poste="${q.id}">Enregistrer</button>${q.role ? ""
+          : `<button class="link danger" data-suppr-poste="${q.id}">Supprimer</button>`}</td></tr>`
+      : `<tr><td>${esc(q.nom)}</td><td>${q.type === "horaire" ? "par heure" : "par mois"}</td>
+        <td class="num">${q.montant ? argent(q.montant) : "à définir"}</td><td class="num">${q.effectif}</td></tr>`),
+    "Aucun poste");
+}
+$("#t-postes").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  try {
+    if (d.enregPoste) {
+      const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-po="${k}"]`).value;
+      await api(`/paie/postes/${d.enregPoste}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), type: v("type"), montant: Number(v("montant") || 0) }) });
+      toast("Salaire du poste enregistré ✔");
+    } else if (d.supprPoste) {
+      if (!confirm("Supprimer ce poste ?")) return;
+      await api(`/paie/postes/${d.supprPoste}`, { method: "DELETE" });
+      toast("Poste supprimé");
+    } else return;
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-poste").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("/paie/postes", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    toast("Poste ajouté ✔ Attribue-le aux personnes concernées dans le tableau du haut");
+    ev.target.reset();
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-paie").addEventListener("change", async (ev) => {
+  const uid = ev.target.dataset.choixPoste;
+  if (!uid) return;
+  try {
+    await api(`/paie/personnel/${uid}/poste?mois=${$("#paie-mois").value}`, { method: "PUT", body: JSON.stringify({ poste_id: Number(ev.target.value) }) });
+    toast("Poste changé ✔");
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
 const ROLES_FR = { directeur: "Directeur", comptable: "Comptable", enseignant: "Enseignant", surveillant: "Surveillant" };
 async function afficherPaie() {
   const mois = $("#paie-mois");
   if (!mois.value) mois.value = aujourdhui().slice(0, 7);
   const dir = peut("directeur");
-  personnel = await api(`/paie/personnel?mois=${mois.value}`);
+  [personnel, postes] = await Promise.all([api(`/paie/personnel?mois=${mois.value}`), api("/paie/postes")]);
+  afficherPostes();
   const total = personnel.reduce((t, p) => t + (p.fiche?.net || 0), 0);
   const payees = personnel.filter((p) => p.fiche?.payee).length;
   $("#paie-total").textContent = `Total des fiches : ${argent(total)} · ${payees} payée(s)`;
   table($("#t-paie"),
-    ["Nom", "Contrat", { label: "Heures prévues", num: true }, { label: "Avances dues", num: true }, { label: "Net du mois", num: true }, ""],
+    ["Nom", "Poste", { label: "Heures prévues", num: true }, { label: "Avances dues", num: true }, { label: "Net du mois", num: true }, ""],
     personnel.map((p) => {
       const f = p.fiche;
-      const contrat = dir
-        ? `<select data-ct-type style="width:auto"><option value="mensuel" ${p.contrat_type !== "horaire" ? "selected" : ""}>Par mois</option>
-             <option value="horaire" ${p.contrat_type === "horaire" ? "selected" : ""}>Par heure</option></select>
-           <input data-ct-montant type="number" min="0" value="${p.contrat_montant ?? ""}" placeholder="montant" style="width:100px">
-           <button class="link" data-enreg-contrat="${p.utilisateur_id}">OK</button>`
-        : p.contrat_type ? `${argent(p.contrat_montant)} ${p.contrat_type === "horaire" ? "/ heure" : "/ mois"}` : "<span class='sub'>pas de contrat</span>";
+      const salaire = p.contrat_montant ? `${argent(p.contrat_montant)} ${p.contrat_type === "horaire" ? "/ heure" : "/ mois"}`
+        : `<span style="color:var(--bad)">salaire à définir</span>`;
+      const contrat = (dir
+        ? `<select data-choix-poste="${p.utilisateur_id}" style="width:auto">${postes.map((q) =>
+            `<option value="${q.id}" ${q.id === p.poste_id ? "selected" : ""}>${esc(q.nom)}</option>`).join("")}</select>`
+        : esc(p.poste || "–")) + `<span class="sub">${salaire}</span>`;
       const actions = !f
-        ? (p.contrat_type ? [`<button class="link" data-preparer="${p.utilisateur_id}">🧾 Préparer la fiche</button>`] : [])
+        ? (p.contrat_montant ? [`<button class="link" data-preparer="${p.utilisateur_id}">🧾 Préparer la fiche</button>`] : [])
         : [`<button class="link" data-fiche-pdf="${f.id}">📄 Fiche de paie</button>`,
            ...(f.payee ? [] : [`<button class="link" data-payer-fiche="${f.id}">💵 Payer</button>`,
                               `<button class="link danger" data-suppr-fiche="${f.id}">🗑 Supprimer la fiche</button>`])];
@@ -2812,12 +2963,6 @@ $("#paie-mois").addEventListener("change", afficherPaie);
 $("#t-paie").addEventListener("click", async (ev) => {
   const d = ev.target.dataset, tr = ev.target.closest("tr.panneau")?.previousElementSibling || ev.target.closest("tr");
   try {
-    if (d.enregContrat) {
-      await api(`/paie/contrats/${d.enregContrat}`, { method: "PUT", body: JSON.stringify({
-        type: tr.querySelector("[data-ct-type]").value, montant: Number(tr.querySelector("[data-ct-montant]").value || 0) }) });
-      toast("Contrat enregistré ✔");
-      return afficherPaie();
-    }
     if (d.preparer) {
       const p = personnel.find((x) => x.utilisateur_id === Number(d.preparer));
       return panneauSous(tr, `<form class="row" data-form-fiche="${p.utilisateur_id}" style="align-items:end">

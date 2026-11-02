@@ -1,5 +1,6 @@
-"""Paie du personnel : contrats (fixe ou à l'heure), avances, fiches de paie, versement en caisse."""
+"""Paie du personnel : salaire par poste (fixe ou à l'heure), avances, fiches de paie, versement en caisse."""
 import re
+import threading
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -7,13 +8,13 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import (
-    Avance, AvanceSaisie, CategorieDepense, ContratPaie, ContratSaisie, Depense, Ecole, FicheDetail, FichePaie,
-    FicheSaisie, LignePersonnel, PaiementFiche, Role, Utilisateur,
+    Avance, AvanceSaisie, CategorieDepense, ChoixPoste, Depense, Ecole, FicheDetail, FichePaie,
+    FicheSaisie, LignePersonnel, PaiementFiche, Poste, PosteDetail, PosteSaisie, Role, Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_fiche_paie
 from app.routers.emploi import heures_prevues
 from app.security import GESTION, exiger_role
-from app.services import annee_courante
+from app.services import ajouter_postes_defaut, annee_courante
 
 router = APIRouter(prefix="/paie", tags=["Paie"])
 ROLES = {"directeur": "Directeur", "comptable": "Comptable", "enseignant": "Enseignant", "surveillant": "Surveillant"}
@@ -52,32 +53,115 @@ def _avances_en_cours(session: Session, utilisateur_id: int) -> list[Avance]:
                         .order_by(Avance.jour)).all()
 
 
-# ---------- Contrats ----------
-@router.put("/contrats/{utilisateur_id}", response_model=ContratPaie)
-def definir_contrat(utilisateur_id: int, data: ContratSaisie, user: Utilisateur = Depends(exiger_role(Role.directeur)),
-                    session: Session = Depends(get_session)):
-    """Salaire fixe par mois, ou taux par heure de cours."""
-    _membre(session, utilisateur_id, user.ecole_id)
-    c = session.exec(select(ContratPaie).where(ContratPaie.utilisateur_id == utilisateur_id)).first() \
-        or ContratPaie(ecole_id=user.ecole_id, utilisateur_id=utilisateur_id, montant=0)
-    c.type, c.montant = data.type, data.montant
-    session.add(c)
+# ---------- Postes et salaires (fixés par le directeur) ----------
+_VERROU_POSTES = threading.Lock()
+
+
+def postes_ecole(session: Session, ecole_id: int) -> list[Poste]:
+    """Les postes de l'école (créés à la première utilisation pour les écoles d'avant la paie par poste)."""
+    requete = select(Poste).where(Poste.ecole_id == ecole_id).order_by(Poste.id)
+    postes = session.exec(requete).all()
+    if not postes:
+        with _VERROU_POSTES:                       # deux écrans ouverts en même temps : une seule création
+            session.expire_all()
+            if not session.exec(requete).first():
+                ajouter_postes_defaut(session, ecole_id)
+                session.commit()
+        postes = session.exec(requete).all()
+    return postes
+
+
+def poste_de(u: Utilisateur, postes: list[Poste]) -> Poste | None:
+    """Le poste choisi pour la personne, sinon le poste par défaut de son rôle."""
+    return next((p for p in postes if p.id == u.poste_id), None) or \
+        next((p for p in postes if p.role == u.role.value), None)
+
+
+def _personnel(session: Session, ecole_id: int) -> list[Utilisateur]:
+    return session.exec(select(Utilisateur).where(Utilisateur.ecole_id == ecole_id, Utilisateur.actif == True)  # noqa: E712
+                        .order_by(Utilisateur.nom)).all()
+
+
+def _poste(session: Session, poste_id: int, ecole_id: int) -> Poste:
+    p = session.get(Poste, poste_id)
+    if not p or p.ecole_id != ecole_id:
+        raise HTTPException(404, "Poste introuvable")
+    return p
+
+
+@router.get("/postes", response_model=list[PosteDetail])
+def lister_postes(user: Utilisateur = Depends(exiger_role(*GESTION)), session: Session = Depends(get_session)):
+    postes = postes_ecole(session, user.ecole_id)
+    gens = _personnel(session, user.ecole_id)
+    return [PosteDetail(**p.model_dump(include={"id", "nom", "type", "montant", "role"}),
+                        effectif=sum(1 for u in gens if (q := poste_de(u, postes)) and q.id == p.id)) for p in postes]
+
+
+@router.post("/postes", response_model=Poste, status_code=201)
+def creer_poste(data: PosteSaisie, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                session: Session = Depends(get_session)):
+    """Ex : « Enseignant vacataire », 2 500 par heure ; « Gardien », 600 000 par mois."""
+    postes = postes_ecole(session, user.ecole_id)
+    if any(p.nom.lower() == data.nom.strip().lower() for p in postes):
+        raise HTTPException(400, "Ce poste existe déjà")
+    p = Poste(ecole_id=user.ecole_id, nom=data.nom.strip(), type=data.type, montant=data.montant)
+    session.add(p)
     session.commit()
-    session.refresh(c)
-    return c
+    session.refresh(p)
+    return p
+
+
+@router.patch("/postes/{poste_id}", response_model=Poste)
+def modifier_poste(poste_id: int, data: PosteSaisie, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                   session: Session = Depends(get_session)):
+    """Change le salaire d'un poste : s'applique aux prochaines fiches (les fiches déjà faites ne bougent pas)."""
+    p = _poste(session, poste_id, user.ecole_id)
+    p.nom, p.type, p.montant = data.nom.strip(), data.type, data.montant
+    session.add(p)
+    session.commit()
+    session.refresh(p)
+    return p
+
+
+@router.delete("/postes/{poste_id}", status_code=204)
+def supprimer_poste(poste_id: int, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                    session: Session = Depends(get_session)):
+    p = _poste(session, poste_id, user.ecole_id)
+    if p.role:
+        raise HTTPException(400, "Ce poste est celui par défaut d'un rôle : modifie son salaire au lieu de le supprimer")
+    postes = postes_ecole(session, user.ecole_id)
+    if any((q := poste_de(u, postes)) and q.id == p.id for u in _personnel(session, user.ecole_id)):
+        raise HTTPException(400, "Des membres du personnel occupent ce poste : change d'abord leur poste")
+    for u in session.exec(select(Utilisateur).where(Utilisateur.poste_id == p.id)).all():   # comptes désactivés
+        u.poste_id = None
+        session.add(u)
+    session.delete(p)
+    session.commit()
+
+
+@router.put("/personnel/{utilisateur_id}/poste", response_model=LignePersonnel)
+def changer_poste(utilisateur_id: int, data: ChoixPoste, mois: str | None = None,
+                  user: Utilisateur = Depends(exiger_role(Role.directeur)), session: Session = Depends(get_session)):
+    u = _membre(session, utilisateur_id, user.ecole_id)
+    u.poste_id = _poste(session, data.poste_id, user.ecole_id).id
+    session.add(u)
+    session.commit()
+    mois = mois or date.today().strftime("%Y-%m")
+    return next(l for l in personnel(mois, user, session) if l.utilisateur_id == u.id)
 
 
 @router.get("/personnel", response_model=list[LignePersonnel])
 def personnel(mois: str, user: Utilisateur = Depends(exiger_role(*GESTION)), session: Session = Depends(get_session)):
-    """Tout le personnel actif, avec son contrat, ses heures prévues, ses avances et sa fiche du mois."""
+    """Tout le personnel actif, avec son poste et son salaire, ses heures prévues, ses avances et sa fiche du mois."""
     _mois(mois)
+    postes = postes_ecole(session, user.ecole_id)
     lignes = []
-    for u in session.exec(select(Utilisateur).where(Utilisateur.ecole_id == user.ecole_id, Utilisateur.actif == True)  # noqa: E712
-                          .order_by(Utilisateur.nom)).all():
-        c = session.exec(select(ContratPaie).where(ContratPaie.utilisateur_id == u.id)).first()
+    for u in _personnel(session, user.ecole_id):
+        c = poste_de(u, postes)
         f = session.exec(select(FichePaie).where(FichePaie.utilisateur_id == u.id, FichePaie.mois == mois)).first()
         lignes.append(LignePersonnel(
             utilisateur_id=u.id, nom=u.nom, role=ROLES.get(u.role.value, u.role.value),
+            poste_id=c.id if c else None, poste=c.nom if c else None,
             contrat_type=c.type if c else None, contrat_montant=c.montant if c else None,
             heures_prevues=heures_prevues(session, user.ecole_id, u.id, mois) if c and c.type == "horaire" else None,
             avances_en_cours=sum(a.montant for a in _avances_en_cours(session, u.id)),
@@ -117,9 +201,9 @@ def preparer_fiche(data: FicheSaisie, user: Utilisateur = Depends(exiger_role(*G
     """Calcule la fiche du mois : (salaire fixe ou heures × taux) + primes − retenues − avances en cours."""
     mois = _mois(data.mois)
     u = _membre(session, data.utilisateur_id, user.ecole_id)
-    c = session.exec(select(ContratPaie).where(ContratPaie.utilisateur_id == u.id)).first()
-    if not c:
-        raise HTTPException(400, f"Définis d'abord le salaire de {u.nom}")
+    c = poste_de(u, postes_ecole(session, user.ecole_id))
+    if not c or not c.montant:
+        raise HTTPException(400, f"Le directeur doit d'abord définir le salaire du poste « {c.nom if c else '?'} »")
     if session.exec(select(FichePaie).where(FichePaie.utilisateur_id == u.id, FichePaie.mois == mois)).first():
         raise HTTPException(400, f"La fiche de {mois} de {u.nom} existe déjà")
     if c.type == "horaire":

@@ -47,6 +47,8 @@ def creer(data: TypeFraisSaisie, user: Utilisateur = Depends(exiger_role(Role.di
 def modifier(type_id: int, data: TypeFraisSaisie, user: Utilisateur = Depends(exiger_role(Role.directeur)),
              session: Session = Depends(get_session)):
     t = _get(session, type_id, user.ecole_id)
+    if t.code:
+        raise HTTPException(400, "Le montant de l'inscription se règle dans chaque classe (Élèves → Classes)")
     t.nom, t.montant, t.obligatoire = data.nom.strip(), data.montant, data.obligatoire
     session.add(t)
     session.commit()
@@ -59,6 +61,8 @@ def supprimer(type_id: int, user: Utilisateur = Depends(exiger_role(Role.directe
               session: Session = Depends(get_session)):
     """Retire un frais. S'il a déjà été payé, il est seulement désactivé (l'historique reste)."""
     t = _get(session, type_id, user.ecole_id)
+    if t.code:
+        raise HTTPException(400, "Pour ne plus demander d'inscription, mets son montant à 0 dans les classes")
     if session.exec(select(Paiement.id).where(Paiement.type_frais_id == t.id).limit(1)).first():
         t.actif = False
         session.add(t)

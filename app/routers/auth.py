@@ -20,6 +20,7 @@ from app.notifications import email_disponible, envoyer_email, envoyer_sms, sms_
 from app.routers.messages import numero_international
 from app.routers.matieres import ajouter_matieres_defaut
 from app.services import etat_abonnement
+from app.services import ajouter_postes_defaut
 from app.security import (
     TOUS, affectations_de, creer_token, exiger_role, hacher_mot_de_passe, utilisateur_courant,
     verifier_mot_de_passe,
@@ -54,6 +55,7 @@ def creer_ecole_et_directeur(session: Session, data: InscriptionEcole, statut: s
     )
     session.add(directeur)
     ajouter_matieres_defaut(session, ecole.id)   # liste de départ, modifiable ensuite
+    ajouter_postes_defaut(session, ecole.id)     # postes de la paie, salaires à définir
     session.commit()
     session.refresh(directeur)
     return Token(access_token=creer_token(directeur))
@@ -215,6 +217,10 @@ def modifier_ecole(
     ecole = session.get(Ecole, user.ecole_id)
     ecole.sqlmodel_update(data.model_dump(exclude_unset=True))
     session.add(ecole)
+    if ecole.mode_paiement == "mensuel":   # le nombre de mois change la scolarité des classes à mensualité
+        for c in session.exec(select(Classe).where(Classe.ecole_id == ecole.id, Classe.mensualite > 0)).all():
+            c.frais_annuels = c.mensualite * ecole.nb_mois
+            session.add(c)
     session.commit()
     session.refresh(ecole)
     return ecole

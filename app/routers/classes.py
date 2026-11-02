@@ -6,9 +6,18 @@ from app.models import Classe, ClasseCreate, Ecole, Eleve, Role, Utilisateur
 from app.pdf import en_tete_pdf, pdf_bulletins, pdf_etat_paiements
 from app.security import GESTION, TOUS, exiger_role
 from app.models import ResultatAnnuel
-from app.services import bulletins_classe, get_classe, resultats_annuels, soldes_ecole
+from app.services import bulletins_classe, get_classe, resultats_annuels, soldes_ecole, type_inscription
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
+
+
+def _calculer_frais(session: Session, classe: Classe) -> None:
+    """Paiement mensuel : scolarité de l'année = mensualité × nombre de mois. Prépare le frais « Inscription »."""
+    ecole = session.get(Ecole, classe.ecole_id)
+    if ecole.mode_paiement == "mensuel" and classe.mensualite:
+        classe.frais_annuels = classe.mensualite * ecole.nb_mois
+    if classe.frais_inscription:
+        type_inscription(session, classe.ecole_id, creer=True)
 
 
 @router.post("", response_model=Classe, status_code=201)
@@ -18,6 +27,7 @@ def creer_classe(
     session: Session = Depends(get_session),
 ):
     classe = Classe.model_validate(data, update={"ecole_id": user.ecole_id})
+    _calculer_frais(session, classe)
     session.add(classe)
     session.commit()
     session.refresh(classe)
@@ -43,6 +53,7 @@ def modifier_classe(
 ):
     classe = get_classe(session, classe_id, user.ecole_id)
     classe.sqlmodel_update(data.model_dump())
+    _calculer_frais(session, classe)
     session.add(classe)
     session.commit()
     session.refresh(classe)

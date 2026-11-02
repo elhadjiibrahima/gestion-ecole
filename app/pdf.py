@@ -185,6 +185,14 @@ def pdf_recu(ecole: Ecole, paiement: Paiement, eleve: Eleve, classe: Classe,
     if solde.reduction:
         lignes_situation.append([f"Réduction sur la scolarité ({solde.reduction_motif or '—'})",
                                  "− " + argent(solde.reduction, d)])
+    if solde.echeances:   # mois (ou tranches) couverts par les paiements de scolarité
+        reglees = [e.nom for e in solde.echeances if e.statut == "payee"]
+        partielle = next((e for e in solde.echeances if 0 < e.paye < e.montant), None)
+        texte = ", ".join(reglees) or "aucune"
+        if partielle:
+            texte += f" ({partielle.nom} : {argent(partielle.paye, d)} / {argent(partielle.montant, d)})"
+        mot = "Mensualités réglées" if ecole.mode_paiement == "mensuel" else "Tranches réglées"
+        lignes_situation.append([Paragraph(f"{mot} : {texte}", S_NORMAL), ""])
     for l in (solde.lignes or []):
         lignes_situation.append([f"{l.nom} : payé {argent(l.paye, d)} / {argent(l.du, d)}",
                                  "soldé" if l.reste == 0 else f"reste {argent(l.reste, d)}"])

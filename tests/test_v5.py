@@ -30,6 +30,7 @@ def test_calcul_echeances():
 def test_echeancier_et_retard(client, dir_headers, setup):
     classe, eleve = setup                    # frais 500 000, 50 000 payés
     h = dir_headers
+    client.patch("/ecole", headers=h, json={"mode_paiement": "tranches"})
     assert client.get(f"/eleves/{eleve['id']}/solde", headers=h).json()["retard"] == 450000   # sans tranches : tout est dû
 
     tranches = [

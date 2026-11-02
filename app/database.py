@@ -25,6 +25,7 @@ def migrer(moteur) -> None:
     """
     inspecteur = inspect(moteur)
     tables_existantes = set(inspecteur.get_table_names())
+    ajoutees: set[tuple[str, str]] = set()
     with moteur.begin() as conn:
         for table in SQLModel.metadata.sorted_tables:
             if table.name not in tables_existantes:
@@ -43,7 +44,12 @@ def migrer(moteur) -> None:
                         valeur = valeur.value
                     defaut = f" DEFAULT {valeur!r}" if isinstance(valeur, str) else f" DEFAULT {valeur}"
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {type_sql}{defaut}'))
+                ajoutees.add((table.name, col.name))
 
+        # Écoles qui avaient déjà un échéancier par tranches : on le garde (les autres passent au paiement mensuel)
+        if ("ecole", "mode_paiement") in ajoutees and "tranche" in tables_existantes:
+            conn.execute(text("UPDATE ecole SET mode_paiement = 'tranches' "
+                              "WHERE id IN (SELECT DISTINCT ecole_id FROM tranche)"))
         # Données d'avant l'année scolaire : on les rattache à l'année en cours de l'école
         conn.execute(text("""
             UPDATE paiement SET annee_scolaire = (

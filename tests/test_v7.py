@@ -186,9 +186,15 @@ def test_paie(client, dir_headers, setup):
                                               "matiere_id": m["Mathématiques"], "enseignant_id": prof})
 
     assert client.post("/paie/fiches", headers=h, json={"utilisateur_id": prof, "mois": "2026-11"}).status_code == 400  # pas de contrat
-    client.put(f"/paie/contrats/{prof}", headers=h, json={"type": "horaire", "montant": 5000})
-    client.put(f"/paie/contrats/{comp}", headers=h, json={"type": "mensuel", "montant": 1200000})
-    assert client.put(f"/paie/contrats/{comp}", headers=compta, json={"type": "mensuel", "montant": 9}).status_code == 403
+    # Le directeur fixe un salaire par poste ; chacun prend le poste de son rôle
+    postes = {p["nom"]: p for p in client.get("/paie/postes", headers=h).json()}
+    assert set(postes) == {"Directeur", "Comptable", "Enseignant", "Surveillant"}
+    assert postes["Enseignant"]["type"] == "horaire" and postes["Enseignant"]["effectif"] == 1
+    client.patch(f"/paie/postes/{postes['Enseignant']['id']}", headers=h, json={"nom": "Enseignant", "type": "horaire", "montant": 5000})
+    client.patch(f"/paie/postes/{postes['Comptable']['id']}", headers=h, json={"nom": "Comptable", "type": "mensuel", "montant": 1200000})
+    assert client.patch(f"/paie/postes/{postes['Comptable']['id']}", headers=compta,
+                        json={"nom": "Comptable", "type": "mensuel", "montant": 9}).status_code == 403
+    assert client.delete(f"/paie/postes/{postes['Comptable']['id']}", headers=h).status_code == 400   # poste d'un rôle
 
     # Avance : sort de la caisse tout de suite
     client.post("/paie/avances", headers=compta, json={"utilisateur_id": comp, "montant": 200000, "motif": "Santé"})
@@ -299,3 +305,62 @@ def test_mot_de_passe_oublie(client, dir_headers, monkeypatch):
     # Pas plus de 3 demandes par heure
     client.post("/auth/mot-de-passe-oublie", json={"email": "directeur@test.gn"})
     assert client.post("/auth/mot-de-passe-oublie", json={"email": "directeur@test.gn"}).status_code == 429
+
+
+def test_postes_personnalises(client, dir_headers):
+    h = dir_headers
+    creer_compte(client, h, "surveillant", "s@test.gn")
+    sid = next(u["id"] for u in client.get("/utilisateurs", headers=h).json() if u["email"] == "s@test.gn")
+    gardien = client.post("/paie/postes", headers=h, json={"nom": "Surveillant général", "type": "mensuel", "montant": 900000}).json()
+    assert client.post("/paie/postes", headers=h, json={"nom": "surveillant général", "type": "mensuel", "montant": 1}).status_code == 400
+    ligne = client.put(f"/paie/personnel/{sid}/poste?mois=2026-11", headers=h, json={"poste_id": gardien["id"]}).json()
+    assert ligne["poste"] == "Surveillant général" and ligne["contrat_montant"] == 900000
+    assert client.delete(f"/paie/postes/{gardien['id']}", headers=h).status_code == 400    # occupé
+    f = client.post("/paie/fiches", headers=h, json={"utilisateur_id": sid, "mois": "2026-11"}).json()
+    assert f["net"] == 900000
+    # Changer le salaire du poste ne touche pas les fiches déjà faites
+    client.patch(f"/paie/postes/{gardien['id']}", headers=h, json={"nom": "Surveillant général", "type": "mensuel", "montant": 950000})
+    assert next(l for l in client.get("/paie/personnel?mois=2026-11", headers=h).json()
+                if l["utilisateur_id"] == sid)["fiche"]["net"] == 900000
+    sv = next(p for p in client.get("/paie/postes", headers=h).json() if p["nom"] == "Surveillant")
+    client.put(f"/paie/personnel/{sid}/poste", headers=h, json={"poste_id": sv["id"]})
+    assert client.delete(f"/paie/postes/{gardien['id']}", headers=h).status_code == 204
+
+
+def test_paiement_mensuel_et_inscription(client, dir_headers):
+    h = dir_headers
+    ecole = client.get("/auth/moi", headers=h).json()["ecole"]
+    assert ecole["mode_paiement"] == "mensuel" and ecole["nb_mois"] == 9
+    c = client.post("/classes", headers=h, json={"nom": "CP", "niveau": "Primaire", "mensualite": 40000,
+                                                  "frais_inscription": 25000}).json()
+    assert c["frais_annuels"] == 360000
+    ins = next(t for t in client.get("/frais", headers=h).json() if t["code"] == "inscription")
+    # Inscription : le premier versement règle les frais d'inscription
+    r = client.post("/eleves", headers=h, json={"nom": "Bah", "prenom": "Ali", "classe_id": c["id"],
+                                                "paiement": {"montant": 25000, "type_frais_id": ins["id"]}}).json()
+    eid = r["eleve"]["id"]
+    s = client.get(f"/eleves/{eid}/solde", headers=h).json()
+    assert [(l["nom"], l["du"], l["reste"]) for l in s["lignes"]] == [("Scolarité", 360000, 360000), ("Inscription", 25000, 0)]
+    assert len(s["echeances"]) == 9 and s["echeances"][0]["nom"] == "Octobre" and s["echeances"][-1]["nom"] == "Juin"
+    assert s["echeances"][0]["date_limite"] == "2026-10-05" and s["echeances"][3]["date_limite"] == "2027-01-05"
+    assert all(e["montant"] == 40000 for e in s["echeances"])
+    # Deux mois payés
+    client.post("/paiements", headers=h, json={"eleve_id": eid, "montant": 80000})
+    s = client.get(f"/eleves/{eid}/solde", headers=h).json()
+    assert [e["paye"] for e in s["echeances"][:3]] == [40000, 40000, 0]
+    assert [e["statut"] for e in s["echeances"][:2]] == ["payee", "payee"]
+    p = client.get(f"/eleves/{eid}/paiements", headers=h).json()[0]
+    assert client.get(f"/paiements/{p['id']}/recu.pdf", headers=h).content.startswith(b"%PDF")
+    # Le nombre de mois change la scolarité des classes à mensualité
+    client.patch("/ecole", headers=h, json={"nb_mois": 10, "mois_debut": 9})
+    assert next(x for x in client.get("/classes", headers=h).json() if x["id"] == c["id"])["frais_annuels"] == 400000
+    s = client.get(f"/eleves/{eid}/solde", headers=h).json()
+    assert s["echeances"][0]["nom"] == "Septembre" and len(s["echeances"]) == 10
+    # Le frais « Inscription » ne se modifie pas comme les autres
+    assert client.patch(f"/frais/{ins['id']}", headers=h, json={"nom": "Inscr", "montant": 1, "obligatoire": True}).status_code == 400
+    assert client.delete(f"/frais/{ins['id']}", headers=h).status_code == 400
+    # Une classe sans frais d'inscription : pas de ligne Inscription
+    c2 = client.post("/classes", headers=h, json={"nom": "CE1", "niveau": "Primaire", "mensualite": 30000}).json()
+    r2 = client.post("/eleves", headers=h, json={"nom": "Sow", "prenom": "Mo", "classe_id": c2["id"],
+                                                 "paiement": {"montant": 30000}}).json()
+    assert [l["nom"] for l in client.get(f"/eleves/{r2['eleve']['id']}/solde", headers=h).json()["lignes"]] == ["Scolarité"]

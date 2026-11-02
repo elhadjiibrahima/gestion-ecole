@@ -106,7 +106,42 @@ def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference
 
 
 # ---------- Échéancier ----------
+# ---------- Postes de la paie ----------
+POSTES_DEFAUT = [("Directeur", "mensuel", "directeur"), ("Comptable", "mensuel", "comptable"),
+                 ("Enseignant", "horaire", "enseignant"), ("Surveillant", "mensuel", "surveillant")]
+
+
+def ajouter_postes_defaut(session: Session, ecole_id: int) -> None:
+    """Un poste par rôle (salaire à définir par le directeur). Sans commit."""
+    from app.models import Poste
+    for nom, type_, role in POSTES_DEFAUT:
+        session.add(Poste(ecole_id=ecole_id, nom=nom, type=type_, montant=0, role=role))
+
+
+MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre",
+        "Novembre", "Décembre"]
+
+
+def mensualites(ecole: Ecole) -> list[Tranche]:
+    """Paiement mensuel : une échéance par mois (non enregistrée), due avant le « jour limite » du mois."""
+    try:
+        annee = int(ecole.annee_scolaire[:4])
+    except (TypeError, ValueError):
+        annee = date.today().year
+    n = ecole.nb_mois or 9
+    tranches = []
+    for i in range(n):
+        m0 = (ecole.mois_debut or 10) - 1 + i
+        an, mois = annee + m0 // 12, m0 % 12 + 1
+        tranches.append(Tranche(ecole_id=ecole.id, annee_scolaire=ecole.annee_scolaire, ordre=i, nom=MOIS[mois - 1],
+                                date_limite=date(an, mois, min(ecole.jour_limite or 5, 28)), pourcentage=100 / n))
+    return tranches
+
+
 def tranches_annee(session: Session, ecole_id: int) -> list[Tranche]:
+    ecole = session.get(Ecole, ecole_id)
+    if ecole.mode_paiement == "mensuel":
+        return mensualites(ecole)
     return session.exec(
         select(Tranche).where(Tranche.ecole_id == ecole_id,
                               Tranche.annee_scolaire == annee_courante(session, ecole_id))
@@ -141,6 +176,17 @@ def frais_eleve(classe: Classe, eleve: Eleve) -> tuple[int, int]:
     return classe.frais_annuels - reduction, reduction
 
 
+def type_inscription(session: Session, ecole_id: int, creer: bool = False):
+    """Le frais « Inscription » de l'école (montant fixé par classe), créé au besoin."""
+    from app.models import TypeFrais
+    t = session.exec(select(TypeFrais).where(TypeFrais.ecole_id == ecole_id, TypeFrais.code == "inscription")).first()
+    if t is None and creer:
+        t = TypeFrais(ecole_id=ecole_id, nom="Inscription", montant=0, obligatoire=True, code="inscription", ordre=-1)
+        session.add(t)
+        session.flush()
+    return t
+
+
 def frais_annexes(session: Session, eleve: Eleve) -> list:
     """Autres frais dus par l'élève cette année : les obligatoires + les facultatifs souscrits."""
     from app.models import SouscriptionFrais, TypeFrais
@@ -170,10 +216,13 @@ def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | Non
     lignes = [LigneFrais(type_frais_id=None, nom="Scolarité", du=scolarite, paye=paye_sco,
                          reste=max(scolarite - paye_sco, 0))]
     annexes = frais_annexes(session, eleve)
-    ids_annexes = {t.id for t in annexes}
+    ids_annexes = {t.id for t in annexes if t.code != "inscription" or classe.frais_inscription or par_type.get(t.id)}
     for t in annexes:
         p = par_type.get(t.id, (0, 0))[0]
-        lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=t.montant, paye=p, reste=max(t.montant - p, 0)))
+        du = classe.frais_inscription if t.code == "inscription" else t.montant
+        if du == 0 and p == 0 and t.code == "inscription":
+            continue
+        lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=du, paye=p, reste=max(du - p, 0)))
     for tid, (p, _) in par_type.items():   # payé pour un frais qui ne s'applique plus : on le montre quand même
         if tid is not None and tid not in ids_annexes:
             t = session.get(TypeFrais, tid)
