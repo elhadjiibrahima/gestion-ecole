@@ -50,6 +50,8 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Complexe scolaire (modèle sénégalais)** : à la création de l'école, choix du pays (Sénégal, Guinée) et des cycles ; les classes
   (Petite section… CI, CP… CM2, 6ème… 3ème, 2nde L/S… Terminale L/S), les matières de chaque cycle et leurs coefficients sont créés
   tout de suite. Classes types à ajouter en un clic, classe parallèle (6ème A → 6ème B), tarifs de toutes les classes sur un écran
+- **Niveaux à soi** : en plus des cycles types, l'école peut créer un niveau (maternelle, formation professionnelle…),
+  le placer dans le parcours, avec ses classes, ses règles de notes et ses matières
 - **Règles par cycle** : 3 trimestres ou 2 semestres, notes sur 10 (primaire) ou sur 20, moyenne de passage ; matières et
   coefficients propres à chaque cycle, coefficients des séries L / S au lycée ; passage CM2 → 6ème, 3ème → 2nde (série à vérifier)
 - **Organisation des enseignants** : un maître par classe au préscolaire et au primaire ; au collège un professeur enseigne
@@ -109,8 +111,7 @@ Pour essayer le logiciel avec une école déjà remplie, lance (serveur arrêté
 - ou : `python -m app.cli remplir-test`
 
 Seuls le nom de l'école, le pays et le compte du directeur sont demandés. Sont créés : toutes les classes du complexe
-(préscolaire → terminale), 3 élèves par classe avec inscription et mensualités payées, un maître par classe au préscolaire
-et au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, l'emploi du temps complet de chaque
+(CI → terminale), 3 élèves par classe avec inscription et mensualités payées, un maître par classe au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, l'emploi du temps complet de chaque
 classe (sans conflit), un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
 les salaires des postes et les notes de la 1re période. Le mot de passe des comptes créés est affiché à la fin.
 

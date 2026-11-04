@@ -213,10 +213,10 @@ def test_remplir_ecole_de_test(client):
     from app.models import AffectationSaisie
     session = next(app.dependency_overrides[get_session]())
     r = remplir(session, "Complexe Test", "senegal", "Directeur Test", "dir@test-complexe.sn", "motdepasse1", graine=1)
-    assert r["classes"] == 19 and r["eleves"] == 57 and r["creneaux"] > 300
+    assert r["classes"] == 16 and r["eleves"] == 48 and r["creneaux"] > 250
     h = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": "dir@test-complexe.sn",
                                                                        "password": "motdepasse1"}).json()["access_token"]}
-    assert len(client.get("/eleves", headers=h).json()) == 57
+    assert len(client.get("/eleves", headers=h).json()) == 48
     users = client.get("/utilisateurs", headers=h).json()
     profs = [u for u in users if u["role"] == "enseignant"]
     cl = {c["nom"]: c["id"] for c in client.get("/classes", headers=h).json()}
@@ -277,3 +277,25 @@ def test_regles_des_enseignants(client):
     r = cr("Français")
     assert r.status_code == 400 and "n'enseigne pas" in r.json()["detail"]
     assert cr("SVT").status_code == 201
+
+
+def test_niveau_personnalise(client):
+    h = complexe(client, email="niv@c.sn", cycles=("primaire", "college"))
+    cyc = {c["code"]: c for c in client.get("/cycles", headers=h).json()}
+    r = client.post("/cycles", headers=h, json={"nom": "Maternelle", "periodes": 3, "bareme": 10, "seuil": 5,
+                                                "enseignement": "classe", "avant_cycle_id": cyc["primaire"]["id"],
+                                                "classes": ["Maternelle 1", "Maternelle 2"]})
+    assert r.status_code == 201, r.text
+    noms = [c["nom"] for c in client.get("/classes", headers=h).json()]
+    assert noms[:3] == ["Maternelle 1", "Maternelle 2", "CI"]                    # placé avant le primaire
+    assert [c["nom"] for c in client.get("/cycles", headers=h).json()] == ["Maternelle", "Primaire", "Collège"]
+    assert client.post("/cycles", headers=h, json={"nom": "maternelle", "periodes": 3, "bareme": 10, "seuil": 5}).status_code == 400
+    assert client.post("/cycles", headers=h, json={"nom": "Pro", "periodes": 2, "bareme": 20, "seuil": 10,
+                                                   "classes": ["CI"]}).status_code == 400   # classe existante
+    # Une matière propre au niveau, et les règles s'appliquent (notes sur 10)
+    m = client.post("/matieres", headers=h, json={"nom": "Éveil musical", "coefficient": 1}).json()
+    client.put(f"/matieres/{m['id']}/cycles", headers=h, json=[{"cycle_id": r.json()["id"], "coefficient": 1}])
+    cl = classes(client, h)
+    mats = [x["matiere"] for x in client.get(f"/matieres/coefficients?classe_id={cl['Maternelle 1']['id']}", headers=h).json()]
+    assert mats == ["Éveil musical"]
+    assert "Éveil musical" not in [x["matiere"] for x in client.get(f"/matieres/coefficients?classe_id={cl['CI']['id']}", headers=h).json()]

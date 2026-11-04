@@ -6,9 +6,15 @@ from app.models import Classe, ClasseCreate, Ecole, Eleve, Role, Utilisateur
 from app.pdf import en_tete_pdf, pdf_bulletins, pdf_etat_paiements
 from app.security import GESTION, TOUS, exiger_role
 from app.models import ResultatAnnuel
-from app.services import bulletins_classe, get_classe, resultats_annuels, soldes_ecole, trier_classes, type_inscription
+from app.services import bulletins_classe, get_classe, resultats_annuels, soldes_ecole, type_inscription
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
+
+
+def classes_dans_l_ordre(session: Session, ecole_id: int) -> list[Classe]:
+    """Dans l'ordre du parcours : les niveaux (dans l'ordre choisi par l'école), puis les classes de chaque niveau."""
+    from app.cursus import cle_niveau
+    return sorted(session.exec(select(Classe).where(Classe.ecole_id == ecole_id)).all(), key=cle_niveau(session, ecole_id))
 
 
 def _calculer_frais(session: Session, classe: Classe) -> None:
@@ -39,7 +45,7 @@ def lister_classes(
     user: Utilisateur = Depends(exiger_role(*TOUS)),
     session: Session = Depends(get_session),
 ):
-    return trier_classes(session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all())
+    return classes_dans_l_ordre(session, user.ecole_id)
 
 
 @router.patch("/{classe_id}", response_model=Classe)

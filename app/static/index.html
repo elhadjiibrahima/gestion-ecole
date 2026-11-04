@@ -710,6 +710,26 @@
         de 1 ou 2 matières au collège, d'une seule matière au lycée ; un enseignant reste dans son cycle.</p>
       <div class="table-wrap"><table id="t-cycles"></table></div>
       <div class="toolbar" style="margin-top:10px" id="cycles-manquants"></div>
+      <details class="mt"><summary style="cursor:pointer;color:var(--primary);font-weight:600">+ Créer un autre niveau
+        (maternelle, formation professionnelle, cours du soir…)</summary>
+        <form id="f-niveau" class="mt" style="max-width:720px">
+          <div class="row">
+            <label style="flex:2">Nom du niveau<input name="nom" required minlength="2" maxlength="40" placeholder="ex : Maternelle"></label>
+            <label>Place dans le parcours<select name="avant_cycle_id" id="niv-avant"></select></label>
+          </div>
+          <div class="row">
+            <label>Découpage<select name="periodes"><option value="3">3 trimestres</option><option value="2">2 semestres</option></select></label>
+            <label>Notes sur<select name="bareme"><option value="20">20</option><option value="10">10</option></select></label>
+            <label>Moyenne pour passer<input name="seuil" type="number" min="0" max="20" step="0.25" value="10"></label>
+            <label>Enseignants<select name="org"><option value="classe">Un maître par classe</option><option value="1">Prof d'une matière</option>
+              <option value="2">Prof de 1 ou 2 matières</option><option value="libre">Profs par matière (sans limite)</option></select></label>
+          </div>
+          <label>Classes de ce niveau (une par ligne)<textarea name="classes" rows="3" placeholder="Maternelle 1&#10;Maternelle 2"></textarea></label>
+          <p class="hint" style="margin:0">Ensuite : indique les tarifs dans Élèves → Classes et les matières du niveau dans Notes → « Matières et coefficients »
+            (une colonne par niveau).</p>
+          <button class="btn" style="justify-self:start">Créer le niveau</button>
+        </form>
+      </details>
     </div>
     <div class="two-eq mt">
       <div class="card">
@@ -3216,6 +3236,7 @@ function afficherCycles() {
       <td class="actions"><button class="link" data-enreg-cycle="${c.id}">Enregistrer</button>
         <button class="link danger" data-suppr-cycle="${c.id}">Supprimer</button></td></tr>`),
     "Aucun cycle : les règles générales ci-dessus s'appliquent à toutes les classes");
+  $("#niv-avant").innerHTML = `<option value="">À la fin</option>` + cycles.map((c) => `<option value="${c.id}">Avant : ${esc(c.nom)}</option>`).join("");
   const codes = new Set(cycles.map((c) => c.code));
   const manquants = Object.keys(NOMS_CYCLES).filter((k) => !codes.has(k));
   $("#cycles-manquants").innerHTML = manquants.length ? `<span class="hint" style="margin:0">Ajouter :</span>` +
@@ -3243,6 +3264,25 @@ $("#parametres").addEventListener("click", async (ev) => {
     afficherCycles();
   } catch (err) { toast(err.message, true); }
 });
+
+$("#f-niveau").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, org = f.elements.org.value, bareme = Number(f.elements.bareme.value);
+  const corps = { nom: f.elements.nom.value.trim(), periodes: Number(f.elements.periodes.value), bareme,
+    seuil: Math.min(Number(f.elements.seuil.value || 0), bareme), enseignement: org === "classe" ? "classe" : "matiere",
+    max_matieres: ["1", "2"].includes(org) ? Number(org) : null,
+    avant_cycle_id: f.elements.avant_cycle_id.value ? Number(f.elements.avant_cycle_id.value) : null,
+    classes: f.elements.classes.value.split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean) };
+  try {
+    await api("/cycles", { method: "POST", body: JSON.stringify(corps) });
+    toast(`Niveau « ${corps.nom} » créé` + (corps.classes.length ? ` avec ${corps.classes.length} classe(s) ✔` : " ✔"));
+    f.reset();
+    f.closest("details").open = false;
+    await chargerClasses();
+    afficherCycles();
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-niveau").elements.bareme.addEventListener("change", (ev) => { $("#f-niveau").elements.seuil.value = Number(ev.target.value) / 2; });
 
 // ---------- Mode de paiement de la scolarité ----------
 function afficherModePaiement() {

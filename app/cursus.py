@@ -111,6 +111,17 @@ def cycle_de(session: Session, classe: Classe, cycles: list[Cycle] | None = None
     return next((c for c in cycles if normaliser(c.nom) == n or (c.code and c.code == n)), None)
 
 
+def cle_niveau(session: Session, ecole_id: int):
+    """Clé de tri des classes : place de leur niveau dans le parcours, puis ordre naturel des classes."""
+    from app.services import cle_classe
+    rangs = {}
+    for c in cycles_ecole(session, ecole_id):
+        rangs[normaliser(c.nom)] = c.ordre
+        if c.code:
+            rangs[c.code] = c.ordre
+    return lambda classe: (rangs.get(normaliser(classe.niveau), 999), cle_classe(classe.nom))
+
+
 def regles_classe(session: Session, classe: Classe) -> Regles:
     c = cycle_de(session, classe)
     if c:

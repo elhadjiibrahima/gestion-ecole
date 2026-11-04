@@ -1188,6 +1188,12 @@ class CycleSaisie(SQLModel):
     max_matieres: Optional[int] = Field(default=None, ge=1, le=10)
 
 
+class CycleCreation(CycleSaisie):
+    """Nouveau niveau (ex : Maternelle, Formation professionnelle) avec ses classes."""
+    classes: list[str] = Field(default=[], max_length=30)   # noms des classes à créer tout de suite
+    avant_cycle_id: Optional[int] = None     # place dans le parcours (vide : à la fin)
+
+
 class MatiereCycle(SQLModel, table=True):
     """Matière enseignée dans un cycle, avec son coefficient. Une matière sans ligne ici est enseignée partout."""
     id: Optional[int] = Field(default=None, primary_key=True)

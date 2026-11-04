@@ -110,7 +110,7 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
     hasard = random.Random(graine)
     creer_ecole_et_directeur(session, InscriptionEcole(
         nom_ecole=nom_ecole, nom_directeur=nom_directeur, email=email, mot_de_passe=mot_de_passe, pays=pays,
-        adresse="Adresse de test", telephone="33 800 00 00", cycles=["prescolaire", "primaire", "college", "lycee"]),
+        adresse="Adresse de test", telephone="33 800 00 00", cycles=["primaire", "college", "lycee"]),
         statut="actif", fin=date.today() + timedelta(days=365))
     directeur = session.exec(select(Utilisateur).where(Utilisateur.email == email.lower())).one()
     ecole = session.get(Ecole, directeur.ecole_id)

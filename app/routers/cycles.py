@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from app.cursus import CYCLES, classes_types, creer_cursus, cycles_ecole, normaliser
 from app.database import get_session
 from app.models import (
-    Classe, ClasseType, Cycle, CycleSaisie, Ecole, Matiere, MatiereCycle, MatiereCycleSaisie, Role,
+    Classe, ClasseType, Cycle, CycleCreation, CycleSaisie, Ecole, Matiere, MatiereCycle, MatiereCycleSaisie, Role,
     TarifClasse, Utilisateur,
 )
 from app.security import TOUS, exiger_role
@@ -28,14 +28,35 @@ def lister(user: Utilisateur = Depends(exiger_role(*TOUS)), session: Session = D
 
 
 @router.post("/cycles", response_model=Cycle, status_code=201)
-def creer(data: CycleSaisie, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+def creer(data: CycleCreation, user: Utilisateur = Depends(exiger_role(Role.directeur)),
           session: Session = Depends(get_session)):
-    if any(normaliser(c.nom) == normaliser(data.nom) for c in cycles_ecole(session, user.ecole_id)):
-        raise HTTPException(400, "Ce cycle existe déjà")
+    """Crée un niveau à soi (Maternelle, Formation professionnelle…), placé où on veut dans le parcours,
+    avec ses classes. Ses matières s'ajoutent ensuite dans Notes → Matières (colonne du niveau)."""
+    existants = cycles_ecole(session, user.ecole_id)
+    if any(normaliser(c.nom) == normaliser(data.nom) for c in existants):
+        raise HTTPException(400, "Ce niveau existe déjà")
+    noms = [n.strip() for n in data.classes if n.strip()]
+    deja = {normaliser(c.nom) for c in session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all()}
+    doublons = [n for n in noms if normaliser(n) in deja]
+    if doublons or len({normaliser(n) for n in noms}) != len(noms):
+        raise HTTPException(400, "Classe déjà existante : " + ", ".join(doublons or noms))
+    # Place dans le parcours : on décale les niveaux suivants
+    ordre = max((c.ordre for c in existants), default=-1) + 1
+    if data.avant_cycle_id is not None:
+        avant = next((c for c in existants if c.id == data.avant_cycle_id), None)
+        if not avant:
+            raise HTTPException(400, "Niveau introuvable")
+        ordre = avant.ordre
+        for c in existants:
+            if c.ordre >= ordre:
+                c.ordre += 1
+                session.add(c)
     c = Cycle(ecole_id=user.ecole_id, nom=data.nom.strip(), periodes=data.periodes, bareme=data.bareme,
-              seuil=min(data.seuil, data.bareme), ordre=len(cycles_ecole(session, user.ecole_id)),
+              seuil=min(data.seuil, data.bareme), ordre=ordre,
               enseignement=data.enseignement or "matiere", max_matieres=data.max_matieres)
     session.add(c)
+    for n in noms:
+        session.add(Classe(ecole_id=user.ecole_id, nom=n, niveau=c.nom))
     session.commit()
     session.refresh(c)
     return c
