@@ -85,6 +85,19 @@ La base `ecole.db` est créée automatiquement.
 > **Mise à jour depuis une ancienne version :** la base `ecole.db` est mise à jour automatiquement
 > au démarrage (nouvelles colonnes ajoutées, données conservées).
 
+## École de test (données fictives)
+
+Pour essayer le logiciel avec une école déjà remplie, lance (serveur arrêté ou non) :
+
+- Windows : double-clic sur `remplir_test.bat`
+- Linux, Mac, Git Bash : `./remplir_test.sh`
+- ou : `python -m app.cli remplir-test`
+
+Seuls le nom de l'école, le pays et le compte du directeur sont demandés. Sont créés : toutes les classes du complexe
+(préscolaire → terminale), 3 élèves par classe avec inscription et mensualités payées, un professeur par matière (attribué
+à toutes les classes de la matière), un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
+les salaires des postes et les notes de la 1re période. Le mot de passe des comptes créés est affiché à la fin.
+
 ## Tests
 
 ```bash

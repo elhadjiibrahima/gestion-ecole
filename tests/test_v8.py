@@ -203,3 +203,27 @@ def test_personnel_sans_compte_et_absences(client):
     assert {p["nom"]: p for p in client.get("/paie/personnel?mois=2026-11", headers=h).json()}["Ousmane Gardien"]["retenue_proposee"] == 0
     assert client.delete(f"/paie/agents/{g['utilisateur_id']}", headers=h).status_code == 204
     assert "Ousmane Gardien" not in {p["nom"] for p in client.get("/paie/personnel?mois=2026-12", headers=h).json()}
+
+
+def test_remplir_ecole_de_test(client):
+    from app.database import get_session
+    from app.donnees_test import remplir
+    from app.main import app
+    session = next(app.dependency_overrides[get_session]())
+    r = remplir(session, "Complexe Test", "senegal", "Directeur Test", "dir@test-complexe.sn", "motdepasse1", graine=1)
+    assert r["classes"] == 19 and r["eleves"] == 57 and r["professeurs"] >= 15
+    h = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": "dir@test-complexe.sn",
+                                                                       "password": "motdepasse1"}).json()["access_token"]}
+    assert len(client.get("/eleves", headers=h).json()) == 57
+    prof = next(c for c in r["comptes"] if c[2].startswith("prof.mathematiques@"))
+    hp = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": prof[2],
+                                                                        "password": r["mot_de_passe_equipe"]}).json()["access_token"]}
+    cl = {c["nom"]: c["id"] for c in client.get("/classes", headers=h).json()}
+    mats = {m["nom"]: m["id"] for m in client.get("/matieres", headers=h).json()}
+    n = client.get(f"/notes/classe?classe_id={cl['6ème']}&matiere_id={mats['Mathématiques']}&trimestre=1", headers=hp).json()
+    assert n["modifiable"], (prof, n)
+    assert len(n["lignes"]) == 3 and all(l["moyenne"] is not None for l in n["lignes"])
+    pers = client.get("/paie/personnel?mois=2026-11", headers=h).json()
+    assert sum(1 for p in pers if p["sans_compte"]) == 3 and all(p["contrat_montant"] for p in pers)
+    b = client.get(f"/classes/{cl['CP']}/bulletins.pdf?trimestre=1", headers=h)
+    assert b.content.startswith(b"%PDF")
