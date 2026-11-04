@@ -1143,6 +1143,8 @@ class Cycle(SQLModel, table=True):
     periodes: int = 3                        # 3 trimestres ou 2 semestres
     bareme: int = 20                         # notes sur 10 ou sur 20
     seuil: float = 10                        # moyenne annuelle pour passer
+    enseignement: str = "matiere"            # « classe » : un maître par classe (toutes les matières) ; « matiere » : profs spécialisés
+    max_matieres: Optional[int] = None       # matières différentes par professeur (collège 2, lycée 1)
 
 
 class CycleSaisie(SQLModel):
@@ -1150,6 +1152,8 @@ class CycleSaisie(SQLModel):
     periodes: Literal[2, 3]
     bareme: Literal[10, 20]
     seuil: float = Field(ge=0, le=20)
+    enseignement: Optional[Literal["classe", "matiere"]] = None
+    max_matieres: Optional[int] = Field(default=None, ge=1, le=10)
 
 
 class MatiereCycle(SQLModel, table=True):

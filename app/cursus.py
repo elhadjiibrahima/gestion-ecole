@@ -22,6 +22,10 @@ PAYS = {
 }
 
 # Cycles : nom affiché, périodes (2 = semestres), barème, moyenne de passage
+# Organisation des enseignants : un maître par classe au préscolaire et au primaire ; au collège un professeur
+# enseigne au plus 2 matières (maths-PC, français-HG…) ; au lycée une seule.
+ENSEIGNEMENT = {"prescolaire": ("classe", None), "primaire": ("classe", None), "college": ("matiere", 2),
+                "lycee": ("matiere", 1)}
 CYCLES = {
     "senegal": [("prescolaire", "Préscolaire", 3, 10, 5), ("primaire", "Primaire", 3, 10, 5),
                 ("college", "Collège", 2, 20, 10), ("lycee", "Lycée", 2, 20, 10)],
@@ -129,7 +133,8 @@ def creer_cursus(session: Session, ecole: Ecole, codes: list[str], classes: bool
             continue
         cycle = existants.get(code)
         if cycle is None:
-            cycle = Cycle(ecole_id=ecole.id, nom=nom, code=code, ordre=ordre, periodes=periodes, bareme=bareme, seuil=seuil)
+            cycle = Cycle(ecole_id=ecole.id, nom=nom, code=code, ordre=ordre, periodes=periodes, bareme=bareme, seuil=seuil,
+                          enseignement=ENSEIGNEMENT[code][0], max_matieres=ENSEIGNEMENT[code][1])
             session.add(cycle)
             session.flush()
             for i, (mnom, coef) in enumerate(MATIERES[code]):

@@ -52,6 +52,9 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
   tout de suite. Classes types à ajouter en un clic, classe parallèle (6ème A → 6ème B), tarifs de toutes les classes sur un écran
 - **Règles par cycle** : 3 trimestres ou 2 semestres, notes sur 10 (primaire) ou sur 20, moyenne de passage ; matières et
   coefficients propres à chaque cycle, coefficients des séries L / S au lycée ; passage CM2 → 6ème, 3ème → 2nde (série à vérifier)
+- **Organisation des enseignants** : un maître par classe au préscolaire et au primaire ; au collège un professeur enseigne
+  1 ou 2 matières (maths-PC, français-HG…), au lycée une seule ; un enseignant reste dans son cycle (règles modifiables
+  par cycle). Dans l'emploi du temps, la classe propose ses enseignants et l'enseignant ses matières
 - **Saisie des notes par matière pour toute la classe** (un élève par ligne, Entrée descend dans la colonne), en plus de la saisie par élève
 - **Publication des résultats** : les parents ne voient notes et bulletins qu'une fois publiés par le directeur
 - **Bulletin officiel** : en-tête « République du Sénégal / Ministère / Inspection », sexe, date et lieu de naissance, professeur
@@ -94,8 +97,9 @@ Pour essayer le logiciel avec une école déjà remplie, lance (serveur arrêté
 - ou : `python -m app.cli remplir-test`
 
 Seuls le nom de l'école, le pays et le compte du directeur sont demandés. Sont créés : toutes les classes du complexe
-(préscolaire → terminale), 3 élèves par classe avec inscription et mensualités payées, un professeur par matière (attribué
-à toutes les classes de la matière), un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
+(préscolaire → terminale), 3 élèves par classe avec inscription et mensualités payées, un maître par classe au préscolaire
+et au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, l'emploi du temps complet de chaque
+classe (sans conflit), un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
 les salaires des postes et les notes de la 1re période. Le mot de passe des comptes créés est affiché à la fin.
 
 ## Tests

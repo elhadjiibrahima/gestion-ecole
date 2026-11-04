@@ -46,6 +46,11 @@ def migrer(moteur) -> None:
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {type_sql}{defaut}'))
                 ajoutees.add((table.name, col.name))
 
+        # Cycles créés avant les règles d'enseignement : maître par classe au primaire, 2 / 1 matières au collège / lycée
+        if ("cycle", "enseignement") in ajoutees:
+            conn.execute(text("UPDATE cycle SET enseignement = 'classe' WHERE code IN ('prescolaire', 'primaire')"))
+            conn.execute(text("UPDATE cycle SET max_matieres = 2 WHERE code = 'college'"))
+            conn.execute(text("UPDATE cycle SET max_matieres = 1 WHERE code = 'lycee'"))
         # Écoles qui avaient déjà un échéancier par tranches : on le garde (les autres passent au paiement mensuel)
         if ("ecole", "mode_paiement") in ajoutees and "tranche" in tables_existantes:
             conn.execute(text("UPDATE ecole SET mode_paiement = 'tranches' "

@@ -32,6 +32,46 @@ AGE_CLASSE = {"petite section": 3, "moyenne section": 4, "grande section": 5, "c
               "ce1": 8, "ce2": 9, "cm1": 10, "cm2": 11}
 
 
+# Au collège, un professeur enseigne souvent deux matières voisines
+GROUPES_COLLEGE = [("Mathématiques", "Physique-Chimie"), ("Français", "Histoire-Géographie"),
+                   ("SVT", "Éducation civique"), ("Anglais", "Espagnol / Arabe (LV2)")]
+HEURES = [("08:00", "09:00"), ("09:00", "10:00"), ("10:15", "11:15"), ("11:15", "12:15"), ("15:00", "16:00"), ("16:00", "17:00")]
+
+
+def _emploi_du_temps(session: Session, ecole_id: int, service: list, hasard: random.Random) -> int:
+    """Emploi du temps de la semaine (lundi → vendredi, 6 heures par jour) sans conflit de classe ni de professeur.
+    Heures par semaine : 2 par matière au primaire, sinon selon le coefficient (1 à 3)."""
+    from app.models import Creneau
+    occupe_classe, occupe_prof = set(), set()
+    unites = []
+    for prof, c, m in service:
+        coef = dict((x.id, k) for x, k in matieres_classe(session, c)).get(m.id, 1)
+        nb = 2 if regles_classe(session, c).cycle and regles_classe(session, c).cycle.enseignement == "classe" else min(max(coef, 1), 3)
+        unites += [(prof, c, m)] * nb
+    hasard.shuffle(unites)
+    unites.sort(key=lambda u: -sum(1 for x in unites if x[0].id == u[0].id))   # les profs les plus chargés d'abord
+    places = 0
+    for i, (prof, c, m) in enumerate(unites):
+        jours = list(range(1, 6))
+        jours = jours[i % 5:] + jours[:i % 5]               # on étale sur la semaine
+        for jour in jours:
+            fait = False
+            for debut, fin in HEURES:
+                if (c.id, jour, debut) in occupe_classe or (prof.id, jour, debut) in occupe_prof:
+                    continue
+                session.add(Creneau(ecole_id=ecole_id, classe_id=c.id, jour=jour, debut=debut, fin=fin, matiere_id=m.id,
+                                    enseignant_id=prof.id, salle=c.nom))
+                occupe_classe.add((c.id, jour, debut))
+                occupe_prof.add((prof.id, jour, debut))
+                places += 1
+                fait = True
+                break
+            if fait:
+                break
+    session.flush()
+    return places
+
+
 def _slug(texte: str) -> str:
     t = unicodedata.normalize("NFKD", texte.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
@@ -89,11 +129,6 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
     type_ins = type_inscription(session, ecole.id, creer=True)
     session.flush()
 
-    # Personnel : un professeur par matière (dans toutes les classes où elle est enseignée)
-    classes_par_matiere: dict[int, tuple] = {}
-    for c in classes:
-        for m, _ in matieres_classe(session, c):
-            classes_par_matiere.setdefault(m.id, (m, []))[1].append(c)
     comptes = []
 
     def membre(role: Role, nom: str, base: str) -> Utilisateur:
@@ -104,14 +139,47 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
         comptes.append((role.value, nom, u.email))
         return u
 
-    profs = 0
-    for m, cl in classes_par_matiere.values():
+    def personne() -> str:
         sexe = hasard.choice("MF")
-        nom = f"{hasard.choice(PRENOMS_F if sexe == 'F' else PRENOMS_M)} {hasard.choice(NOMS)}"
-        prof = membre(Role.enseignant, nom, "prof." + _slug(m.nom))
+        return f"{hasard.choice(PRENOMS_F if sexe == 'F' else PRENOMS_M)} {hasard.choice(NOMS)}"
+
+    # Enseignants : un maître par classe (préscolaire, primaire) ; au collège des profs à 1 ou 2 matières ;
+    # au lycée un prof par matière. Chacun reste dans son cycle.
+    service: list[tuple[Utilisateur, Classe, object]] = []      # (prof, classe, matière)
+    par_cycle: dict = {}
+    for c in classes:
+        r = regles_classe(session, c)
+        par_cycle.setdefault(r.cycle.id if r.cycle else None, (r.cycle, []))[1].append(c)
+    profs = 0
+    for cycle, cl in par_cycle.values():
+        if cycle and cycle.enseignement == "classe":
+            for c in cl:
+                maitre = membre(Role.enseignant, personne(), "maitre." + _slug(c.nom))
+                for m, _ in matieres_classe(session, c):
+                    service.append((maitre, c, m))
+                profs += 1
+            continue
+        matieres = {}
         for c in cl:
-            session.add(Affectation(utilisateur_id=prof.id, matiere_id=m.id, classe_id=c.id))
-        profs += 1
+            for m, _ in matieres_classe(session, c):
+                matieres.setdefault(m.nom, m)
+        groupes = [g for g in (GROUPES_COLLEGE if cycle and cycle.max_matieres == 2 else [])
+                   if all(x in matieres for x in g)]
+        seules = [n for n in matieres if not any(n in g for g in groupes)]
+        prefixe = _slug(cycle.nom) if cycle else "prof"
+        for g in groupes + [(n,) for n in seules]:
+            prof = membre(Role.enseignant, personne(), f"{prefixe}." + ".".join(_slug(x) for x in g))
+            for c in cl:
+                enseignees = {m.nom for m, _ in matieres_classe(session, c)}
+                for n in g:
+                    if n in enseignees:
+                        service.append((prof, c, matieres[n]))
+            profs += 1
+    for prof, c, m in service:
+        session.add(Affectation(utilisateur_id=prof.id, matiere_id=m.id, classe_id=c.id))
+    session.flush()
+    creneaux = _emploi_du_temps(session, ecole.id, service, hasard)
+
     membre(Role.comptable, f"{hasard.choice(PRENOMS_F)} {hasard.choice(NOMS)}", "comptable")
     membre(Role.surveillant, f"{hasard.choice(PRENOMS_M)} {hasard.choice(NOMS)}", "surveillant")
     for metier in ("Gardien", "Cuisinière", "Agent d'entretien"):
@@ -156,5 +224,5 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
                                      type=typ, numero=num, annee_scolaire=ecole.annee_scolaire))
             nb_eleves += 1
     session.commit()
-    return {"ecole": ecole.nom, "classes": len(classes), "eleves": nb_eleves, "professeurs": profs,
+    return {"ecole": ecole.nom, "classes": len(classes), "eleves": nb_eleves, "professeurs": profs, "creneaux": creneaux,
             "comptes": comptes, "mot_de_passe_equipe": mdp_equipe}

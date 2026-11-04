@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import (
-    JOURS, Classe, Creneau, CreneauDetail, CreneauSaisie, Ecole, Matiere, Role, Utilisateur,
+    JOURS, Affectation, Classe, Creneau, CreneauDetail, CreneauSaisie, Ecole, Matiere, Role, Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_emploi_du_temps
 from app.security import TOUS, exiger_role
@@ -77,6 +77,10 @@ def _verifier(session: Session, ecole_id: int, data: CreneauSaisie, sauf_id: int
                 raise HTTPException(400, f"Cet enseignant est déjà en {classe.nom} {quand}")
             if data.salle and c.salle and c.salle.strip().lower() == data.salle.strip().lower():
                 raise HTTPException(400, f"La salle {c.salle} est déjà occupée {quand}")
+    if data.enseignant_id is not None and u.role == Role.enseignant and session.exec(select(Affectation).where(
+            Affectation.utilisateur_id == u.id, Affectation.matiere_id == data.matiere_id,
+            Affectation.classe_id == data.classe_id)).first() is None:
+        raise HTTPException(400, f"{u.nom} n'enseigne pas « {m.nom} » dans cette classe (Équipe → Matières et classes)")
     return debut, fin
 
 

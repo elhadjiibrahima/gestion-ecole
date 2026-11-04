@@ -33,7 +33,8 @@ def creer(data: CycleSaisie, user: Utilisateur = Depends(exiger_role(Role.direct
     if any(normaliser(c.nom) == normaliser(data.nom) for c in cycles_ecole(session, user.ecole_id)):
         raise HTTPException(400, "Ce cycle existe déjà")
     c = Cycle(ecole_id=user.ecole_id, nom=data.nom.strip(), periodes=data.periodes, bareme=data.bareme,
-              seuil=min(data.seuil, data.bareme), ordre=len(cycles_ecole(session, user.ecole_id)))
+              seuil=min(data.seuil, data.bareme), ordre=len(cycles_ecole(session, user.ecole_id)),
+              enseignement=data.enseignement or "matiere", max_matieres=data.max_matieres)
     session.add(c)
     session.commit()
     session.refresh(c)
@@ -49,6 +50,10 @@ def modifier(cycle_id: int, data: CycleSaisie, user: Utilisateur = Depends(exige
         raise HTTPException(400, f"La moyenne de passage ne peut pas dépasser {data.bareme}")
     ancien = c.nom
     c.nom, c.periodes, c.bareme, c.seuil = data.nom.strip(), data.periodes, data.bareme, data.seuil
+    if data.enseignement:
+        c.enseignement = data.enseignement
+    if "max_matieres" in data.model_fields_set:
+        c.max_matieres = data.max_matieres
     if normaliser(ancien) != normaliser(c.nom):
         for cl in session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all():
             if normaliser(cl.niveau) == normaliser(ancien):

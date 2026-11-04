@@ -209,21 +209,71 @@ def test_remplir_ecole_de_test(client):
     from app.database import get_session
     from app.donnees_test import remplir
     from app.main import app
+    from app.routers.auth import verifier_affectations
+    from app.models import AffectationSaisie
     session = next(app.dependency_overrides[get_session]())
     r = remplir(session, "Complexe Test", "senegal", "Directeur Test", "dir@test-complexe.sn", "motdepasse1", graine=1)
-    assert r["classes"] == 19 and r["eleves"] == 57 and r["professeurs"] >= 15
+    assert r["classes"] == 19 and r["eleves"] == 57 and r["creneaux"] > 300
     h = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": "dir@test-complexe.sn",
                                                                        "password": "motdepasse1"}).json()["access_token"]}
     assert len(client.get("/eleves", headers=h).json()) == 57
-    prof = next(c for c in r["comptes"] if c[2].startswith("prof.mathematiques@"))
-    hp = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": prof[2],
-                                                                        "password": r["mot_de_passe_equipe"]}).json()["access_token"]}
+    users = client.get("/utilisateurs", headers=h).json()
+    profs = [u for u in users if u["role"] == "enseignant"]
     cl = {c["nom"]: c["id"] for c in client.get("/classes", headers=h).json()}
     mats = {m["nom"]: m["id"] for m in client.get("/matieres", headers=h).json()}
+    # Un maître par classe au primaire (toutes les matières), profs à 2 matières au plus au collège, 1 au lycée
+    maitre_cp = [u for u in profs if any(a["classe_id"] == cl["CP"] for a in u["affectations"])]
+    assert len(maitre_cp) == 1 and {a["classe_id"] for a in maitre_cp[0]["affectations"]} == {cl["CP"]}
+    assert len(maitre_cp[0]["affectations"]) == 11
+    for u in profs:   # toutes les attributions respectent les règles du complexe
+        verifier_affectations(session, u["ecole_id"], [AffectationSaisie(**a) for a in u["affectations"]])
+    maths_college = next(u for u in profs if any(a["classe_id"] == cl["6ème"] and a["matiere_id"] == mats["Mathématiques"]
+                                                 for a in u["affectations"]))
+    assert {a["matiere_id"] for a in maths_college["affectations"]} == {mats["Mathématiques"], mats["Physique-Chimie"]}
+    philo = next(u for u in profs if any(a["matiere_id"] == mats["Philosophie"] for a in u["affectations"]))
+    assert {a["matiere_id"] for a in philo["affectations"]} == {mats["Philosophie"]}
+    # Le prof de maths du collège se connecte, saisit, et a son emploi du temps sans conflit
+    hp = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": maths_college["email"],
+                                                                        "password": r["mot_de_passe_equipe"]}).json()["access_token"]}
     n = client.get(f"/notes/classe?classe_id={cl['6ème']}&matiere_id={mats['Mathématiques']}&trimestre=1", headers=hp).json()
-    assert n["modifiable"], (prof, n)
-    assert len(n["lignes"]) == 3 and all(l["moyenne"] is not None for l in n["lignes"])
+    assert n["modifiable"] and len(n["lignes"]) == 3 and all(l["moyenne"] is not None for l in n["lignes"])
+    edt = client.get("/emploi-du-temps", headers=hp).json()
+    assert edt and len({(c["jour"], c["debut"]) for c in edt}) == len(edt)
+    for nom in ("CP", "6ème", "Terminale S"):
+        e = client.get(f"/emploi-du-temps?classe_id={cl[nom]}", headers=h).json()
+        assert len(e) >= 15 and len({(c["jour"], c["debut"]) for c in e}) == len(e)
     pers = client.get("/paie/personnel?mois=2026-11", headers=h).json()
     assert sum(1 for p in pers if p["sans_compte"]) == 3 and all(p["contrat_montant"] for p in pers)
-    b = client.get(f"/classes/{cl['CP']}/bulletins.pdf?trimestre=1", headers=h)
-    assert b.content.startswith(b"%PDF")
+    assert next(p for p in pers if p["nom"] == maths_college["nom"])["heures_prevues"] > 0
+    assert client.get(f"/classes/{cl['CP']}/bulletins.pdf?trimestre=1", headers=h).content.startswith(b"%PDF")
+
+
+def test_regles_des_enseignants(client):
+    h = complexe(client, email="regles@c.sn")
+    cl = classes(client, h)
+    mats = {m["nom"]: m["id"] for m in client.get("/matieres", headers=h).json()}
+    aff = lambda *paires: [{"matiere_id": mats[m], "classe_id": cl[c]["id"]} for m, c in paires]  # noqa: E731
+    def creer(email, *paires):
+        return client.post("/utilisateurs", headers=h, json={"nom": "P", "email": email, "role": "enseignant",
+                                                            "mot_de_passe": "motdepasse1", "affectations": aff(*paires)})
+    # Un prof du collège n'enseigne pas au lycée
+    r = creer("a@c.sn", ("Mathématiques", "3ème"), ("Mathématiques", "2nde S"))
+    assert r.status_code == 400 and "seul cycle" in r.json()["detail"]
+    # Collège : 2 matières au plus ; lycée : une seule
+    assert creer("b@c.sn", ("Mathématiques", "6ème"), ("SVT", "6ème")).status_code == 201
+    r = creer("c@c.sn", ("Mathématiques", "6ème"), ("SVT", "6ème"), ("Français", "5ème"))
+    assert r.status_code == 400 and "au plus 2" in r.json()["detail"]
+    assert creer("d@c.sn", ("Mathématiques", "2nde S"), ("Physique-Chimie", "2nde S")).status_code == 400
+    # Une matière qui n'existe pas dans la classe
+    r = creer("e@c.sn", ("Philosophie", "6ème"))
+    assert r.status_code == 400 and "pas enseignée" in r.json()["detail"]
+    # Primaire : le maître a toutes les matières de sa classe
+    cp = [(m["matiere"], "CP") for m in client.get(f"/matieres/coefficients?classe_id={cl['CP']['id']}", headers=h).json()]
+    assert creer("f@c.sn", *cp).status_code == 201
+    # Emploi du temps : le prof doit enseigner cette matière dans cette classe
+    pid = next(u["id"] for u in client.get("/utilisateurs", headers=h).json() if u["email"] == "b@c.sn")
+    cr = lambda m: client.post("/creneaux", headers=h, json={"classe_id": cl["6ème"]["id"], "jour": 2, "debut": "08:00",  # noqa: E731
+                                                            "fin": "09:00", "matiere_id": mats[m], "enseignant_id": pid})
+    r = cr("Français")
+    assert r.status_code == 400 and "n'enseigne pas" in r.json()["detail"]
+    assert cr("SVT").status_code == 201

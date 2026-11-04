@@ -183,6 +183,8 @@
   .bulletin-head > div:first-child { flex: 1; min-width: 200px; }
   .bulletin-head > div:last-child { margin-left: auto; }
   .bulletin-head .sub { color: var(--muted); font-size: .8rem; }
+  #f-creneau label { min-width: 150px; }
+  #f-creneau label:has(input[type=time]) { min-width: 120px; }
   table.emploi td { vertical-align: top; min-width: 110px; }
   table.emploi .cours { background: #eef2ff; border-radius: 6px; padding: 4px 6px; font-size: .82rem; line-height: 1.25; position: relative; }
   table.emploi .cours button { position: absolute; top: 0; right: 2px; padding: 0 4px; }
@@ -617,7 +619,7 @@
             </select>
           </label>
           <div id="u-affectations" hidden>
-            <div class="hint" style="margin:0 0 4px">Matières et classes de l'enseignant (coche les cases) :</div>
+            <div class="hint" style="margin:0 0 4px">Ce qu'il enseigne (il reste dans un seul cycle) :</div>
             <div class="table-wrap" data-matrice="nouveau"></div>
           </div>
           <label>Mot de passe provisoire (8 car. min.)<input name="mot_de_passe" type="text" minlength="8" required></label>
@@ -662,7 +664,8 @@
     <div class="card mt">
       <h2>Cycles et règles de notes</h2>
       <p class="hint">Chaque classe appartient à un cycle. Exemple sénégalais : primaire en 3 trimestres et notes sur 10 (passage à 5),
-        collège et lycée en 2 semestres et notes sur 20 (passage à 10).</p>
+        collège et lycée en 2 semestres et notes sur 20 (passage à 10). Un maître par classe au primaire, des professeurs
+        de 1 ou 2 matières au collège, d'une seule matière au lycée ; un enseignant reste dans son cycle.</p>
       <div class="table-wrap"><table id="t-cycles"></table></div>
       <div class="toolbar" style="margin-top:10px" id="cycles-manquants"></div>
     </div>
@@ -899,16 +902,17 @@
       </div>
       <div class="table-wrap"><table id="t-emploi" class="emploi"></table></div>
     </div>
-    <div class="card mt" data-roles="directeur" style="max-width:860px">
+    <div class="card mt" data-roles="directeur">
       <h2>Ajouter un cours</h2>
-      <p class="hint">Le logiciel refuse un cours qui chevauche un autre cours de la même classe, du même enseignant ou dans la même salle.</p>
+      <p class="hint">Choisis la classe puis l'enseignant : seuls ses cours dans cette classe sont proposés. Le logiciel refuse un cours
+        qui chevauche un autre cours de la même classe, du même enseignant ou dans la même salle.</p>
       <form id="f-creneau" class="row" style="align-items:end;flex-wrap:wrap">
         <label>Classe<select name="classe_id" id="cr-classe" class="sel-classes" required></select></label>
+        <label>Enseignant<select name="enseignant_id" id="cr-ens"></select></label>
+        <label>Matière<select name="matiere_id" id="cr-matiere" required></select></label>
         <label>Jour<select name="jour" id="cr-jour"></select></label>
         <label>Début<input name="debut" type="time" value="08:00" required></label>
         <label>Fin<input name="fin" type="time" value="09:00" required></label>
-        <label>Matière<select name="matiere_id" id="cr-matiere" required></select></label>
-        <label>Enseignant<select name="enseignant_id" id="cr-ens"></select></label>
         <label>Salle<input name="salle" maxlength="30" placeholder="facultatif"></label>
         <button class="btn" style="flex:0 0 auto">Ajouter</button>
       </form>
@@ -2688,7 +2692,9 @@ $("#t-matieres").addEventListener("keydown", (ev) => {
 // ---------- Équipe ----------
 // Grille matières × classes pour attribuer les cours d'un enseignant
 let matieresEcole = [];
+// Attribution d'un enseignant selon son cycle : maître d'une classe (primaire) ou matières × classes (collège, lycée)
 function matriceAffectations(conteneur, choisies = []) {
+  if (cycles.length) return editeurCycle(conteneur, choisies);
   const coche = new Set(choisies.map((a) => `${a.matiere_id}:${a.classe_id}`));
   conteneur.innerHTML = !matieresEcole.length || !classes.length
     ? `<p class="hint">Crée d'abord des classes et des matières.</p>`
@@ -2697,7 +2703,54 @@ function matriceAffectations(conteneur, choisies = []) {
         `<td><input type="checkbox" data-aff="${m.id}:${c.id}" ${coche.has(`${m.id}:${c.id}`) ? "checked" : ""}></td>`).join("")}</tr>`).join("")}</table>
       <div class="hint" style="margin:4px 0 0">Astuce : clique sur une matière ou une classe pour tout cocher / décocher.</div>`;
 }
+function classesDuCycle(cycleId) { return classes.filter((c) => reglesClasse(c.id).cycle?.id === cycleId); }
+function editeurCycle(conteneur, choisies, cycleId) {
+  if (cycleId == null) {
+    const premiere = choisies.length && classes.find((c) => c.id === choisies[0].classe_id);
+    cycleId = premiere ? reglesClasse(premiere.id).cycle?.id : cycles[0].id;
+  }
+  const cy = cycles.find((c) => c.id === cycleId) || cycles[0];
+  const dansCycle = classesDuCycle(cy.id);
+  const classesCochees = new Set(choisies.map((a) => a.classe_id));
+  const matieresCochees = new Set(choisies.map((a) => a.matiere_id));
+  const libelle = (c) => c.enseignement === "classe" ? `${c.nom} — un maître par classe`
+    : `${c.nom} — ${c.max_matieres === 1 ? "une seule matière par prof" : c.max_matieres ? `${c.max_matieres} matières au plus par prof` : "profs par matière"}`;
+  const cases = (liste, attr, coches) => `<div class="liste-cases">${liste.map((x) =>
+    `<label><input type="checkbox" ${attr}="${x.id}" ${coches.has(x.id) ? "checked" : ""}> ${esc(x.nom)}</label>`).join("") || "<span class='hint'>Aucune</span>"}</div>`;
+  let corps;
+  if (cy.enseignement === "classe") {
+    corps = `<div class="hint" style="margin:6px 0 0">Classe(s) dont il est le maître (toutes les matières de la classe) :</div>
+      ${cases(dansCycle, "data-aff-classe", classesCochees)}`;
+  } else {
+    const mats = [];
+    dansCycle.forEach((c) => matieresDeClasse(c.id).forEach((m) => { if (!mats.some((x) => x.id === m.id)) mats.push(m); }));
+    corps = `<div class="hint" style="margin:6px 0 0">Matière(s) enseignée(s)${cy.max_matieres ? ` — ${cy.max_matieres} au plus` : ""} :</div>
+      ${cases(mats, "data-aff-matiere", matieresCochees)}
+      <div class="hint" style="margin:6px 0 0">Dans les classes :</div>${cases(dansCycle, "data-aff-classe", classesCochees)}`;
+  }
+  conteneur.innerHTML = `<label style="max-width:360px">Cycle<select data-aff-cycle>${cycles.map((c) =>
+    `<option value="${c.id}" ${c.id === cy.id ? "selected" : ""}>${esc(libelle(c))}</option>`).join("")}</select></label>${corps}`;
+  conteneur.dataset.max = cy.max_matieres || "";
+  conteneur.dataset.mode = cy.enseignement;
+}
+document.addEventListener("change", (ev) => {
+  const zone = ev.target.closest("[data-matrice]");
+  if (!zone) return;
+  if (ev.target.matches("[data-aff-cycle]")) return editeurCycle(zone, [], Number(ev.target.value));
+  if (ev.target.matches("[data-aff-matiere]") && zone.dataset.max) {
+    const n = zone.querySelectorAll("[data-aff-matiere]:checked").length;
+    if (n > Number(zone.dataset.max)) { ev.target.checked = false; toast(`Au plus ${zone.dataset.max} matière(s) par professeur dans ce cycle`, true); }
+  }
+});
 function lireAffectations(conteneur) {
+  if (conteneur.querySelector("[data-aff-cycle]")) {
+    const cl = [...conteneur.querySelectorAll("[data-aff-classe]:checked")].map((c) => Number(c.dataset.affClasse));
+    if (conteneur.dataset.mode === "classe")
+      return cl.flatMap((k) => matieresDeClasse(k).map((m) => ({ matiere_id: m.id, classe_id: k })));
+    const ms = [...conteneur.querySelectorAll("[data-aff-matiere]:checked")].map((c) => Number(c.dataset.affMatiere));
+    return cl.flatMap((k) => { const ens = new Set(matieresDeClasse(k).map((m) => m.id));
+      return ms.filter((m) => ens.has(m)).map((m) => ({ matiere_id: m, classe_id: k })); });
+  }
   return [...conteneur.querySelectorAll("[data-aff]:checked")].map((c) => {
     const [m, k] = c.dataset.aff.split(":").map(Number);
     return { matiere_id: m, classe_id: k };
@@ -2718,6 +2771,10 @@ $("#u-role").addEventListener("change", () => {
   if (ens) matriceAffectations($('[data-matrice="nouveau"]'));
 });
 function resumeAffectations(liste) {
+  const parClasse = new Map();
+  liste.forEach((a) => parClasse.set(a.classe_id, (parClasse.get(a.classe_id) || 0) + 1));
+  const maitre = [...parClasse].filter(([k, n]) => reglesClasse(k).cycle?.enseignement === "classe" && n >= matieresDeClasse(k).length);
+  if (maitre.length && maitre.length === parClasse.size) return `<b>Maître de</b> : ${maitre.map(([k]) => esc(classeNom(k))).join(", ")}`;
   const parMatiere = new Map();
   liste.forEach((a) => {
     const m = matieresEcole.find((x) => x.id === a.matiere_id)?.nom ?? "?";
@@ -2728,8 +2785,9 @@ function resumeAffectations(liste) {
 }
 
 async function afficherEquipe() {
-  const [users, mats] = await Promise.all([api("/utilisateurs"), api("/matieres")]);
+  const [users, mats, liens] = await Promise.all([api("/utilisateurs"), api("/matieres"), api("/matieres/cycles")]);
   matieresEcole = mats;
+  liensMatieres = liens;
   equipe = users.filter((u) => u.role !== "agent");   // le personnel sans compte est géré dans Paie
   if ($("#u-role").value === "enseignant") matriceAffectations($('[data-matrice="nouveau"]'));
   table($("#t-users"),
@@ -2807,13 +2865,19 @@ async function afficherParametres() {
 // ---------- Cycles ----------
 const NOMS_CYCLES = { prescolaire: "Préscolaire", primaire: "Primaire", college: "Collège", lycee: "Lycée" };
 function afficherCycles() {
-  table($("#t-cycles"), ["Cycle", "Découpage", "Notes sur", "Moyenne pour passer", ""],
+  table($("#t-cycles"), ["Cycle", "Découpage", "Notes sur", "Moyenne pour passer", "Enseignants", ""],
     cycles.map((c) => `<tr data-cycle="${c.id}"><td><input data-cy="nom" value="${esc(c.nom)}" aria-label="Nom du cycle"></td>
       <td><select data-cy="periodes"><option value="3" ${c.periodes === 3 ? "selected" : ""}>3 trimestres</option>
         <option value="2" ${c.periodes === 2 ? "selected" : ""}>2 semestres</option></select></td>
       <td><select data-cy="bareme"><option value="20" ${c.bareme === 20 ? "selected" : ""}>20</option>
         <option value="10" ${c.bareme === 10 ? "selected" : ""}>10</option></select></td>
       <td><input data-cy="seuil" type="number" min="0" max="20" step="0.25" value="${c.seuil}" style="width:90px"></td>
+      <td><select data-cy="org">
+        <option value="classe" ${c.enseignement === "classe" ? "selected" : ""}>Un maître par classe</option>
+        <option value="1" ${c.enseignement === "matiere" && c.max_matieres === 1 ? "selected" : ""}>Prof d'une matière</option>
+        <option value="2" ${c.enseignement === "matiere" && c.max_matieres === 2 ? "selected" : ""}>Prof de 1 ou 2 matières</option>
+        <option value="libre" ${c.enseignement === "matiere" && !c.max_matieres ? "selected" : ""}>Profs par matière (sans limite)</option>
+      </select></td>
       <td class="actions"><button class="link" data-enreg-cycle="${c.id}">Enregistrer</button>
         <button class="link danger" data-suppr-cycle="${c.id}">Supprimer</button></td></tr>`),
     "Aucun cycle : les règles générales ci-dessus s'appliquent à toutes les classes");
@@ -2827,8 +2891,10 @@ $("#parametres").addEventListener("click", async (ev) => {
   try {
     if (d.enregCycle) {
       const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-cy="${k}"]`).value;
+      const org = v("org");
       await api(`/cycles/${d.enregCycle}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), periodes: Number(v("periodes")),
-        bareme: Number(v("bareme")), seuil: Number(v("seuil")) }) });
+        bareme: Number(v("bareme")), seuil: Number(v("seuil")), enseignement: org === "classe" ? "classe" : "matiere",
+        max_matieres: ["1", "2"].includes(org) ? Number(org) : null }) });
       toast("Cycle enregistré ✔");
     } else if (d.supprCycle) {
       if (!confirm("Supprimer ce cycle ?")) return;
@@ -3451,14 +3517,14 @@ async function afficherEmploi() {
     $("#cr-jour").innerHTML = JOURS.map((j, i) => `<option value="${i + 1}">${j}</option>`).join("");
   }
   if (dir) {
-    const [users, mats] = await Promise.all([api("/utilisateurs"), api("/matieres")]);
+    const [users, mats, liens] = await Promise.all([api("/utilisateurs"), api("/matieres"), api("/matieres/cycles")]);
     enseignants = users.filter((u) => u.role === "enseignant" && u.actif);
+    matieresEcole = mats; liensMatieres = liens;
     const opts = enseignants.map((u) => `<option value="${u.id}">${esc(u.nom)}</option>`).join("");
     const avant = $("#e-ens").value;
     $("#e-ens").innerHTML = opts || `<option value="">Aucun enseignant</option>`;
     if (avant) $("#e-ens").value = avant;
-    $("#cr-ens").innerHTML = `<option value="">— Personne —</option>` + opts;
-    $("#cr-matiere").innerHTML = mats.map((m) => `<option value="${m.id}">${esc(m.nom)}</option>`).join("");
+    majFormCreneau();
   }
   $("#e-classe").hidden = mode.value !== "classe";
   $("#e-ens").hidden = mode.value !== "enseignant";
@@ -3475,9 +3541,41 @@ async function afficherEmploi() {
         c.salle ? `<br><span style="color:var(--muted)">Salle ${esc(c.salle)}</span>` : ""}${
         dir ? `<button class="link danger" data-suppr-creneau="${c.id}" title="Retirer">×</button>` : ""}</div>`).join("")}</td>`).join("")}</tr>`),
     dir ? "Aucun cours : ajoute-les ci-dessous" : "Aucun cours enregistré");
-  if (dir && parClasse) $("#cr-classe").value = $("#e-classe").value;
+  if (dir && parClasse && $("#cr-classe").value !== $("#e-classe").value) { $("#cr-classe").value = $("#e-classe").value; majFormCreneau(); }
 }
 for (const id of ["#e-mode", "#e-classe", "#e-ens"]) $(id).addEventListener("change", afficherEmploi);
+
+// Matières enseignées dans une classe (selon son cycle)
+let liensMatieres = [];
+function matieresDeClasse(cid) {
+  const cy = reglesClasse(cid).cycle;
+  return matieresEcole.filter((m) => {
+    const liens = liensMatieres.filter((l) => l.matiere_id === m.id);
+    return !liens.length || (cy && liens.some((l) => l.cycle_id === cy.id));
+  });
+}
+const nomMatiere = (id) => matieresEcole.find((m) => m.id === id)?.nom ?? "?";
+// Formulaire « Ajouter un cours » : la classe filtre les enseignants, l'enseignant filtre ses matières
+function majFormCreneau(source) {
+  const cid = Number($("#cr-classe").value), ens = $("#cr-ens");
+  if (source !== "ens") {
+    const avant = ens.value;
+    const dansClasse = enseignants.filter((u) => u.affectations.some((a) => a.classe_id === cid));
+    ens.innerHTML = `<option value="">— Choisir l'enseignant —</option>` + dansClasse.map((u) => {
+      const m = [...new Set(u.affectations.filter((a) => a.classe_id === cid).map((a) => nomMatiere(a.matiere_id)))];
+      return `<option value="${u.id}">${esc(u.nom)} — ${esc(m.length > 3 ? "toutes les matières" : m.join(", "))}</option>`;
+    }).join("") + (dansClasse.length ? "" : `<option value="" disabled>Aucun enseignant attribué à cette classe (Équipe)</option>`);
+    ens.value = dansClasse.some((u) => String(u.id) === avant) ? avant : (dansClasse.length === 1 ? String(dansClasse[0].id) : "");
+  }
+  const u = enseignants.find((x) => String(x.id) === ens.value);
+  const ids = u ? [...new Set(u.affectations.filter((a) => a.classe_id === cid).map((a) => a.matiere_id))]
+    : matieresDeClasse(cid).map((m) => m.id);
+  const sel = $("#cr-matiere"), garde = sel.value;
+  sel.innerHTML = ids.map((id) => `<option value="${id}">${esc(nomMatiere(id))}</option>`).join("") || `<option value="">Aucune matière</option>`;
+  if (ids.map(String).includes(garde)) sel.value = garde;
+}
+$("#cr-classe").addEventListener("change", () => majFormCreneau());
+$("#cr-ens").addEventListener("change", () => majFormCreneau("ens"));
 $("#btn-emploi-pdf").addEventListener("click", () => {
   const m = $("#e-mode").value;
   const q = m === "classe" ? "?classe_id=" + $("#e-classe").value : m === "enseignant" ? "?enseignant_id=" + $("#e-ens").value : "";

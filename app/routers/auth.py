@@ -200,6 +200,34 @@ def public(session: Session, u: Utilisateur) -> UtilisateurPublic:
     )
 
 
+def verifier_affectations(session: Session, ecole_id: int, affectations: list) -> None:
+    """Règles du complexe : un enseignant reste dans un seul cycle (un prof du collège n'enseigne pas au lycée),
+    chaque matière doit être enseignée dans la classe, et pas plus de matières que le cycle n'en permet."""
+    from app.cursus import cycle_de, cycles_ecole
+    from app.services import matieres_classe
+    if not affectations:
+        return
+    cycles = cycles_ecole(session, ecole_id)
+    noms = {m.id: m.nom for m in session.exec(select(Matiere).where(Matiere.ecole_id == ecole_id))}
+    vus: dict = {}
+    for cid in {a.classe_id for a in affectations}:
+        classe = session.get(Classe, cid)
+        vus[cid] = (classe, cycle_de(session, classe, cycles))
+        enseignees = {m.id for m, _ in matieres_classe(session, classe)}
+        for a in affectations:
+            if a.classe_id == cid and a.matiere_id not in enseignees:
+                raise HTTPException(400, f"« {noms.get(a.matiere_id, '?')} » n'est pas enseignée en {classe.nom}")
+    cycles_vus = {(c.id if c else None) for _, c in vus.values()}
+    if len(cycles_vus) > 1:
+        raise HTTPException(400, "Un enseignant reste dans un seul cycle (primaire, collège ou lycée) : "
+                                 + ", ".join(sorted({(c.nom if c else "sans cycle") for _, c in vus.values()})))
+    cycle = next(iter(vus.values()))[1]
+    nb = len({a.matiere_id for a in affectations})
+    if cycle and cycle.max_matieres and nb > cycle.max_matieres:
+        raise HTTPException(400, f"Au {cycle.nom.lower()}, un professeur enseigne au plus {cycle.max_matieres} "
+                                 f"matière{'s' if cycle.max_matieres > 1 else ''} (ici {nb})")
+
+
 def _enregistrer_affectations(session: Session, cible: Utilisateur, affectations: list[AffectationSaisie]) -> None:
     """Remplace les matières × classes d'un enseignant (vérifiées dans l'école)."""
     if affectations and cible.role != Role.enseignant:
@@ -209,6 +237,7 @@ def _enregistrer_affectations(session: Session, cible: Utilisateur, affectations
     for a in affectations:
         if a.matiere_id not in matieres or a.classe_id not in classes:
             raise HTTPException(400, "Matière ou classe introuvable")
+    verifier_affectations(session, cible.ecole_id, affectations)
     for a in session.exec(select(Affectation).where(Affectation.utilisateur_id == cible.id)).all():
         session.delete(a)
     for m, c in {(a.matiere_id, a.classe_id) for a in affectations}:
