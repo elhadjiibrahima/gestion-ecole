@@ -90,14 +90,14 @@ def test_import_erreurs_rien_importe(client, dir_headers, setup):
         ["Barry", "Awa", "6ème A", "32/13/2014", None, 100000],
         ["Keïta", "Sékou", "6ème A", None, None, None],                    # pas de paiement
         ["Touré", "Hawa", "6ème A", None, None, 600000],                   # plus que les frais
-        ["Sylla", "Binta", "6ème A", None, None, 1000, "Chèque"],          # mode inconnu
+        ["Sylla", "Binta", "6ème A", None, None, 1000, "Bitcoin"],         # mode inconnu
         ["Kaba", "Moussa", "6ème A", None, None, "beaucoup"],              # pas un nombre
     ])
     r = _importer(client, dir_headers, contenu).json()
     assert r["importes"] == 0 and len(r["erreurs"]) == 7
     assert any("Ligne 6" in e and "montant_paye" in e for e in r["erreurs"])
     assert any("Ligne 7" in e and "supérieur" in e for e in r["erreurs"])
-    assert any("Chèque" in e for e in r["erreurs"])
+    assert any("Bitcoin" in e for e in r["erreurs"])
     assert any("Ligne 3" in e and "prenom" in e for e in r["erreurs"])
     assert any("CM2" in e for e in r["erreurs"])
     assert len(client.get("/eleves", headers=dir_headers).json()) == 1   # rien ajouté

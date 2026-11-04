@@ -148,6 +148,12 @@ def imprimer(classe_id: int | None = None, enseignant_id: int | None = None,
     return Response(pdf, media_type="application/pdf", headers=en_tete_pdf(f"emploi_du_temps_{titre}.pdf"))
 
 
+def heures_du_jour(session: Session, ecole_id: int, enseignant_id: int, jour: date) -> float:
+    """Heures de cours de l'enseignant ce jour-là (d'après l'emploi du temps)."""
+    return round(sum(_minutes(c.fin) - _minutes(c.debut) for c in creneaux_de(session, ecole_id, enseignant_id=enseignant_id)
+                     if c.jour == jour.isoweekday()) / 60, 2)
+
+
 def heures_prevues(session: Session, ecole_id: int, enseignant_id: int, mois: str) -> float:
     """Heures de cours d'un enseignant pour un mois, d'après l'emploi du temps
     (chaque créneau compte autant de fois que son jour apparaît dans le mois)."""

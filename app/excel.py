@@ -12,7 +12,8 @@ OBLIGATOIRES = {"nom", "prenom", "classe", "montant_paye"}
 MODES = {  # texte accepté dans le fichier → valeur enregistrée
     "especes": "especes", "espèces": "especes", "espece": "especes", "espèce": "especes", "cash": "especes",
     "orange money": "orange_money", "orange_money": "orange_money", "om": "orange_money",
-    "mtn momo": "mtn_momo", "mtn_momo": "mtn_momo", "momo": "mtn_momo", "mtn": "mtn_momo",
+    "mtn momo": "mtn_momo", "mtn_momo": "mtn_momo", "momo": "mtn_momo", "mtn": "mtn_momo", "wave": "wave", "free money": "free_money", "free": "free_money",
+    "cheque": "cheque", "chèque": "cheque",
     "virement": "virement",
 }
 LIBELLES_MODES = ["Espèces", "Orange Money", "MTN MoMo", "Virement"]

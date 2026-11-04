@@ -9,12 +9,14 @@ from app.models import (
     Absence, AbsenceParent, Classe, CodeParent, ConnexionParent, Ecole, Eleve, EspaceParent, Paiement,
     PaiementParent, PhotoEleve, Token, Utilisateur,
 )
-from app.pdf import en_tete_pdf, pdf_bulletins, pdf_cartes, pdf_recu
+from app.cursus import regles_classe
+from app.routers.scolarite import travail_a_faire
+from app.pdf import en_tete_pdf, pdf_bulletins, pdf_recu
 from app.security import (
     GESTION, creer_token_parent, eleve_du_parent, exiger_role, generer_code_parent, normaliser_code,
 )
 from app.routers.paiements import nom_frais
-from app.services import annee_courante, bulletin_eleve, calculer_solde, get_classe, get_eleve
+from app.services import bulletin_eleve, calculer_solde, get_classe, get_eleve
 
 router = APIRouter(tags=["Espace parents"])
 
@@ -46,6 +48,7 @@ def connexion_parent(data: ConnexionParent, session: Session = Depends(get_sessi
 def espace(eleve: Eleve = Depends(eleve_du_parent), session: Session = Depends(get_session)):
     ecole = session.get(Ecole, eleve.ecole_id)
     classe = session.get(Classe, eleve.classe_id)
+    regles = regles_classe(session, classe)
     annee = ecole.annee_scolaire
     paiements = session.exec(select(Paiement).where(Paiement.eleve_id == eleve.id, Paiement.annee_scolaire == annee)
                              .order_by(Paiement.date_paiement.desc(), Paiement.id.desc())).all()
@@ -59,8 +62,10 @@ def espace(eleve: Eleve = Depends(eleve_du_parent), session: Session = Depends(g
         paiements=[PaiementParent(id=p.id, numero_recu=p.numero_recu, date_paiement=p.date_paiement,
                                   montant=p.montant, mode=p.mode, annule=p.annule,
                                   frais=nom_frais(session, p.type_frais_id)) for p in paiements],
-        bulletins=[bulletin_eleve(session, eleve, t) for t in (1, 2, 3)],
+        bulletins=[b for b in (bulletin_eleve(session, eleve, t) for t in range(1, regles.periodes + 1)) if b.publie],
         absences=[AbsenceParent(jour=a.jour, type=a.type, justifiee=a.justifiee, motif=a.motif) for a in absences],
+        periode=regles.nom_periode, nb_periodes=regles.periodes, bareme=regles.bareme,
+        cahier=travail_a_faire(session, classe.id, annee),
     )
 
 
@@ -88,7 +93,10 @@ def recu(paiement_id: int, eleve: Eleve = Depends(eleve_du_parent), session: Ses
 def bulletin(trimestre: int, eleve: Eleve = Depends(eleve_du_parent), session: Session = Depends(get_session)):
     if trimestre not in (1, 2, 3):
         raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
-    pdf = pdf_bulletins(session.get(Ecole, eleve.ecole_id), [bulletin_eleve(session, eleve, trimestre)])
+    b = bulletin_eleve(session, eleve, trimestre)
+    if not b.publie:
+        raise HTTPException(404, "Les résultats de cette période ne sont pas encore publiés par l'école")
+    pdf = pdf_bulletins(session.get(Ecole, eleve.ecole_id), [b])
     return Response(pdf, media_type="application/pdf", headers=en_tete_pdf(f"bulletin_T{trimestre}.pdf"))
 
 

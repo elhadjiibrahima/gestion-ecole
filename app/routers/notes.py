@@ -3,11 +3,12 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import (
-    AppreciationMatiere, CaseNote, Classe, Ecole, Eleve, LigneHistorique, Note, NoteCreate, NoteHistorique, Role, SaisieNote,
-    Utilisateur,
+    AppreciationMatiere, CaseNote, Classe, Ecole, Eleve, EtatPublication, LigneHistorique, LigneNoteClasse, Matiere, Note, NoteCreate,
+    NoteHistorique, NotesClasse, Publication, Role, SaisieNote, SaisieNoteClasse, Utilisateur,
 )
 from app.security import PEDAGOGIE, TOUS, affectations_de, exiger_role
-from app.services import annee_courante, get_eleve, matieres_classe, matieres_ecole, moyenne_matiere
+from app.cursus import regles_classe
+from app.services import annee_courante, get_classe, get_eleve, matieres_classe, matieres_ecole, moyenne_matiere
 
 router = APIRouter(prefix="/notes", tags=["Notes"])
 
@@ -78,9 +79,11 @@ def notes_eleve(
     return session.exec(stmt.order_by(Note.matiere, Note.id)).all()
 
 
-def _verifier_trimestre(trimestre: int) -> None:
-    if trimestre not in (1, 2, 3):
-        raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
+def _verifier_trimestre(trimestre: int, regles=None) -> None:
+    n = regles.periodes if regles else 3
+    if not 1 <= trimestre <= n:
+        nom = (regles.nom_periode if regles else "Trimestre").lower()
+        raise HTTPException(400, f"Le {nom} doit être entre 1 et {n}")
 
 
 def _notes_trimestre(session: Session, eleve: Eleve, trimestre: int) -> list[Note]:
@@ -146,8 +149,9 @@ def grille(
     session: Session = Depends(get_session),
 ):
     """Une ligne par matière : devoirs, composition, moyenne (et si l'utilisateur peut la modifier)."""
-    _verifier_trimestre(trimestre)
-    return _grille(session, get_eleve(session, eleve_id, user.ecole_id), trimestre, user)
+    eleve = get_eleve(session, eleve_id, user.ecole_id)
+    _verifier_trimestre(trimestre, regles_classe(session, session.get(Classe, eleve.classe_id)))
+    return _grille(session, eleve, trimestre, user)
 
 
 @router.put("/grille", response_model=list[CaseNote])
@@ -160,11 +164,11 @@ def enregistrer_grille(
 ):
     """Enregistre la grille. Une case vide efface la note. Un enseignant ne peut toucher
     qu'aux matières qui lui sont attribuées dans la classe de l'élève."""
-    _verifier_trimestre(trimestre)
     eleve = get_eleve(session, eleve_id, user.ecole_id)
-    ecole = session.get(Ecole, user.ecole_id)
-    annee = ecole.annee_scolaire
-    matieres = {m.id: (m, coef) for m, coef in matieres_classe(session, session.get(Classe, eleve.classe_id))}
+    classe = session.get(Classe, eleve.classe_id)
+    regles = regles_classe(session, classe)
+    _verifier_trimestre(trimestre, regles)
+    matieres = {m.id: (m, coef) for m, coef in matieres_classe(session, classe)}
     affectations = affectations_de(session, user) if user.role == Role.enseignant else None
     for s in saisies:
         if s.matiere_id not in matieres:
@@ -172,55 +176,182 @@ def enregistrer_grille(
         m, coef = matieres[s.matiere_id]
         if not _peut_saisir(session, user, m.id, eleve.classe_id, affectations):
             raise HTTPException(403, f"« {m.nom} » dans cette classe ne t'est pas attribuée")
-        if s.devoirs is not None:
-            if len(s.devoirs) > ecole.nb_devoirs:
-                raise HTTPException(400, f"Au plus {ecole.nb_devoirs} devoir(s) par matière")
-            if any(v is not None and not 0 <= v <= 20 for v in s.devoirs):
-                raise HTTPException(422, "Une note doit être entre 0 et 20")
-        # Cases demandées : {(type, numéro): nouvelle valeur}
-        voulu: dict[tuple[str, int], float | None] = {}
-        if s.devoirs is not None:
-            for i in range(ecole.nb_devoirs):
-                voulu[("devoir", i + 1)] = s.devoirs[i] if i < len(s.devoirs) else None
-        if s.composition is not None or s.effacer_composition:
-            voulu[("composition", 1)] = s.composition
-        elif s.valeur is not None or (s.devoirs is None and "valeur" in s.model_fields_set):
-            voulu[("composition", 1)] = s.valeur          # ancienne saisie à une seule note
-        existantes = [n for n in _notes_trimestre(session, eleve, trimestre) if n.matiere == m.nom]
-        for (type_, numero), valeur in voulu.items():
-            if type_ == "composition":
-                actuelles = [n for n in existantes if n.type == "composition"]
-            else:
-                actuelles = [n for n in existantes if n.type != "composition" and n.numero == numero]
-            ancienne = round(sum(n.valeur for n in actuelles) / len(actuelles), 2) if actuelles else None
-            if len(actuelles) <= 1 and ancienne == valeur:
-                continue   # case inchangée
-            for n in actuelles:
-                session.delete(n)
-            if valeur is not None:
-                session.add(Note(eleve_id=eleve.id, matiere=m.nom, coefficient=coef, valeur=valeur,
-                                 trimestre=trimestre, annee_scolaire=annee, type=type_, numero=numero))
-            _tracer(session, user, eleve, m.nom, trimestre, ancienne, valeur, _libelle(type_, numero))
-        if s.appreciation is not None:   # appréciation de l'enseignant pour cette matière
-            ancienne_app = session.exec(select(AppreciationMatiere).where(
-                AppreciationMatiere.eleve_id == eleve.id, AppreciationMatiere.matiere == m.nom,
-                AppreciationMatiere.trimestre == trimestre, AppreciationMatiere.annee_scolaire == annee)).first()
-            texte = s.appreciation.strip()
-            if ancienne_app and not texte:
-                session.delete(ancienne_app)
-            elif ancienne_app and ancienne_app.texte != texte:
-                ancienne_app.texte, ancienne_app.utilisateur_id = texte, user.id
-                session.add(ancienne_app)
-            elif texte and not ancienne_app:
-                session.add(AppreciationMatiere(eleve_id=eleve.id, matiere=m.nom, trimestre=trimestre,
-                                                annee_scolaire=annee, texte=texte, utilisateur_id=user.id))
-        # le coefficient suit celui de la classe
-        for n in existantes:
-            if n.coefficient != coef:
-                n.coefficient = coef
-                session.add(n)
+        _appliquer(session, user, eleve, trimestre, m, coef, regles.bareme, s.devoirs, s.composition,
+                   s.effacer_composition, s.appreciation,
+                   s.valeur if (s.valeur is not None or (s.devoirs is None and "valeur" in s.model_fields_set)) else _RIEN)
     session.commit()
     return _grille(session, eleve, trimestre, user)
+
+
+_RIEN = object()
+
+
+def _appliquer(session: Session, user: Utilisateur, eleve: Eleve, trimestre: int, m, coef: int, bareme: int,
+               devoirs, composition, effacer_composition: bool, appreciation, valeur_seule=_RIEN) -> None:
+    """Enregistre les notes d'un élève dans une matière (devoirs, composition, appréciation), avec l'historique."""
+    ecole = session.get(Ecole, eleve.ecole_id)
+    annee = ecole.annee_scolaire
+    if devoirs is not None:
+        if len(devoirs) > ecole.nb_devoirs:
+            raise HTTPException(400, f"Au plus {ecole.nb_devoirs} devoir(s) par matière")
+        if any(v is not None and not 0 <= v <= bareme for v in devoirs):
+            raise HTTPException(422, f"Une note doit être entre 0 et {bareme}")
+    for v in (composition, None if valeur_seule is _RIEN else valeur_seule):
+        if v is not None and not 0 <= v <= bareme:
+            raise HTTPException(422, f"Une note doit être entre 0 et {bareme}")
+    # Cases demandées : {(type, numéro): nouvelle valeur}
+    voulu: dict[tuple[str, int], float | None] = {}
+    if devoirs is not None:
+        for i in range(ecole.nb_devoirs):
+            voulu[("devoir", i + 1)] = devoirs[i] if i < len(devoirs) else None
+    if composition is not None or effacer_composition:
+        voulu[("composition", 1)] = composition
+    elif valeur_seule is not _RIEN:
+        voulu[("composition", 1)] = valeur_seule          # ancienne saisie à une seule note
+    existantes = [n for n in _notes_trimestre(session, eleve, trimestre) if n.matiere == m.nom]
+    for (type_, numero), valeur in voulu.items():
+        if type_ == "composition":
+            actuelles = [n for n in existantes if n.type == "composition"]
+        else:
+            actuelles = [n for n in existantes if n.type != "composition" and n.numero == numero]
+        ancienne = round(sum(n.valeur for n in actuelles) / len(actuelles), 2) if actuelles else None
+        if len(actuelles) <= 1 and ancienne == valeur:
+            continue   # case inchangée
+        for n in actuelles:
+            session.delete(n)
+        if valeur is not None:
+            session.add(Note(eleve_id=eleve.id, matiere=m.nom, coefficient=coef, valeur=valeur,
+                             trimestre=trimestre, annee_scolaire=annee, type=type_, numero=numero))
+        _tracer(session, user, eleve, m.nom, trimestre, ancienne, valeur, _libelle(type_, numero))
+    if appreciation is not None:   # appréciation de l'enseignant pour cette matière
+        ancienne_app = session.exec(select(AppreciationMatiere).where(
+            AppreciationMatiere.eleve_id == eleve.id, AppreciationMatiere.matiere == m.nom,
+            AppreciationMatiere.trimestre == trimestre, AppreciationMatiere.annee_scolaire == annee)).first()
+        texte = appreciation.strip()
+        if ancienne_app and not texte:
+            session.delete(ancienne_app)
+        elif ancienne_app and ancienne_app.texte != texte:
+            ancienne_app.texte, ancienne_app.utilisateur_id = texte, user.id
+            session.add(ancienne_app)
+        elif texte and not ancienne_app:
+            session.add(AppreciationMatiere(eleve_id=eleve.id, matiere=m.nom, trimestre=trimestre,
+                                            annee_scolaire=annee, texte=texte, utilisateur_id=user.id))
+    # le coefficient suit celui de la classe
+    for n in existantes:
+        if n.coefficient != coef:
+            n.coefficient = coef
+            session.add(n)
+    session.flush()
+
+
+# ---------- Saisie d'une matière pour toute la classe ----------
+def _notes_classe(session: Session, classe: Classe, matiere_id: int, trimestre: int, user: Utilisateur) -> NotesClasse:
+    regles = regles_classe(session, classe)
+    _verifier_trimestre(trimestre, regles)
+    matieres = {m.id: (m, coef) for m, coef in matieres_classe(session, classe)}
+    if matiere_id not in matieres:
+        raise HTTPException(400, "Cette matière n'est pas enseignée dans cette classe")
+    m, coef = matieres[matiere_id]
+    ecole = session.get(Ecole, classe.ecole_id)
+    nb = ecole.nb_devoirs
+    eleves = session.exec(select(Eleve).where(Eleve.classe_id == classe.id, Eleve.actif == True)  # noqa: E712
+                          .order_by(Eleve.nom, Eleve.prenom)).all()
+    ids = [e.id for e in eleves]
+    notes = session.exec(select(Note).where(Note.eleve_id.in_(ids), Note.trimestre == trimestre, Note.matiere == m.nom,
+                                            Note.annee_scolaire == ecole.annee_scolaire)).all() if ids else []
+    apps = {a.eleve_id: a.texte for a in session.exec(select(AppreciationMatiere).where(
+        AppreciationMatiere.eleve_id.in_(ids), AppreciationMatiere.trimestre == trimestre,
+        AppreciationMatiere.matiere == m.nom, AppreciationMatiere.annee_scolaire == ecole.annee_scolaire)).all()} if ids else {}
+    par_eleve: dict[int, list[Note]] = {}
+    for n in notes:
+        par_eleve.setdefault(n.eleve_id, []).append(n)
+    lignes = []
+    for e in eleves:
+        ns = par_eleve.get(e.id, [])
+        devoirs: list = [None] * nb
+        for n in ns:
+            if n.type != "composition" and 1 <= n.numero <= nb:
+                devoirs[n.numero - 1] = n.valeur
+        compos = [n.valeur for n in ns if n.type == "composition"]
+        moy = moyenne_matiere(ns, ecole.poids_composition)
+        lignes.append(LigneNoteClasse(eleve_id=e.id, eleve=f"{e.nom} {e.prenom}", devoirs=devoirs,
+                                      composition=round(sum(compos) / len(compos), 2) if compos else None,
+                                      moyenne=round(moy, 2) if moy is not None else None, appreciation=apps.get(e.id)))
+    return NotesClasse(classe_id=classe.id, matiere_id=m.id, matiere=m.nom, coefficient=coef, trimestre=trimestre,
+                       bareme=regles.bareme, nb_devoirs=nb, lignes=lignes,
+                       modifiable=_peut_saisir(session, user, m.id, classe.id))
+
+
+@router.get("/classe", response_model=NotesClasse)
+def notes_de_la_classe(classe_id: int, matiere_id: int, trimestre: int,
+                       user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)), session: Session = Depends(get_session)):
+    """Toute la classe pour une matière : un élève par ligne (saisie rapide d'un paquet de copies)."""
+    return _notes_classe(session, get_classe(session, classe_id, user.ecole_id), matiere_id, trimestre, user)
+
+
+@router.put("/classe", response_model=NotesClasse)
+def enregistrer_notes_classe(classe_id: int, matiere_id: int, trimestre: int, saisies: list[SaisieNoteClasse],
+                             user: Utilisateur = Depends(exiger_role(*PEDAGOGIE)), session: Session = Depends(get_session)):
+    classe = get_classe(session, classe_id, user.ecole_id)
+    avant = _notes_classe(session, classe, matiere_id, trimestre, user)
+    if not avant.modifiable:
+        raise HTTPException(403, f"« {avant.matiere} » dans cette classe ne t'est pas attribuée")
+    m = session.get(Matiere, matiere_id)
+    ids = {l.eleve_id for l in avant.lignes}
+    for s in saisies:
+        if s.eleve_id not in ids:
+            raise HTTPException(400, "Élève absent de cette classe")
+        _appliquer(session, user, session.get(Eleve, s.eleve_id), trimestre, m, avant.coefficient, avant.bareme,
+                   s.devoirs, s.composition, s.effacer_composition, s.appreciation)
+    session.commit()
+    return _notes_classe(session, classe, matiere_id, trimestre, user)
+
+
+# ---------- Publication des résultats (visibles des parents) ----------
+@router.get("/publications", response_model=list[EtatPublication])
+def etat_publications(trimestre: int, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                      session: Session = Depends(get_session)):
+    """Pour chaque classe : résultats de la période publiés ou non, et combien d'élèves ont des notes."""
+    from app.services import trier_classes
+    annee = annee_courante(session, user.ecole_id)
+    sortie = []
+    for c in trier_classes(session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all()):
+        if trimestre > regles_classe(session, c).periodes:
+            continue
+        p = session.exec(select(Publication).where(Publication.classe_id == c.id, Publication.trimestre == trimestre,
+                                                   Publication.annee_scolaire == annee)).first()
+        ids = session.exec(select(Eleve.id).where(Eleve.classe_id == c.id, Eleve.actif == True)).all()  # noqa: E712
+        notes = len(set(session.exec(select(Note.eleve_id).where(Note.eleve_id.in_(ids), Note.trimestre == trimestre,
+                                                                 Note.annee_scolaire == annee)).all())) if ids else 0
+        sortie.append(EtatPublication(classe_id=c.id, classe=c.nom, trimestre=trimestre, publie=p is not None,
+                                      publie_le=p.publie_le if p else None, notes_saisies=notes, eleves=len(ids)))
+    return sortie
+
+
+@router.put("/publications/{classe_id}", response_model=EtatPublication)
+def publier(classe_id: int, trimestre: int, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+            session: Session = Depends(get_session)):
+    """Les parents voient désormais les notes et le bulletin de cette période."""
+    classe = get_classe(session, classe_id, user.ecole_id)
+    _verifier_trimestre(trimestre, regles_classe(session, classe))
+    annee = annee_courante(session, user.ecole_id)
+    if not session.exec(select(Publication).where(Publication.classe_id == classe.id, Publication.trimestre == trimestre,
+                                                  Publication.annee_scolaire == annee)).first():
+        session.add(Publication(ecole_id=user.ecole_id, classe_id=classe.id, trimestre=trimestre, annee_scolaire=annee,
+                                publie_par_id=user.id))
+        session.commit()
+    return next(e for e in etat_publications(trimestre, user, session) if e.classe_id == classe.id)
+
+
+@router.delete("/publications/{classe_id}", response_model=EtatPublication)
+def retirer_publication(classe_id: int, trimestre: int, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                        session: Session = Depends(get_session)):
+    classe = get_classe(session, classe_id, user.ecole_id)
+    for p in session.exec(select(Publication).where(Publication.classe_id == classe.id, Publication.trimestre == trimestre,
+                                                    Publication.annee_scolaire == annee_courante(session, user.ecole_id))).all():
+        session.delete(p)
+    session.commit()
+    return next(e for e in etat_publications(trimestre, user, session) if e.classe_id == classe.id)
 
 
 @router.delete("/{note_id}", status_code=204)

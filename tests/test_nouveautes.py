@@ -165,6 +165,8 @@ def test_messages_parents(client, dir_headers, setup):
     ids = _matieres(client, dir_headers)
     client.put(f"/notes/grille?eleve_id={eleve['id']}&trimestre=1", headers=dir_headers,
                json=[{"matiere_id": ids["Français"]["id"], "valeur": 13}])
+    assert client.get(f"/messages/bulletins?classe_id={classe['id']}&trimestre=1", headers=dir_headers).status_code == 400
+    client.put(f"/notes/publications/{classe['id']}?trimestre=1", headers=dir_headers)
     bm = {x["eleve"]: x for x in client.get(f"/messages/bulletins?classe_id={classe['id']}&trimestre=1",
                                              headers=dir_headers).json()}
     assert "13.00/20" in bm["Aminata Diallo"]["texte"] and "1er sur 2" in bm["Aminata Diallo"]["texte"]
@@ -230,7 +232,7 @@ def test_nouvelle_annee(client, dir_headers):
     prop = client.get("/annee/proposition", headers=h).json()
     assert prop["annee_actuelle"] == "2026-2027" and prop["annee_suivante"] == "2027-2028"
     suite = {p["classe"]: p["vers_classe_id"] for p in prop["passages"]}
-    assert suite == {"6eme A": c5["id"], "5eme A": None, "3eme A": None}   # pas de 4eme A → sortie proposée
+    assert suite == {"6eme A": c5["id"], "5eme A": c3["id"], "3eme A": None}   # pas de 4eme : niveau existant suivant
 
     assert client.post("/annee/nouvelle", headers=h, json={"nouvelle_annee": "2027-2029", "passages": []}).status_code == 400
     r = client.post("/annee/nouvelle", headers=h, json={"nouvelle_annee": "2027-2028", "passages": [

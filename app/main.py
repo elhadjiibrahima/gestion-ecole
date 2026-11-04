@@ -8,9 +8,9 @@ from app.database import init_db
 from fastapi.staticfiles import StaticFiles
 
 from app.routers import (
-    absences, admin, annee, auth, caisse, classes, echeancier, eleves, emploi, exports, frais, matieres, messages,
+    absences, admin, annee, auth, caisse, cycles, classes, echeancier, eleves, emploi, exports, frais, matieres, messages,
     notes, paie,
-    paiements, parents, photos, stats,
+    paiements, parents, photos, scolarite, stats,
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -30,6 +30,7 @@ app = FastAPI(
 )
 
 app.include_router(auth.router)
+app.include_router(cycles.router)        # avant classes : /classes/types, /classes/tarifs
 app.include_router(classes.router)
 app.include_router(eleves.router)
 app.include_router(paiements.router)
@@ -48,6 +49,7 @@ app.include_router(admin.router)
 app.include_router(frais.router)
 app.include_router(emploi.router)
 app.include_router(paie.router)
+app.include_router(scolarite.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

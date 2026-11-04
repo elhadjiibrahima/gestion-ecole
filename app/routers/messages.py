@@ -111,15 +111,18 @@ def annonces_bulletins(
     ecole = session.get(Ecole, user.ecole_id)
     derniers = _derniers_envois(session, user.ecole_id, "bulletin")
     messages = []
-    for b in bulletins_classe(session, classe, trimestre):
+    bulletins = bulletins_classe(session, classe, trimestre)
+    if bulletins and not bulletins[0].publie:
+        raise HTTPException(400, "Publie d'abord les résultats de cette période (Notes & bulletins → Publier)")
+    for b in bulletins:
         eleve = session.get(Eleve, b.eleve_id)
-        t = f"{trimestre}{'er' if trimestre == 1 else 'e'} trimestre"
+        t = f"{trimestre}{'er' if trimestre == 1 else 'e'} {b.periode.lower()}"
         if b.moyenne_generale is None:
             resultat = "aucune note n'a encore été saisie."
         else:
             rang = f"{b.rang}{'er' if b.rang == 1 else 'e'} sur {b.effectif}"
-            resultat = (f"moyenne générale {b.moyenne_generale:.2f}/20, rang {rang}. "
-                        f"Appréciation : {b.appreciation}.")
+            resultat = (f"moyenne générale {b.moyenne_generale:.2f}/{b.bareme}, rang {rang}. "
+                        f"Appréciation : {b.appreciation}." + (f" Distinction : {b.mention}." if b.mention else ""))
         absences = f" Absences : {b.absences}, retards : {b.retards}." if (b.absences or b.retards) else ""
         texte = (f"Bonjour, le bulletin du {t} de {eleve.prenom} {eleve.nom} ({classe.nom}) est disponible "
                  f"à {ecole.nom} : {resultat}{absences}")

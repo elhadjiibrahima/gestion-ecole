@@ -151,6 +151,9 @@ def test_espace_parents(client, dir_headers, setup):
     client.put(f"/notes/grille?eleve_id={eleve['id']}&trimestre=1", headers=h, json=[{"matiere_id": m[0]["id"], "valeur": 15}])
     client.post("/absences/appel", headers=h, json={"classe_id": classe["id"], "jour": str(AUJ), "trimestre": 1,
                                                      "absents": [eleve["id"]]})
+    assert client.get("/parents/moi", headers=hp).json()["bulletins"] == []      # pas encore publié
+    assert client.get("/parents/bulletin.pdf?trimestre=1", headers=hp).status_code == 404
+    client.put(f"/notes/publications/{classe['id']}?trimestre=1", headers=h)
     e = client.get("/parents/moi", headers=hp).json()
     assert e["prenom"] == "Aminata" and e["classe"] == "6ème A" and e["ecole"] == "École Test"
     assert e["solde"]["total_paye"] == 50000 and len(e["paiements"]) == 1

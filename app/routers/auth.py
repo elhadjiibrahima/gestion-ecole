@@ -45,7 +45,11 @@ def inscrire_ecole(data: InscriptionEcole, session: Session = Depends(get_sessio
 def creer_ecole_et_directeur(session: Session, data: InscriptionEcole, statut: str = "essai",
                              fin: date | None = None) -> Token:
     _email_libre(session, data.email)
-    ecole = Ecole(nom=data.nom_ecole, adresse=data.adresse, telephone=data.telephone, devise=data.devise,
+    from app.cursus import PAYS, creer_cursus
+    infos = PAYS.get(data.pays or "", {})
+    ecole = Ecole(nom=data.nom_ecole, adresse=data.adresse, telephone=data.telephone,
+                  devise=data.devise or infos.get("devise", "FCFA"), pays=data.pays or "",
+                  indicatif_tel=infos.get("indicatif", "224"),
                   abonnement_statut=statut, abonnement_fin=fin or date.today() + timedelta(days=ESSAI_JOURS))
     session.add(ecole)
     session.flush()
@@ -54,7 +58,10 @@ def creer_ecole_et_directeur(session: Session, data: InscriptionEcole, statut: s
         ecole_id=ecole.id, mot_de_passe_hash=hacher_mot_de_passe(data.mot_de_passe),
     )
     session.add(directeur)
-    ajouter_matieres_defaut(session, ecole.id)   # liste de départ, modifiable ensuite
+    if data.cycles:                              # complexe : cycles, matières de chaque cycle et classes types
+        creer_cursus(session, ecole, list(data.cycles))
+    else:
+        ajouter_matieres_defaut(session, ecole.id)   # liste de départ, modifiable ensuite
     ajouter_postes_defaut(session, ecole.id)     # postes de la paie, salaires à définir
     session.commit()
     session.refresh(directeur)
@@ -76,7 +83,8 @@ def connexion(form: OAuth2PasswordRequestForm = Depends(), session: Session = De
         attente = int((FENETRE - (maintenant - _ECHECS[email][0])) // 60) + 1
         raise HTTPException(429, f"Trop d'essais : compte bloqué, réessaie dans {attente} minute(s)")
     user = session.exec(select(Utilisateur).where(Utilisateur.email == email)).first()
-    if not user or not user.actif or not verifier_mot_de_passe(form.password, user.mot_de_passe_hash):
+    if not user or not user.actif or user.role == Role.agent \
+            or not verifier_mot_de_passe(form.password, user.mot_de_passe_hash):
         _ECHECS[email].append(maintenant)
         restant = MAX_ECHECS - len(_ECHECS[email])
         raise HTTPException(401, "E-mail ou mot de passe incorrect"
@@ -283,6 +291,8 @@ def reinitialiser_mot_de_passe(
     cible = session.get(Utilisateur, utilisateur_id)
     if not cible or cible.ecole_id != user.ecole_id:
         raise HTTPException(404, "Utilisateur introuvable")
+    if cible.role == Role.agent:
+        raise HTTPException(400, "Cette personne n'a pas d'accès au logiciel")
     cible.mot_de_passe_hash = hacher_mot_de_passe(data.nouveau)
     session.add(cible)
     session.commit()

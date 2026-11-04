@@ -188,7 +188,9 @@ def supprimer(
     m = _get(session, matiere_id, user.ecole_id)
     if _a_des_notes(session, user.ecole_id, m.nom):
         raise HTTPException(400, f"Impossible : des notes existent déjà en « {m.nom} ». Efface-les d'abord.")
-    for c in session.exec(select(CoefficientClasse).where(CoefficientClasse.matiere_id == m.id)).all():
-        session.delete(c)
+    from app.models import Affectation, MatiereCycle
+    for modele in (CoefficientClasse, MatiereCycle, Affectation):
+        for c in session.exec(select(modele).where(modele.matiere_id == m.id)).all():
+            session.delete(c)
     session.delete(m)
     session.commit()

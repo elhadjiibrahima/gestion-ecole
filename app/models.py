@@ -25,6 +25,8 @@ class EcoleBase(SQLModel):
     nb_mois: int = 9                         # mois payés dans l'année (ex : octobre à juin)
     mois_debut: int = 10                     # 10 = octobre
     jour_limite: int = 5                     # la mensualité est due avant le 5 du mois
+    pays: str = ""                           # senegal / guinee : en-tête officiel des bulletins
+    inspection: Optional[str] = None         # ex : IA de Dakar — IEF de Dakar-Plateau (en-tête des bulletins)
 
 
 class Ecole(EcoleBase, table=True):
@@ -50,6 +52,8 @@ class EcoleUpdate(SQLModel):
     nb_mois: Optional[int] = Field(default=None, ge=1, le=12)
     mois_debut: Optional[int] = Field(default=None, ge=1, le=12)
     jour_limite: Optional[int] = Field(default=None, ge=1, le=28)
+    pays: Optional[Literal["senegal", "guinee", "autre"]] = None
+    inspection: Optional[str] = Field(default=None, max_length=120)
 
 
 # ---------- Utilisateurs ----------
@@ -58,6 +62,7 @@ class Role(str, Enum):
     comptable = "comptable"      # élèves, paiements, impayés
     enseignant = "enseignant"    # notes de ses matières dans ses classes, appel de ses classes
     surveillant = "surveillant"  # appel de toutes les classes, justification des absences et retards
+    agent = "agent"              # personnel sans accès au logiciel (gardien, cuisinière…) : seulement la paie
 
 
 class UtilisateurBase(SQLModel):
@@ -102,7 +107,10 @@ class InscriptionEcole(SQLModel):
     nom_ecole: str
     adresse: Optional[str] = None
     telephone: Optional[str] = None
-    devise: str = "FCFA"
+    devise: Optional[str] = None             # vide : celle du pays
+    pays: Optional[Literal["senegal", "guinee", "autre"]] = None
+    # Cycles de l'école : leurs classes et matières sont créées tout de suite (vide : matières usuelles seulement)
+    cycles: list[Literal["prescolaire", "primaire", "college", "lycee"]] = []
     nom_directeur: str
     email: EmailStr
     mot_de_passe: str = Field(min_length=8)
@@ -161,6 +169,10 @@ class EleveBase(SQLModel):
     date_naissance: Optional[Date] = None
     telephone_parent: Optional[str] = None
     classe_id: int = Field(foreign_key="classe.id")
+    sexe: Optional[str] = Field(default=None, max_length=1)              # M ou F
+    lieu_naissance: Optional[str] = Field(default=None, max_length=80)
+    nom_tuteur: Optional[str] = Field(default=None, max_length=80)      # père, mère ou tuteur
+    adresse: Optional[str] = Field(default=None, max_length=120)
 
 
 class Eleve(EleveBase, table=True):
@@ -183,6 +195,10 @@ class EleveUpdate(SQLModel):
     date_naissance: Optional[Date] = None
     telephone_parent: Optional[str] = None
     classe_id: Optional[int] = None
+    sexe: Optional[Literal["M", "F"]] = None
+    lieu_naissance: Optional[str] = Field(default=None, max_length=80)
+    nom_tuteur: Optional[str] = Field(default=None, max_length=80)
+    adresse: Optional[str] = Field(default=None, max_length=120)
 
 
 class Depart(SQLModel):
@@ -200,7 +216,10 @@ class ModePaiement(str, Enum):
     especes = "especes"
     orange_money = "orange_money"
     mtn_momo = "mtn_momo"
+    wave = "wave"
+    free_money = "free_money"
     virement = "virement"
+    cheque = "cheque"
 
 
 class PaiementBase(SQLModel):
@@ -223,6 +242,7 @@ class Paiement(PaiementBase, table=True):
     annule_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
     motif_annulation: Optional[str] = None
     cle_client: Optional[str] = Field(default=None, index=True)
+    cree_le: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))   # heure de saisie
 
 
 class AnnulationPaiement(SQLModel):
@@ -415,6 +435,9 @@ class Solde(SQLModel):
     prochain_montant: int = 0
     echeances: list[Echeance] = []
     lignes: list[LigneFrais] = []            # détail par type de frais
+    paye_jusqua: Optional[str] = None        # dernier mois (ou tranche) entièrement payé
+    retard_scolarite: int = 0                # mois / tranches échus non payés
+    retard_autres: int = 0                   # autres frais dus (inscription, tenue…)
     frais_classe: int = 0                    # scolarité de la classe avant réduction
     reduction: int = 0
     reduction_motif: Optional[str] = None
@@ -422,6 +445,7 @@ class Solde(SQLModel):
 
 class LigneBulletin(SQLModel):
     matiere: str
+    professeur: Optional[str] = None
     moyenne: float
     coefficient: int
     moyenne_classe: Optional[float] = None
@@ -452,6 +476,14 @@ class Bulletin(SQLModel):
     decision: Optional[str] = None           # Admis(e) / Redouble
     avis_conseil: Optional[str] = None       # avis du conseil de classe (directeur)
     moyenne_classe: Optional[float] = None   # moyenne générale de la classe
+    mention: Optional[str] = None            # Félicitations, Tableau d'honneur, Avertissement…
+    bareme: int = 20                         # notes sur 10 (primaire) ou sur 20
+    periode: str = "Trimestre"               # Trimestre ou Semestre
+    nb_periodes: int = 3
+    publie: bool = True                      # visible des parents
+    sexe: Optional[str] = None
+    date_naissance: Optional[Date] = None
+    lieu_naissance: Optional[str] = None
 
 
 # ---------- Coefficients spécifiques à une classe ----------
@@ -664,6 +696,7 @@ class MoisCaisse(SQLModel):
 class BilanCaisse(SQLModel):
     annee_scolaire: str
     total_entrees: int
+    total_recettes: int = 0                  # dont autres entrées (dons, ventes…)
     total_sorties: int
     solde: int
     mois: list[MoisCaisse]
@@ -725,8 +758,12 @@ class EspaceParent(SQLModel):
     a_photo: bool
     solde: Solde
     paiements: list[PaiementParent]
-    bulletins: list[Bulletin]
+    bulletins: list[Bulletin]                # seulement les périodes publiées par l'école
     absences: list[AbsenceParent]
+    periode: str = "Trimestre"
+    nb_periodes: int = 3
+    bareme: int = 20
+    cahier: list["LigneCahier"] = []         # cours récents et travail à faire
 
 
 # ---------- Enseignants : matières et classes attribuées ----------
@@ -1009,7 +1046,7 @@ class FicheSaisie(SQLModel):
     mois: str = Field(min_length=7, max_length=7)
     heures: Optional[float] = Field(default=None, ge=0, le=400)
     primes: int = Field(default=0, ge=0)
-    retenues: int = Field(default=0, ge=0)
+    retenues: Optional[int] = Field(default=None, ge=0)   # vide : retenue proposée pour les absences
     note: Optional[str] = Field(default=None, max_length=120)
 
 
@@ -1046,6 +1083,11 @@ class LignePersonnel(SQLModel):
     contrat_montant: Optional[int]
     heures_prevues: Optional[float]          # d'après l'emploi du temps, pour le mois choisi
     avances_en_cours: int
+    sans_compte: bool = False                # gardien, cuisinière… (pas d'accès au logiciel)
+    telephone: Optional[str] = None
+    jours_absence: float = 0                 # absences non justifiées du mois (en jours)
+    heures_absence: float = 0                # heures de cours manquées (non justifiées)
+    retenue_proposee: int = 0
     fiche: Optional[FicheDetail]
 
 
@@ -1087,3 +1129,208 @@ class ResultatEnvoi(SQLModel):
     envoyes: int
     sans_numero: int
     echecs: list[str]
+
+
+# ---------- Cycles d'études (Préscolaire, Primaire, Collège, Lycée) ----------
+class Cycle(SQLModel, table=True):
+    """Règles d'un cycle : nombre de périodes (3 trimestres / 2 semestres), notes sur 10 ou 20, moyenne de passage.
+    Une classe appartient au cycle dont le nom est son « niveau »."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    nom: str                                 # Primaire, Collège…
+    code: Optional[str] = None               # prescolaire / primaire / college / lycee
+    ordre: int = 0
+    periodes: int = 3                        # 3 trimestres ou 2 semestres
+    bareme: int = 20                         # notes sur 10 ou sur 20
+    seuil: float = 10                        # moyenne annuelle pour passer
+
+
+class CycleSaisie(SQLModel):
+    nom: str = Field(min_length=2, max_length=40)
+    periodes: Literal[2, 3]
+    bareme: Literal[10, 20]
+    seuil: float = Field(ge=0, le=20)
+
+
+class MatiereCycle(SQLModel, table=True):
+    """Matière enseignée dans un cycle, avec son coefficient. Une matière sans ligne ici est enseignée partout."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    matiere_id: int = Field(foreign_key="matiere.id", index=True)
+    cycle_id: int = Field(foreign_key="cycle.id", index=True)
+    coefficient: int = Field(default=1, ge=1, le=20)
+
+
+class MatiereCycleSaisie(SQLModel):
+    cycle_id: int
+    coefficient: Optional[int] = Field(default=None, ge=1, le=20)   # None : matière pas enseignée dans ce cycle
+
+
+class ClasseType(SQLModel):
+    nom: str
+    niveau: str
+    existe: bool
+
+
+class TarifClasse(SQLModel):
+    classe_id: int
+    mensualite: Optional[int] = Field(default=None, ge=0)
+    frais_annuels: Optional[int] = Field(default=None, ge=0)
+    frais_inscription: Optional[int] = Field(default=None, ge=0)
+
+
+# ---------- Publication des résultats ----------
+class Publication(SQLModel, table=True):
+    """Les parents ne voient les notes d'une période qu'une fois publiées par le directeur."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    classe_id: int = Field(foreign_key="classe.id", index=True)
+    trimestre: int
+    annee_scolaire: str = Field(index=True)
+    publie_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    publie_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+
+
+class EtatPublication(SQLModel):
+    classe_id: int
+    classe: str
+    trimestre: int
+    publie: bool
+    publie_le: Optional[datetime] = None
+    notes_saisies: int
+    eleves: int
+
+
+# ---------- Saisie des notes par matière (toute la classe) ----------
+class LigneNoteClasse(SQLModel):
+    eleve_id: int
+    eleve: str
+    devoirs: list[Optional[float]] = []
+    composition: Optional[float] = None
+    moyenne: Optional[float] = None
+    appreciation: Optional[str] = None
+
+
+class NotesClasse(SQLModel):
+    classe_id: int
+    matiere_id: int
+    matiere: str
+    coefficient: int
+    trimestre: int
+    bareme: int
+    nb_devoirs: int
+    modifiable: bool
+    lignes: list[LigneNoteClasse]
+
+
+class SaisieNoteClasse(SQLModel):
+    eleve_id: int
+    devoirs: Optional[list[Optional[float]]] = None
+    composition: Optional[float] = Field(default=None, ge=0, le=20)
+    effacer_composition: bool = False
+    appreciation: Optional[str] = Field(default=None, max_length=120)
+
+
+# ---------- Autres entrées d'argent ----------
+class Recette(SQLModel, table=True):
+    """Argent reçu en dehors des frais des élèves : dons, ventes, location de salle…"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    annee_scolaire: str = Field(index=True)
+    jour: Date = Field(index=True)
+    categorie: str                           # don / vente / location / subvention / autre
+    libelle: str
+    montant: int = Field(gt=0)
+    mode: ModePaiement = ModePaiement.especes
+    saisi_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+
+
+class RecetteSaisie(SQLModel):
+    categorie: Literal["don", "vente", "location", "subvention", "autre"]
+    libelle: str = Field(min_length=2, max_length=120)
+    montant: int = Field(gt=0)
+    mode: ModePaiement = ModePaiement.especes
+    jour: Optional[Date] = None
+
+
+class LigneCaisseJour(SQLModel):
+    heure: Optional[datetime] = None
+    type: str                                # paiement / recette / depense
+    libelle: str
+    mode: str
+    montant: int                             # négatif pour une sortie
+    par: Optional[str] = None
+    numero: Optional[str] = None
+
+
+class CaisseJour(SQLModel):
+    jour: Date
+    entrees: int
+    sorties: int
+    solde: int
+    par_mode: dict[str, int]                 # net par mode (espèces, Orange Money…)
+    par_caissier: dict[str, int]             # encaissé par chaque personne
+    lignes: list[LigneCaisseJour]
+
+
+# ---------- Personnel : absences ----------
+class AbsencePersonnel(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    utilisateur_id: int = Field(foreign_key="utilisateur.id", index=True)
+    jour: Date = Field(index=True)
+    heures: Optional[float] = None           # heures de cours manquées (vide : la journée)
+    motif: Optional[str] = None
+    justifiee: bool = False
+
+
+class AbsencePersonnelSaisie(SQLModel):
+    utilisateur_id: int
+    jour: Date
+    heures: Optional[float] = Field(default=None, gt=0, le=24)
+    motif: Optional[str] = Field(default=None, max_length=120)
+    justifiee: bool = False
+
+
+class AgentSaisie(SQLModel):
+    nom: str = Field(min_length=2, max_length=80)
+    telephone: Optional[str] = Field(default=None, max_length=30)
+    poste_id: Optional[int] = None
+
+
+# ---------- Cahier de textes ----------
+class CahierTexte(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    classe_id: int = Field(foreign_key="classe.id", index=True)
+    matiere_id: int = Field(foreign_key="matiere.id")
+    enseignant_id: int = Field(foreign_key="utilisateur.id")
+    jour: Date = Field(index=True)
+    contenu: str                             # ce qui a été fait en cours
+    travail: Optional[str] = None            # travail à faire
+    pour_le: Optional[Date] = None
+    annee_scolaire: str = Field(index=True)
+
+
+class CahierSaisie(SQLModel):
+    classe_id: int
+    matiere_id: int
+    jour: Date
+    contenu: str = Field(min_length=3, max_length=2000)
+    travail: Optional[str] = Field(default=None, max_length=1000)
+    pour_le: Optional[Date] = None
+
+
+class LigneCahier(SQLModel):
+    id: int
+    classe_id: int
+    classe: str
+    matiere: str
+    enseignant: str
+    jour: Date
+    contenu: str
+    travail: Optional[str]
+    pour_le: Optional[Date]
+    modifiable: bool
+
+
+EspaceParent.model_rebuild()

@@ -63,7 +63,7 @@ def utilisateur_courant(
         user = session.get(Utilisateur, int(payload["sub"]))
     except (jwt.PyJWTError, KeyError, ValueError):
         raise erreur
-    if not user or not user.actif:
+    if not user or not user.actif or user.role == Role.agent:
         raise erreur
     return user
 

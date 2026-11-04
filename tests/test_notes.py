@@ -67,7 +67,7 @@ def test_grille_validation(client, dir_headers, setup):
     url = f"/notes/grille?eleve_id={eleve['id']}&trimestre=1"
     assert client.put(url, headers=dir_headers, json=[{"matiere_id": mid, "valeur": 21}]).status_code == 422
     assert client.put(url, headers=dir_headers, json=[{"matiere_id": 9999, "valeur": 10}]).status_code == 400
-    assert client.put(url.replace("=1", "=4"), headers=dir_headers, json=[]).status_code == 400
+    assert client.put(url.replace("trimestre=1", "trimestre=4"), headers=dir_headers, json=[]).status_code == 400
     compta = creer_compte(client, dir_headers, "comptable", "c@test.gn")
     assert client.put(url, headers=compta, json=[{"matiere_id": mid, "valeur": 10}]).status_code == 403
 

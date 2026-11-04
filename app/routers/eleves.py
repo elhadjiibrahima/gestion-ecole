@@ -23,6 +23,11 @@ def _attribuer_matricule(session: Session, eleve: Eleve) -> None:
     eleve.matricule = f"{date.today().year}-{eleve.id:05d}"
 
 
+def _verifier_sexe(sexe: str | None) -> None:
+    if sexe not in (None, "M", "F"):
+        raise HTTPException(422, "Sexe : M ou F")
+
+
 @router.post("", response_model=EleveInscrit, status_code=201)
 def inscrire_eleve(
     data: EleveCreate,
@@ -31,6 +36,7 @@ def inscrire_eleve(
 ):
     """Inscrit un élève avec son premier paiement (obligatoire). Tout ou rien."""
     get_classe(session, data.classe_id, user.ecole_id, code=400)
+    _verifier_sexe(data.sexe)
     eleve = Eleve.model_validate(data.model_dump(exclude={"paiement"}), update={"ecole_id": user.ecole_id})
     session.add(eleve)
     _attribuer_matricule(session, eleve)
@@ -142,6 +148,7 @@ def modifier_eleve(
 ):
     eleve = get_eleve(session, eleve_id, user.ecole_id)
     changes = data.model_dump(exclude_unset=True)
+    _verifier_sexe(changes.get("sexe"))
     if "classe_id" in changes:
         get_classe(session, changes["classe_id"], user.ecole_id, code=400)
     eleve.sqlmodel_update(changes)

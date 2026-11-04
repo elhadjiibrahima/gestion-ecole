@@ -1,5 +1,4 @@
 """Logique métier partagée : accès limité à l'école, soldes, bulletins."""
-import re
 from datetime import date
 
 from fastapi import HTTPException
@@ -7,7 +6,7 @@ from sqlmodel import Session, func, select
 
 from app.models import (
     Absence, Bulletin, Classe, CoefficientClasse, Echeance, Ecole, Eleve, LigneBulletin, Matiere, Note,
-    Paiement, Solde, StatutPaiement, Tranche, TypeAbsence,
+    Paiement, Solde, StatutPaiement, Tranche, TypeAbsence, Utilisateur,
 )
 
 
@@ -46,16 +45,10 @@ def etat_abonnement(ecole: Ecole):
 
 # ---------- Année scolaire ----------
 def cle_classe(nom: str) -> tuple:
-    """Tri naturel : CP1, CP2, CE1… puis 7ème A, 8ème A… 10ème A (et pas 10ème avant 7ème)."""
-    n = (nom or "").strip().lower()
-    for i, p in enumerate(PRIMAIRE):
-        if n.startswith(p):
-            return (0, i, n)
-    m = re.search(r"\d+", n)
-    return (1, int(m.group()), n) if m else (2, 0, n)
-
-
-PRIMAIRE = ["maternelle", "petite", "moyenne", "grande", "cp1", "cp2", "ce1", "ce2", "cm1", "cm2", "cp", "ce", "cm"]
+    """Ordre du parcours : préscolaire, CI, CP… CM2, 6ème… 3ème (ou 7ème… 10ème), 2nde, 1ère, Terminale."""
+    from app.cursus import normaliser, rang_classe
+    r = rang_classe(nom)
+    return (r[0], r[1], normaliser(nom)) if r else (99, "", normaliser(nom))
 
 
 def trier_classes(classes: list) -> list:
@@ -80,9 +73,29 @@ def coefficients_specifiques(session: Session, classe_id: int) -> dict[int, int]
 
 
 def matieres_classe(session: Session, classe: Classe) -> list[tuple[Matiere, int]]:
-    """Matières de l'école avec le coefficient applicable à cette classe."""
+    """Matières enseignées dans cette classe (selon son cycle) avec le coefficient applicable :
+    coefficient propre à la classe, sinon celui du cycle, sinon celui de la matière."""
+    from app.cursus import cycle_de
+    from app.models import MatiereCycle
     specifiques = coefficients_specifiques(session, classe.id)
-    return [(m, specifiques.get(m.id, m.coefficient)) for m in matieres_ecole(session, classe.ecole_id)]
+    matieres = matieres_ecole(session, classe.ecole_id)
+    liens = session.exec(select(MatiereCycle).where(MatiereCycle.matiere_id.in_([m.id for m in matieres]))).all() \
+        if matieres else []
+    par_matiere: dict[int, dict[int, int]] = {}
+    for l in liens:
+        par_matiere.setdefault(l.matiere_id, {})[l.cycle_id] = l.coefficient
+    cycle = cycle_de(session, classe)
+    sortie = []
+    for m in matieres:
+        cycles = par_matiere.get(m.id)
+        if cycles:                       # matière réservée à certains cycles
+            if not cycle or cycle.id not in cycles:
+                continue
+            defaut = cycles[cycle.id]
+        else:
+            defaut = m.coefficient
+        sortie.append((m, specifiques.get(m.id, defaut)))
+    return sortie
 
 
 # ---------- Accès limité à l'école de l'utilisateur ----------
@@ -130,7 +143,8 @@ def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference
 # ---------- Échéancier ----------
 # ---------- Postes de la paie ----------
 POSTES_DEFAUT = [("Directeur", "mensuel", "directeur"), ("Comptable", "mensuel", "comptable"),
-                 ("Enseignant", "horaire", "enseignant"), ("Surveillant", "mensuel", "surveillant")]
+                 ("Enseignant", "horaire", "enseignant"), ("Surveillant", "mensuel", "surveillant"),
+                 ("Personnel d'appui", "mensuel", "agent")]
 
 
 def ajouter_postes_defaut(session: Session, ecole_id: int) -> None:
@@ -264,7 +278,11 @@ def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | Non
         prochaine = next((e for e in echeances if e.statut == "a_venir"), None)
     else:
         echeances, exigible_sco, prochaine = [], scolarite, None
+    payees = [e for e in echeances if e.statut == "payee"]
+    retard_sco = max(exigible_sco - paye_sco, 0)
     return Solde(
+        paye_jusqua=payees[-1].nom if payees else None,
+        retard_scolarite=retard_sco, retard_autres=reste_annexes,
         montant_exigible=exigible_sco + sum(l.du for l in lignes[1:]),
         retard=max(exigible_sco - paye_sco, 0) + reste_annexes,
         prochaine_echeance=prochaine.date_limite if prochaine else None,
@@ -299,9 +317,10 @@ def soldes_ecole(session: Session, ecole_id: int, classe_id: int | None = None) 
 
 
 # ---------- Bulletins ----------
-def appreciation(moyenne: float | None) -> str:
+def appreciation(moyenne: float | None, bareme: int = 20) -> str:
     if moyenne is None:
         return "Pas de notes"
+    moyenne = moyenne * 20 / bareme             # les seuils sont ceux d'une note sur 20
     if moyenne >= 16:
         return "Excellent travail, félicitations"
     if moyenne >= 14:
@@ -313,6 +332,40 @@ def appreciation(moyenne: float | None) -> str:
     if moyenne >= 8:
         return "Travail insuffisant, doit redoubler d'efforts"
     return "Résultats très insuffisants, avertissement"
+
+
+def mention(moyenne: float | None, bareme: int = 20) -> str | None:
+    """Distinction du conseil de classe, d'après la moyenne générale."""
+    if moyenne is None:
+        return None
+    m = moyenne * 20 / bareme
+    if m >= 16:
+        return "Félicitations"
+    if m >= 14:
+        return "Encouragements"
+    if m >= 12:
+        return "Tableau d'honneur"
+    if m < 8:
+        return "Avertissement"
+    return None
+
+
+def est_publie(session: Session, classe_id: int, trimestre: int, annee: str) -> bool:
+    from app.models import Publication
+    return session.exec(select(Publication.id).where(Publication.classe_id == classe_id, Publication.trimestre == trimestre,
+                                                     Publication.annee_scolaire == annee)).first() is not None
+
+
+def professeurs_classe(session: Session, classe: Classe) -> dict[str, str]:
+    """{nom de matière en minuscules: nom de l'enseignant} d'après les attributions."""
+    from app.models import Affectation
+    lignes = session.exec(select(Matiere.nom, Utilisateur.nom).join(Affectation, Affectation.matiere_id == Matiere.id)
+                          .join(Utilisateur, Utilisateur.id == Affectation.utilisateur_id)
+                          .where(Affectation.classe_id == classe.id, Utilisateur.actif == True)).all()  # noqa: E712
+    profs: dict[str, str] = {}
+    for m, u in lignes:
+        profs[m.lower()] = profs[m.lower()] + ", " + u if m.lower() in profs else u
+    return profs
 
 
 def moyenne_matiere(notes: list[Note], poids_composition: float = 2) -> float | None:
@@ -367,8 +420,12 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
     for a in absences:
         abs_par_eleve.setdefault(a.eleve_id, []).append(a)
 
+    from app.cursus import regles_classe
     ordre = {m.nom.lower(): i for i, m in enumerate(matieres_ecole(session, classe.ecole_id))}
     ecole = session.get(Ecole, classe.ecole_id)
+    regles = regles_classe(session, classe)
+    profs = professeurs_classe(session, classe)
+    publie = est_publie(session, classe.id, trimestre, annee)
     resultats = []
     for e in eleves:
         lignes, generale = _moyennes(notes_par_eleve.get(e.id, []), ordre, ecole.poids_composition)
@@ -384,7 +441,7 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
         return sum(1 for a in abs_par_eleve.get(e.id, [])
                    if a.type == type_ and (justifiee is None or a.justifiee == justifiee))
 
-    annuels = {r.eleve_id: r for r in resultats_annuels(session, classe, inclure)} if trimestre == 3 else {}
+    annuels = {r.eleve_id: r for r in resultats_annuels(session, classe, inclure)} if trimestre == regles.periodes else {}
     # Statistiques de la classe par matière (élèves inscrits)
     from app.models import AppreciationMatiere, AvisConseil
     par_matiere: dict[str, list[tuple[int, float]]] = {}
@@ -409,12 +466,16 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
                 if e.id in classes_ids:
                     l.rang_matiere = sorted(valeurs, reverse=True).index(l.moyenne) + 1
             l.appreciation = appreciations.get((e.id, l.matiere.lower()))
+            l.professeur = profs.get(l.matiere.lower())
     bulletins = []
     for e, lignes, g in resultats:
         b = Bulletin(
             eleve_id=e.id, matricule=e.matricule, nom_complet=f"{e.prenom} {e.nom}",
             classe=classe.nom, trimestre=trimestre, matieres=lignes,
-            moyenne_generale=g, rang=rang(e, g), effectif=len(classes_ids), appreciation=appreciation(g),
+            moyenne_generale=g, rang=rang(e, g), effectif=len(classes_ids), appreciation=appreciation(g, regles.bareme),
+            mention=mention(g, regles.bareme), bareme=regles.bareme, periode=regles.nom_periode,
+            nb_periodes=regles.periodes, publie=publie, sexe=e.sexe, date_naissance=e.date_naissance,
+            lieu_naissance=e.lieu_naissance,
             absences=compte(e, TypeAbsence.absence), absences_justifiees=compte(e, TypeAbsence.absence, True),
             retards=compte(e, TypeAbsence.retard),
             avis_conseil=avis.get(e.id), moyenne_classe=moyenne_classe,
@@ -429,8 +490,10 @@ def bulletins_classe(session: Session, classe: Classe, trimestre: int,
 
 def resultats_annuels(session: Session, classe: Classe, inclure: Eleve | None = None) -> list:
     """Moyenne de l'année (moyenne des trimestres notés), rang annuel et décision de passage."""
+    from app.cursus import regles_classe
     from app.models import ResultatAnnuel
     ecole = session.get(Ecole, classe.ecole_id)
+    regles = regles_classe(session, classe)
     eleves = list(session.exec(
         select(Eleve).where(Eleve.classe_id == classe.id, Eleve.actif == True)  # noqa: E712
         .order_by(Eleve.nom, Eleve.prenom)).all())
@@ -444,10 +507,11 @@ def resultats_annuels(session: Session, classe: Classe, inclure: Eleve | None = 
         par_eleve_trim.setdefault((n.eleve_id, n.trimestre), []).append(n)
     lignes = []
     for e in eleves:
-        moys = [_moyennes(par_eleve_trim.get((e.id, t), []), None, ecole.poids_composition)[1] for t in (1, 2, 3)]
+        moys = [_moyennes(par_eleve_trim.get((e.id, t), []), None, ecole.poids_composition)[1]
+                for t in range(1, regles.periodes + 1)]
         notees = [m for m in moys if m is not None]
         annuelle = round(sum(notees) / len(notees), 2) if notees else None
-        decision = None if annuelle is None else ("Admis(e)" if annuelle >= ecole.seuil_admission else "Redouble")
+        decision = None if annuelle is None else ("Admis(e)" if annuelle >= regles.seuil else "Redouble")
         lignes.append(ResultatAnnuel(eleve_id=e.id, matricule=e.matricule, eleve=f"{e.prenom} {e.nom}",
                                      moyennes_trimestres=moys, moyenne_annuelle=annuelle, rang=None,
                                      decision=decision))

@@ -14,11 +14,12 @@ from app.pdf import en_tete_pdf
 from app.routers.paiements import details_paiements
 from app.security import GESTION, PEDAGOGIE, exiger_role
 from app.services import bulletins_classe, matieres_ecole, soldes_ecole
-from app.services import trier_classes
+from app.services import cle_classe, trier_classes
 
 router = APIRouter(prefix="/export", tags=["Exports"])
 
-MODES = {"especes": "Espèces", "orange_money": "Orange Money", "mtn_momo": "MTN MoMo", "virement": "Virement"}
+MODES = {"especes": "Espèces", "orange_money": "Orange Money", "mtn_momo": "MTN MoMo", "wave": "Wave",
+         "free_money": "Free Money", "virement": "Virement", "cheque": "Chèque"}
 STATUTS = {"a_jour": "À jour", "partiel": "Partiel", "rien_paye": "Rien payé"}
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -69,10 +70,13 @@ def export_eleves(user: Utilisateur = Depends(exiger_role(*GESTION)), session: S
     for e, c in eleves:
         s = soldes[e.id]
         lignes.append([e.matricule, e.nom, e.prenom, c.nom, e.date_naissance, e.telephone_parent,
-                       s.frais_annuels, s.total_paye, s.reste_a_payer, STATUTS[s.statut.value]])
+                       s.frais_annuels, s.total_paye, s.reste_a_payer, STATUTS[s.statut.value],
+                       e.sexe, e.lieu_naissance, e.nom_tuteur, e.adresse])
+    lignes.sort(key=lambda l: (cle_classe(l[3]), l[1], l[2]))
     wb = Workbook()
     _feuille(wb, "Eleves", ["Matricule", "Nom", "Prénom", "Classe", "Date de naissance", "Téléphone parent",
-                            f"Frais ({ecole.devise})", "Payé", "Reste", "Statut"],
+                            f"Frais ({ecole.devise})", "Payé", "Reste", "Statut", "Sexe", "Lieu de naissance",
+                            "Parent / tuteur", "Adresse"],
              lignes, {5: "DD/MM/YYYY", 7: "#,##0", 8: "#,##0", 9: "#,##0"})
     return _reponse(wb, f"eleves_{_suffixe(ecole)}.xlsx")
 

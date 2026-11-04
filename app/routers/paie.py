@@ -1,6 +1,7 @@
 """Paie du personnel : salaire par poste (fixe ou à l'heure), avances, fiches de paie, versement en caisse."""
 import re
 import threading
+import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -8,16 +9,19 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import (
-    Avance, AvanceSaisie, CategorieDepense, ChoixPoste, Depense, Ecole, FicheDetail, FichePaie,
+    AbsencePersonnel, AbsencePersonnelSaisie, AgentSaisie, Avance, AvanceSaisie, CategorieDepense, ChoixPoste, Depense, Ecole, FicheDetail, FichePaie,
     FicheSaisie, LignePersonnel, PaiementFiche, Poste, PosteDetail, PosteSaisie, Role, Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_fiche_paie
-from app.routers.emploi import heures_prevues
+from app.routers.emploi import heures_du_jour, heures_prevues
 from app.security import GESTION, exiger_role
+
+GESTION_ET_SURVEILLANCE = (*GESTION, Role.surveillant)
 from app.services import ajouter_postes_defaut, annee_courante
 
 router = APIRouter(prefix="/paie", tags=["Paie"])
-ROLES = {"directeur": "Directeur", "comptable": "Comptable", "enseignant": "Enseignant", "surveillant": "Surveillant"}
+ROLES = {"directeur": "Directeur", "comptable": "Comptable", "enseignant": "Enseignant", "surveillant": "Surveillant",
+         "agent": "Sans accès au logiciel"}
 
 
 def _mois(mois: str) -> str:
@@ -159,15 +163,125 @@ def personnel(mois: str, user: Utilisateur = Depends(exiger_role(*GESTION)), ses
     for u in _personnel(session, user.ecole_id):
         c = poste_de(u, postes)
         f = session.exec(select(FichePaie).where(FichePaie.utilisateur_id == u.id, FichePaie.mois == mois)).first()
+        jours, heures = _absences_mois(session, u, mois)
+        prevues = heures_prevues(session, user.ecole_id, u.id, mois) if c and c.type == "horaire" else None
         lignes.append(LignePersonnel(
             utilisateur_id=u.id, nom=u.nom, role=ROLES.get(u.role.value, u.role.value),
             poste_id=c.id if c else None, poste=c.nom if c else None,
             contrat_type=c.type if c else None, contrat_montant=c.montant if c else None,
-            heures_prevues=heures_prevues(session, user.ecole_id, u.id, mois) if c and c.type == "horaire" else None,
+            heures_prevues=prevues,
             avances_en_cours=sum(a.montant for a in _avances_en_cours(session, u.id)),
             fiche=_detail(session, f) if f else None,
+            sans_compte=u.role == Role.agent, telephone=u.telephone,
+            jours_absence=jours, heures_absence=heures, retenue_proposee=_retenue(c, jours, heures),
         ))
     return lignes
+
+
+# ---------- Absences du personnel ----------
+def _absences_mois(session: Session, u: Utilisateur, mois: str) -> tuple[float, float]:
+    """(jours, heures de cours) d'absence non justifiée dans le mois."""
+    jours, heures = 0.0, 0.0
+    for a in session.exec(select(AbsencePersonnel).where(AbsencePersonnel.utilisateur_id == u.id,
+                                                         AbsencePersonnel.justifiee == False)).all():  # noqa: E712
+        if a.jour.strftime("%Y-%m") != mois:
+            continue
+        if a.heures:
+            heures += a.heures
+        else:
+            jours += 1
+            heures += heures_du_jour(session, u.ecole_id, u.id, a.jour)
+    return jours, round(heures, 2)
+
+
+def _retenue(poste: Poste | None, jours: float, heures: float) -> int:
+    """Salaire mensuel : 1/26 par jour (8 h de cours = 1 jour). À l'heure : les heures manquées ne sont pas payées
+    (elles sont retirées des heures, pas en retenue)."""
+    if not poste or not poste.montant or poste.type == "horaire":
+        return 0
+    jours_equiv = jours if jours else heures / 8
+    return round(poste.montant / 26 * jours_equiv)
+
+
+@router.post("/absences", response_model=AbsencePersonnel, status_code=201)
+def noter_absence(data: AbsencePersonnelSaisie, user: Utilisateur = Depends(exiger_role(*GESTION_ET_SURVEILLANCE)),
+                  session: Session = Depends(get_session)):
+    """Absence d'un membre du personnel : la journée, ou quelques heures de cours."""
+    u = _membre(session, data.utilisateur_id, user.ecole_id)
+    if session.exec(select(AbsencePersonnel).where(AbsencePersonnel.utilisateur_id == u.id,
+                                                   AbsencePersonnel.jour == data.jour)).first():
+        raise HTTPException(400, f"Une absence de {u.nom} est déjà notée ce jour-là")
+    a = AbsencePersonnel(ecole_id=user.ecole_id, utilisateur_id=u.id, jour=data.jour, heures=data.heures,
+                         motif=(data.motif or "").strip() or None, justifiee=data.justifiee)
+    session.add(a)
+    session.commit()
+    session.refresh(a)
+    return a
+
+
+@router.get("/absences", response_model=list[AbsencePersonnel])
+def lister_absences(mois: str | None = None, user: Utilisateur = Depends(exiger_role(*GESTION_ET_SURVEILLANCE)),
+                    session: Session = Depends(get_session)):
+    liste = session.exec(select(AbsencePersonnel).where(AbsencePersonnel.ecole_id == user.ecole_id)
+                         .order_by(AbsencePersonnel.jour.desc())).all()
+    return [a for a in liste if not mois or a.jour.strftime("%Y-%m") == mois]
+
+
+@router.patch("/absences/{absence_id}", response_model=AbsencePersonnel)
+def justifier_absence(absence_id: int, justifiee: bool, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                      session: Session = Depends(get_session)):
+    a = session.get(AbsencePersonnel, absence_id)
+    if not a or a.ecole_id != user.ecole_id:
+        raise HTTPException(404, "Absence introuvable")
+    a.justifiee = justifiee
+    session.add(a)
+    session.commit()
+    session.refresh(a)
+    return a
+
+
+@router.delete("/absences/{absence_id}", status_code=204)
+def supprimer_absence(absence_id: int, user: Utilisateur = Depends(exiger_role(*GESTION_ET_SURVEILLANCE)),
+                      session: Session = Depends(get_session)):
+    a = session.get(AbsencePersonnel, absence_id)
+    if not a or a.ecole_id != user.ecole_id:
+        raise HTTPException(404, "Absence introuvable")
+    session.delete(a)
+    session.commit()
+
+
+# ---------- Personnel sans compte (gardien, cuisinière, chauffeur…) ----------
+@router.post("/agents", response_model=LignePersonnel, status_code=201)
+def ajouter_agent(data: AgentSaisie, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                  session: Session = Depends(get_session)):
+    """Ajoute une personne payée par l'école qui n'utilise pas le logiciel (pas d'e-mail, pas de mot de passe)."""
+    postes = postes_ecole(session, user.ecole_id)
+    if data.poste_id is not None:
+        poste = _poste(session, data.poste_id, user.ecole_id)
+    else:
+        poste = next((p for p in postes if p.role == "agent"), None)
+        if poste is None:
+            poste = Poste(ecole_id=user.ecole_id, nom="Personnel d'appui", type="mensuel", montant=0, role="agent")
+            session.add(poste)
+            session.flush()
+    u = Utilisateur(ecole_id=user.ecole_id, nom=data.nom.strip(), role=Role.agent, telephone=data.telephone,
+                    email=f"agent-{uuid.uuid4().hex[:12]}@sans-compte.local", mot_de_passe_hash="!", poste_id=poste.id)
+    session.add(u)
+    session.commit()
+    mois = date.today().strftime("%Y-%m")
+    return next(l for l in personnel(mois, user, session) if l.utilisateur_id == u.id)
+
+
+@router.delete("/agents/{utilisateur_id}", status_code=204)
+def retirer_agent(utilisateur_id: int, user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                  session: Session = Depends(get_session)):
+    """Ne fait plus partie du personnel (l'historique de paie reste)."""
+    u = _membre(session, utilisateur_id, user.ecole_id)
+    if u.role != Role.agent:
+        raise HTTPException(400, "Pour un compte du logiciel, désactive-le dans Équipe")
+    u.actif = False
+    session.add(u)
+    session.commit()
 
 
 # ---------- Avances ----------
@@ -206,12 +320,15 @@ def preparer_fiche(data: FicheSaisie, user: Utilisateur = Depends(exiger_role(*G
         raise HTTPException(400, f"Le directeur doit d'abord définir le salaire du poste « {c.nom if c else '?'} »")
     if session.exec(select(FichePaie).where(FichePaie.utilisateur_id == u.id, FichePaie.mois == mois)).first():
         raise HTTPException(400, f"La fiche de {mois} de {u.nom} existe déjà")
-    if c.type == "horaire":
-        heures = data.heures if data.heures is not None else heures_prevues(session, user.ecole_id, u.id, mois)
+    jours_abs, heures_abs = _absences_mois(session, u, mois)
+    if c.type == "horaire":   # heures faites = heures prévues − heures manquées (sauf si on les tape)
+        heures = data.heures if data.heures is not None else \
+            max(heures_prevues(session, user.ecole_id, u.id, mois) - heures_abs, 0)
         brut = round(heures * c.montant)
     else:
         heures, brut = None, c.montant
-    avant_avances = max(brut + data.primes - data.retenues, 0)
+    retenues = data.retenues if data.retenues is not None else _retenue(c, jours_abs, heures_abs)
+    avant_avances = max(brut + data.primes - retenues, 0)
     avances = _avances_en_cours(session, u.id)
     deduites, a_deduire = [], 0
     for a in avances:   # on rembourse les avances dans l'ordre, sans dépasser le salaire
@@ -219,7 +336,7 @@ def preparer_fiche(data: FicheSaisie, user: Utilisateur = Depends(exiger_role(*G
             deduites.append(a)
             a_deduire += a.montant
     f = FichePaie(ecole_id=user.ecole_id, utilisateur_id=u.id, mois=mois, type=c.type, heures=heures, taux=c.montant,
-                  brut=brut, primes=data.primes, retenues=data.retenues, avances_deduites=a_deduire,
+                  brut=brut, primes=data.primes, retenues=retenues, avances_deduites=a_deduire,
                   net=avant_avances - a_deduire, note=(data.note or "").strip() or None)
     session.add(f)
     session.flush()

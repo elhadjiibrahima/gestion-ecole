@@ -188,7 +188,7 @@ def test_paie(client, dir_headers, setup):
     assert client.post("/paie/fiches", headers=h, json={"utilisateur_id": prof, "mois": "2026-11"}).status_code == 400  # pas de contrat
     # Le directeur fixe un salaire par poste ; chacun prend le poste de son rôle
     postes = {p["nom"]: p for p in client.get("/paie/postes", headers=h).json()}
-    assert set(postes) == {"Directeur", "Comptable", "Enseignant", "Surveillant"}
+    assert set(postes) == {"Directeur", "Comptable", "Enseignant", "Surveillant", "Personnel d'appui"}
     assert postes["Enseignant"]["type"] == "horaire" and postes["Enseignant"]["effectif"] == 1
     client.patch(f"/paie/postes/{postes['Enseignant']['id']}", headers=h, json={"nom": "Enseignant", "type": "horaire", "montant": 5000})
     client.patch(f"/paie/postes/{postes['Comptable']['id']}", headers=h, json={"nom": "Comptable", "type": "mensuel", "montant": 1200000})
@@ -379,7 +379,8 @@ def test_numeros_recus_par_ecole_et_tri_des_classes(client):
     r2 = client.post("/eleves", headers=h2, json={"nom": "A", "prenom": "B", "classe_id": c2, "paiement": {"montant": 1000}}).json()
     assert r1["paiement"]["numero_recu"].endswith("-00001") and r2["paiement"]["numero_recu"].endswith("-00001")
     assert r1["paiement"]["numero_recu"] != r2["paiement"]["numero_recu"]
-    # Passage : 7ème B monte en 8ème A (pas de 8ème B), CP1 n'a pas de CP2 → à vérifier par le directeur
+    # Passage : 7ème B monte en 8ème A (pas de 8ème B) ; CP1 va au niveau existant suivant (CM1), CM1 au collège
     p = {x["classe"]: x["vers_classe_id"] for x in client.get("/annee/proposition", headers=h1).json()["passages"]}
     noms = {c["id"]: c["nom"] for c in client.get("/classes", headers=h1).json()}
-    assert noms[p["7ème A"]] == "8ème A" and noms[p["7ème B"]] == "8ème A" and p["CP1"] is None and p["10ème A"] is None
+    assert noms[p["7ème A"]] == "8ème A" and noms[p["7ème B"]] == "8ème A" and noms[p["CP1"]] == "CM1"
+    assert noms[p["CM1"]] == "7ème A" and p["10ème A"] is None

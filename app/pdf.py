@@ -18,7 +18,8 @@ from app.models import Bulletin, Classe, Ecole, Eleve, Paiement, Solde
 BLEU = colors.HexColor("#1d4ed8")
 GRIS = colors.HexColor("#6b7280")
 FOND = colors.HexColor("#eef2ff")
-MODES = {"especes": "Espèces", "orange_money": "Orange Money", "mtn_momo": "MTN MoMo", "virement": "Virement"}
+MODES = {"especes": "Espèces", "orange_money": "Orange Money", "mtn_momo": "MTN MoMo", "wave": "Wave",
+         "free_money": "Free Money", "virement": "Virement", "cheque": "Chèque"}
 
 _styles = getSampleStyleSheet()
 S_ECOLE = ParagraphStyle("ecole", parent=_styles["Title"], fontSize=15, textColor=BLEU, spaceAfter=2)
@@ -106,6 +107,22 @@ def _image(png: bytes, largeur: float, hauteur: float):
     l, h = ImageReader(io.BytesIO(png)).getSize()
     r = min(largeur / l, hauteur / h)
     return ImagePdf(io.BytesIO(png), width=l * r, height=h * r)
+
+
+def _entete_officiel(ecole: Ecole, largeur: float) -> list:
+    """Bandeau « République du Sénégal / Ministère » des documents officiels (bulletins)."""
+    from app.cursus import PAYS
+    p = PAYS.get(ecole.pays or "")
+    if not p or not p["republique"]:
+        return []
+    S = ParagraphStyle("off", parent=S_NORMAL, fontSize=7.5, leading=9, alignment=1)
+    gauche = [Paragraph(f"<b>{p['republique']}</b>", S), Paragraph(f"<i>{p['devise_nationale']}</i>", S),
+              Paragraph("—————", S)]
+    droite = [Paragraph(p["ministere"], S)] + ([Paragraph(ecole.inspection, S)] if ecole.inspection else [])
+    t = Table([[gauche, "", droite]], colWidths=[largeur * 0.42, largeur * 0.16, largeur * 0.42])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                           ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+    return [t, Spacer(1, 6)]
 
 
 def _entete_ecole(ecole: Ecole) -> list:
@@ -243,8 +260,10 @@ def pdf_recu(ecole: Ecole, paiement: Paiement, eleve: Eleve, classe: Classe,
 # ---------- Bulletins ----------
 def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
     S_CELL = ParagraphStyle("cell", parent=S_NORMAL, fontSize=8, leading=9.5)
+    S_PROF = ParagraphStyle("prof", parent=S_CELL, fontSize=6.5, leading=8, textColor=GRIS)
+    nom_p = b.periode.lower()
     entetes = ["Matière", "Coef.", "Moy.", "Points", "Moy. classe", "Min – Max", "Rang", "Appréciation du professeur"]
-    lignes = [[Paragraph(m.matiere, S_CELL), str(m.coefficient), f"{m.moyenne:.2f}", f"{m.moyenne * m.coefficient:.2f}",
+    lignes = [[[Paragraph(m.matiere, S_CELL)] + ([Paragraph(m.professeur, S_PROF)] if m.professeur else []), str(m.coefficient), f"{m.moyenne:.2f}", f"{m.moyenne * m.coefficient:.2f}",
                "–" if m.moyenne_classe is None else f"{m.moyenne_classe:.2f}",
                "–" if m.min_classe is None else f"{m.min_classe:.2f} – {m.max_classe:.2f}",
                "–" if m.rang_matiere is None else str(m.rang_matiere),
@@ -253,7 +272,7 @@ def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
     total_coef = sum(m.coefficient for m in b.matieres)
     total_pts = sum(m.moyenne * m.coefficient for m in b.matieres)
     if not lignes:
-        lignes = [["Aucune note pour ce trimestre", "", "", "", "", "", "", ""]]
+        lignes = [[f"Aucune note pour ce {nom_p}", "", "", "", "", "", "", ""]]
     pied = ["TOTAL", str(total_coef or ""), "", f"{total_pts:.2f}" if total_coef else "",
             "" if b.moyenne_classe is None else f"{b.moyenne_classe:.2f}", "", "", ""]
 
@@ -274,23 +293,29 @@ def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
     for i, m in enumerate(b.matieres, start=1):
-        if m.moyenne < 10:
+        if m.moyenne < b.bareme / 2:
             style.append(("TEXTCOLOR", (2, i), (2, i), colors.HexColor("#dc2626")))
     t.setStyle(TableStyle(style))
 
-    moy = "–" if b.moyenne_generale is None else f"{b.moyenne_generale:.2f} / 20"
+    moy = "–" if b.moyenne_generale is None else f"{b.moyenne_generale:.2f} / {b.bareme}"
+    abrev = "S" if b.periode == "Semestre" else "T"
     rang = "–" if b.rang is None else f"{b.rang}{'er' if b.rang == 1 else 'e'} sur {b.effectif}"
     resume = Table(
         [[Paragraph("<b>Moyenne générale</b>", S_NORMAL), Paragraph(f"<font size=13><b>{moy}</b></font>", S_DROITE)],
          [Paragraph("<b>Rang</b>", S_NORMAL), Paragraph(f"<b>{rang}</b>"
             + (f" — moyenne de la classe : {b.moyenne_classe:.2f}" if b.moyenne_classe is not None else ""), S_DROITE)],
-         [Paragraph("<b>Appréciation</b>", S_NORMAL), Paragraph(b.appreciation, S_DROITE)],
+         [Paragraph("<b>Appréciation</b>", S_NORMAL), Paragraph(b.appreciation, S_DROITE)]]
+        + ([[Paragraph("<b>Distinction</b>", S_NORMAL), Paragraph(
+              f"<font color='{'#dc2626' if b.mention == 'Avertissement' else '#059669'}'><b>{b.mention}</b></font>", S_DROITE)]]
+           if b.mention else [])
+        + [
          [Paragraph("<b>Assiduité</b>", S_NORMAL), Paragraph(
              f"{b.absences} absence(s) dont {b.absences_justifiees} justifiée(s) · {b.retards} retard(s)", S_DROITE)]]
-        + ([[Paragraph("<b>Moyennes T1 / T2 / T3</b>", S_NORMAL), Paragraph(
+        + ([[Paragraph("<b>Moyennes " + " / ".join(f"{abrev}{i + 1}" for i in range(len(b.moyennes_trimestres)))
+                        + "</b>", S_NORMAL), Paragraph(
               " / ".join("–" if m is None else f"{m:.2f}" for m in b.moyennes_trimestres), S_DROITE)],
             [Paragraph("<b>Moyenne annuelle</b>", S_NORMAL), Paragraph(
-              f"<font size=13><b>{b.moyenne_annuelle:.2f} / 20</b></font>"
+              f"<font size=13><b>{b.moyenne_annuelle:.2f} / {b.bareme}</b></font>"
               + (f" — rang {b.rang_annuel}{'er' if b.rang_annuel == 1 else 'e'}" if b.rang_annuel else ""), S_DROITE)],
             [Paragraph("<b>Décision</b>", S_NORMAL), Paragraph(
               f"<font color='{'#059669' if b.decision == 'Admis(e)' else '#dc2626'}'><b>{b.decision}</b></font>", S_DROITE)]]
@@ -308,10 +333,13 @@ def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    return _entete_ecole(ecole) + [
-        Paragraph(f"BULLETIN DE NOTES — {b.trimestre}{'er' if b.trimestre == 1 else 'e'} TRIMESTRE", S_TITRE),
+    naissance = " à ".join(x for x in (b.date_naissance and date_fr(b.date_naissance), b.lieu_naissance) if x)
+    rang_p = "1er" if b.trimestre == 1 else ("2nd" if b.nb_periodes == 2 else f"{b.trimestre}e")
+    return _entete_officiel(ecole, largeur) + _entete_ecole(ecole) + [
+        Paragraph(f"BULLETIN DE NOTES — {rang_p} {b.periode.upper()}", S_TITRE),
         _tableau_infos([
-            ("Élève", b.nom_complet),
+            ("Élève", b.nom_complet + {"M": " (garçon)", "F": " (fille)"}.get(b.sexe or "", "")),
+            *([("Né(e) le", naissance)] if naissance else []),
             ("Matricule", b.matricule or "–"),
             ("Classe", f"{b.classe} ({b.effectif} élève{'s' if b.effectif > 1 else ''})"),
         ], largeur),

@@ -24,6 +24,7 @@ class PropositionPassage(SQLModel):
     nb_eleves: int
     vers_classe_id: int | None
     redoublants_proposes: list[int] = []     # moyenne annuelle sous le seuil d'admission
+    a_verifier: bool = False                 # plusieurs classes possibles (séries L / S…)
 
 
 class Proposition(SQLModel):
@@ -37,65 +38,17 @@ def _annee_suivante(annee: str) -> str:
     return f"{int(m.group(1)) + 1}-{int(m.group(2)) + 1}" if m else ""
 
 
-def _decouper(nom: str) -> tuple[int, str] | None:
-    """« 6eme A » → (6, "eme a") ; sert à trouver la classe suivante."""
-    m = re.search(r"\d+", nom)
-    if not m:
-        return None
-    reste = (nom[:m.start()] + "#" + nom[m.end():]).lower().replace("è", "e").replace("ème", "eme").strip()
-    return int(m.group()), re.sub(r"\s+", " ", reste)
-
-
-PRIMAIRE = ["cp1", "cp2", "ce1", "ce2", "cm1", "cm2"]
-
-
-def _niveau_primaire(nom: str) -> tuple[int, str] | None:
-    """« CP1 A » → (0, "a") ; « CM2 » → (5, "")."""
-    m = re.fullmatch(r"\s*(cp|ce|cm)\s*([12])\s*(.*)", nom.lower())
-    return (PRIMAIRE.index(m.group(1) + m.group(2)), m.group(3).strip()) if m else None
-
-
-def _sans_lettre(reste: str) -> str:
-    """« #eme b » → « #eme » : pour retrouver une classe du niveau suivant même si la lettre diffère."""
-    return re.sub(r"\s+[a-z]$", "", reste).strip()
-
-
 def proposer_passages(classes: list[Classe]) -> dict[int, int | None]:
-    """Devine la classe suivante de chaque classe d'après son nom.
-    Primaire guinéen CP1→CP2→CE1→CE2→CM1→CM2 ; collège français (6e→3e) : on descend ;
-    sinon (7e→10e…) : on monte. 7ème B va en 8ème B si elle existe, sinon dans la première 8ème."""
-    suite: dict[int, int | None] = {}
-    prim = {c.id: _niveau_primaire(c.nom) for c in classes}
-    for c in classes:
-        p = prim[c.id]
-        if p:
-            cibles = [x for x in classes if prim[x.id] and prim[x.id][0] == p[0] + 1]
-            meme = [x for x in cibles if prim[x.id][1] == p[1]]
-            suite[c.id] = (meme or trier_classes(cibles) or [None])[0]
-            suite[c.id] = suite[c.id].id if suite[c.id] else None
-    autres = [c for c in classes if not prim[c.id]]
-    decoupe = {c.id: _decouper(c.nom) for c in autres}
-    nombres = {d[0] for d in decoupe.values() if d}
-    descendant = bool(nombres) and min(nombres) >= 3 and max(nombres) <= 6
-    for c in autres:
-        d = decoupe[c.id]
-        if not d:
-            suite[c.id] = None
-            continue
-        n = d[0] - 1 if descendant else d[0] + 1
-        cibles = [x for x in autres if decoupe[x.id] and decoupe[x.id][0] == n]
-        meme = [x for x in cibles if decoupe[x.id][1] == d[1]]
-        proches = [x for x in cibles if _sans_lettre(decoupe[x.id][1]) == _sans_lettre(d[1])]
-        choix = (meme or trier_classes(proches) or [None])[0]
-        suite[c.id] = choix.id if choix else None
-    return suite
+    from app.cursus import proposer_suite
+    return {k: v[0] for k, v in proposer_suite(classes).items()}
 
 
 @router.get("/proposition", response_model=Proposition)
 def proposition(user: Utilisateur = Depends(exiger_role(Role.directeur)), session: Session = Depends(get_session)):
     ecole = session.get(Ecole, user.ecole_id)
     classes = trier_classes(session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all())
-    suite = proposer_passages(classes)
+    from app.cursus import proposer_suite
+    suite = proposer_suite(classes)
     effectifs = {c.id: len(session.exec(select(Eleve.id).where(
         Eleve.classe_id == c.id, Eleve.actif == True)).all()) for c in classes}  # noqa: E712
     def redoublants(c):
@@ -103,7 +56,8 @@ def proposition(user: Utilisateur = Depends(exiger_role(Role.directeur)), sessio
     return Proposition(
         annee_actuelle=ecole.annee_scolaire, annee_suivante=_annee_suivante(ecole.annee_scolaire),
         passages=[PropositionPassage(classe_id=c.id, classe=c.nom, nb_eleves=effectifs[c.id],
-                                     vers_classe_id=suite[c.id], redoublants_proposes=redoublants(c))
+                                     vers_classe_id=suite[c.id][0], a_verifier=suite[c.id][1],
+                                     redoublants_proposes=redoublants(c))
                   for c in classes],
     )
 
