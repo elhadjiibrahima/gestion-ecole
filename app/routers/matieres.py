@@ -104,8 +104,9 @@ def coefficients_classe(
     """Coefficient de chaque matière pour une classe (spécifique ou par défaut)."""
     classe = get_classe(session, classe_id, user.ecole_id)
     specifiques = coefficients_specifiques(session, classe.id)
+    defauts = {m.id: c for m, c in matieres_classe(session, classe, specifiques_aussi=False)}
     return [
-        LigneCoefficient(matiere_id=m.id, matiere=m.nom, coefficient_defaut=m.coefficient,
+        LigneCoefficient(matiere_id=m.id, matiere=m.nom, coefficient_defaut=defauts.get(m.id, m.coefficient),
                          coefficient=coef, specifique=m.id in specifiques)
         for m, coef in matieres_classe(session, classe)
     ]

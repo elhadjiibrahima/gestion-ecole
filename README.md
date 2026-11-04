@@ -47,6 +47,20 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Mot de passe oublié** : code à 6 chiffres par SMS ou e-mail (si configuré), sinon le directeur réinitialise
 - **Emploi du temps** par classe et par enseignant, contrôle des chevauchements (classe, enseignant, salle), PDF
 - **Paie** : le directeur fixe un salaire par poste (Directeur, Comptable, Enseignant, Surveillant, et postes ajoutés : vacataire…), au mois ou à l'heure (heures proposées d'après l'emploi du temps), primes, retenues, avances retirées automatiquement, fiche de paie PDF, salaire ajouté aux dépenses de la caisse
+- **Complexe scolaire (modèle sénégalais)** : à la création de l'école, choix du pays (Sénégal, Guinée) et des cycles ; les classes
+  (Petite section… CI, CP… CM2, 6ème… 3ème, 2nde L/S… Terminale L/S), les matières de chaque cycle et leurs coefficients sont créés
+  tout de suite. Classes types à ajouter en un clic, classe parallèle (6ème A → 6ème B), tarifs de toutes les classes sur un écran
+- **Règles par cycle** : 3 trimestres ou 2 semestres, notes sur 10 (primaire) ou sur 20, moyenne de passage ; matières et
+  coefficients propres à chaque cycle, coefficients des séries L / S au lycée ; passage CM2 → 6ème, 3ème → 2nde (série à vérifier)
+- **Saisie des notes par matière pour toute la classe** (un élève par ligne, Entrée descend dans la colonne), en plus de la saisie par élève
+- **Publication des résultats** : les parents ne voient notes et bulletins qu'une fois publiés par le directeur
+- **Bulletin officiel** : en-tête « République du Sénégal / Ministère / Inspection », sexe, date et lieu de naissance, professeur
+  de chaque matière, distinction (félicitations, encouragements, tableau d'honneur, avertissement)
+- **Fiche élève complète** (sexe, lieu de naissance, parent / tuteur, adresse) et **dossier** : frais, mois payés, résultats, paiements, absences
+- **Paiements Wave, Free Money, chèque** ; **caisse du jour** (par mode et par caissier, à imprimer le soir) ; **autres entrées**
+  (dons, ventes, location) ; tableau de bord du jour et du mois, retards de mensualités séparés des autres frais
+- **Personnel sans accès au logiciel** (gardien, cuisinière…) dans la paie ; **absences du personnel** : heures non payées ou retenue proposée
+- **Cahier de textes** (cours et travail à faire, visibles des parents) et **statistiques** (effectifs par sexe, taux de réussite, Excel)
 - **Nouvelle année scolaire** : passage en classe supérieure proposé automatiquement, redoublants, élèves de fin de cycle ; frais remis à zéro, historique conservé
 
 ## Installation

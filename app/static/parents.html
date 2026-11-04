@@ -87,10 +87,12 @@
     </div>
     <div class="card">
       <h2>Résultats</h2>
-      <div class="onglets" id="onglets-trim">
-        <button data-t="0">1er trim.</button><button data-t="1">2e trim.</button><button data-t="2">3e trim.</button>
-      </div>
+      <div class="onglets" id="onglets-trim"></div>
       <div id="resultats"></div>
+    </div>
+    <div class="card" id="carte-cahier" hidden>
+      <h2>Cours et travail à faire</h2>
+      <div id="cahier"></div>
     </div>
     <div class="card">
       <h2>Absences et retards</h2>
@@ -198,25 +200,37 @@ async function charger() {
       <span><span class="badge ${a.type === "absence" ? "bad" : "warn"}">${a.type === "absence" ? "Absence" : "Retard"}</span>
       ${a.justifiee ? '<span class="badge ok">Justifiée</span>' : ""}</span></div>`).join("");
 
-  // Trimestre : le dernier qui a des notes
-  const avecNotes = d.bulletins.map((b, i) => (b.moyenne_generale != null ? i : -1)).filter((i) => i >= 0);
-  trimestre = avecNotes.length ? avecNotes[avecNotes.length - 1] : 0;
+  // Résultats : seulement les périodes publiées par l'école ; on montre la dernière
+  const court = d.periode === "Semestre" ? "sem." : "trim.";
+  $("#onglets-trim").innerHTML = d.bulletins.map((b, i) =>
+    `<button data-t="${i}">${b.trimestre === 1 ? "1er" : b.trimestre + "e"} ${court}</button>`).join("");
+  trimestre = Math.max(d.bulletins.length - 1, 0);
   afficherResultats();
+
+  // Cahier de textes
+  $("#carte-cahier").hidden = !d.cahier.length;
+  $("#cahier").innerHTML = d.cahier.slice(0, 20).map((e) => `<div class="ligne" style="display:block">
+      <b>${dateFr(e.jour)} · ${esc(e.matiere)}</b><br><span>${esc(e.contenu)}</span>
+      ${e.travail ? `<br><span style="color:var(--primary)">📝 À faire${e.pour_le ? " pour le " + dateFr(e.pour_le) : ""} : ${esc(e.travail)}</span>` : ""}</div>`).join("");
 }
 
 function afficherResultats() {
   const d = donnees, b = d.bulletins[trimestre];
   document.querySelectorAll("#onglets-trim button").forEach((x) => x.classList.toggle("actif", Number(x.dataset.t) === trimestre));
-  if (b.moyenne_generale == null) { $("#resultats").innerHTML = `<p class="muted">Pas encore de notes pour ce trimestre.</p>`; return; }
+  if (!b) { $("#resultats").innerHTML = `<p class="muted">L'école n'a pas encore publié de résultats.</p>`; return; }
+  if (b.moyenne_generale == null) { $("#resultats").innerHTML = `<p class="muted">Pas de notes pour cette période.</p>`; return; }
   const rang = b.rang ? `${b.rang}${b.rang === 1 ? "er" : "e"} sur ${b.effectif}` : "–";
   $("#resultats").innerHTML = `
-    <div class="ligne"><span>Moyenne générale</span><span class="grand" style="color:${b.moyenne_generale >= 10 ? "var(--ok)" : "var(--bad)"}">${b.moyenne_generale.toFixed(2)} / 20</span></div>
+    <div class="ligne"><span>Moyenne générale</span><span class="grand" style="color:${b.moyenne_generale >= b.bareme / 2 ? "var(--ok)" : "var(--bad)"}">${b.moyenne_generale.toFixed(2)} / ${b.bareme}</span></div>
     <div class="ligne"><span>Rang</span><b>${rang}</b></div>
     <div class="ligne"><span>Appréciation</span><span style="text-align:right">${esc(b.appreciation)}</span></div>
+    ${b.mention ? `<div class="ligne"><span>Distinction</span><span class="badge ${b.mention === "Avertissement" ? "bad" : "ok"}">${esc(b.mention)}</span></div>` : ""}
+    ${b.decision ? `<div class="ligne"><span>Décision de fin d'année</span><span class="badge ${b.decision === "Redouble" ? "bad" : "ok"}">${esc(b.decision)}</span></div>` : ""}
+    ${b.avis_conseil ? `<div class="ligne"><span>Avis du conseil</span><span style="text-align:right">${esc(b.avis_conseil)}</span></div>` : ""}
     <table style="margin-top:8px"><tr><th>Matière</th><th class="n">Coef.</th><th class="n">Moyenne</th></tr>
       ${b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="n">${m.coefficient}</td>
-        <td class="n" style="${m.moyenne < 10 ? "color:var(--bad)" : ""}">${m.moyenne.toFixed(2)}</td></tr>`).join("")}</table>
-    <button class="btn" style="width:100%;margin-top:12px" data-bulletin="${trimestre + 1}">📄 Télécharger le bulletin</button>`;
+        <td class="n" style="${m.moyenne < b.bareme / 2 ? "color:var(--bad)" : ""}">${m.moyenne.toFixed(2)}</td></tr>`).join("")}</table>
+    <button class="btn" style="width:100%;margin-top:12px" data-bulletin="${b.trimestre}">📄 Télécharger le bulletin</button>`;
 }
 
 $("#onglets-trim").addEventListener("click", (ev) => { if (ev.target.dataset.t) { trimestre = Number(ev.target.dataset.t); afficherResultats(); } });

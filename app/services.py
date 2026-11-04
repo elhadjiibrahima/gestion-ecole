@@ -72,12 +72,12 @@ def coefficients_specifiques(session: Session, classe_id: int) -> dict[int, int]
         select(CoefficientClasse).where(CoefficientClasse.classe_id == classe_id)).all()}
 
 
-def matieres_classe(session: Session, classe: Classe) -> list[tuple[Matiere, int]]:
+def matieres_classe(session: Session, classe: Classe, specifiques_aussi: bool = True) -> list[tuple[Matiere, int]]:
     """Matières enseignées dans cette classe (selon son cycle) avec le coefficient applicable :
     coefficient propre à la classe, sinon celui du cycle, sinon celui de la matière."""
     from app.cursus import cycle_de
     from app.models import MatiereCycle
-    specifiques = coefficients_specifiques(session, classe.id)
+    specifiques = coefficients_specifiques(session, classe.id) if specifiques_aussi else {}
     matieres = matieres_ecole(session, classe.ecole_id)
     liens = session.exec(select(MatiereCycle).where(MatiereCycle.matiere_id.in_([m.id for m in matieres]))).all() \
         if matieres else []

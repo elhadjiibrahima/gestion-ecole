@@ -135,6 +135,8 @@
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .seg button { border: none; background: #fff; padding: 7px 10px; cursor: pointer; font-size: .85rem; color: var(--muted); }
   .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.actif { background: var(--primary); color: #fff; }
+  table.grille input.nc { width: 70px; }
   .seg button.on[data-etat=present] { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
   .seg button.on[data-etat=absence] { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
   .seg button.on[data-etat=retard] { background: #fef3c7; color: #b45309; font-weight: 600; }
@@ -149,6 +151,9 @@
   .msg .boutons { display: flex; gap: 8px; flex-wrap: wrap; }
   a.btn { text-decoration: none; display: inline-block; }
   .btn.wa { background: #16a34a; }
+  tr.groupe td { background: var(--primary-light); color: var(--primary); font-weight: 600; font-size: .85rem; padding: 6px 8px; }
+  .ligne-info { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+  .ligne-info span { color: var(--muted); }
   .mois-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .mois-chips .mois { font-size: .75rem; padding: 2px 6px; border-radius: 999px; background: #f3f4f6; color: var(--muted); }
   .mois-chips .mois.payee { background: var(--ok-bg); color: var(--ok); }
@@ -242,9 +247,21 @@
           <label>Adresse<input name="adresse"></label>
           <label>Téléphone<input name="telephone"></label>
         </div>
-        <label>Devise
-          <select name="devise"><option>FCFA</option><option>GNF</option><option>EUR</option></select>
+        <label>Pays
+          <select name="pays"><option value="senegal">Sénégal (FCFA)</option><option value="guinee">Guinée (GNF)</option>
+            <option value="autre">Autre (FCFA)</option></select>
         </label>
+        <fieldset style="border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:0">
+          <legend style="font-size:.85rem;font-weight:600;padding:0 4px">Cycles de l'école</legend>
+          <div class="liste-cases">
+            <label><input type="checkbox" name="cycles" value="prescolaire"> Préscolaire</label>
+            <label><input type="checkbox" name="cycles" value="primaire" checked> Primaire</label>
+            <label><input type="checkbox" name="cycles" value="college" checked> Collège</label>
+            <label><input type="checkbox" name="cycles" value="lycee" checked> Lycée</label>
+          </div>
+          <p class="hint" style="margin:0">Les classes (CI… CM2, 6ème… 3ème, 2nde… Terminale), les matières et les règles de notes
+            sont créées tout de suite. Tu pourras tout modifier.</p>
+        </fieldset>
         <label>Ton nom (directeur)<input name="nom_directeur" required></label>
         <label>E-mail<input name="email" type="email" autocomplete="username" required></label>
         <label>Mot de passe (8 caractères min.)<input name="mot_de_passe" type="password" minlength="8" autocomplete="new-password" required></label>
@@ -286,6 +303,8 @@
   <button data-tab="notes" data-groupe="scolarite" data-roles="directeur enseignant">Notes & bulletins</button>
   <button data-tab="absences" data-groupe="scolarite" data-roles="directeur enseignant surveillant">Absences</button>
   <button data-tab="emploi" data-groupe="scolarite">Emploi du temps</button>
+  <button data-tab="cahier" data-groupe="scolarite" data-roles="directeur enseignant surveillant">Cahier de textes</button>
+  <button data-tab="statistiques" data-groupe="scolarite" data-roles="directeur">Statistiques</button>
   <button data-tab="equipe" data-groupe="reglages" data-roles="directeur">Équipe</button>
   <button data-tab="parametres" data-groupe="reglages" data-roles="directeur">Paramètres</button>
   <button data-tab="compte" data-groupe="reglages">Mon compte</button>
@@ -295,20 +314,36 @@
   <!-- ===== Tableau de bord ===== -->
   <section class="tab" id="dashboard">
     <div class="grid">
-      <div class="card kpi"><div class="label">Élèves</div><div class="value" id="k-eleves">–</div></div>
+      <div class="card kpi ok"><div class="label">Encaissé aujourd'hui</div><div class="value" id="k-jour">–</div></div>
+      <div class="card kpi ok"><div class="label">Encaissé ce mois</div><div class="value" id="k-mois">–</div></div>
+      <div class="card kpi bad"><div class="label">Dépenses du mois</div><div class="value" id="k-depenses">–</div></div>
+      <div class="card kpi"><div class="label">Absents aujourd'hui</div><div class="value" id="k-absents">–</div></div>
+    </div>
+    <div class="grid mt">
+      <div class="card kpi"><div class="label">Élèves</div><div class="value" id="k-eleves">–</div><div class="sub" id="k-sexe"></div></div>
       <div class="card kpi"><div class="label">Classes</div><div class="value" id="k-classes">–</div></div>
-      <div class="card kpi ok"><div class="label">Encaissé</div><div class="value" id="k-encaisse">–</div></div>
-      <div class="card kpi bad"><div class="label">Reste à encaisser</div><div class="value" id="k-impaye">–</div></div>
+      <div class="card kpi ok"><div class="label">Encaissé sur l'année</div><div class="value" id="k-encaisse">–</div></div>
+      <div class="card kpi bad"><div class="label">Reste à encaisser (année)</div><div class="value" id="k-impaye">–</div></div>
+    </div>
+    <div class="two-eq mt">
+      <div class="card">
+        <h2>Retards de paiement</h2>
+        <div class="ligne-info"><span>Mensualités échues non payées</span><b id="k-retard-sco" style="color:var(--bad)">–</b></div>
+        <div class="ligne-info"><span>Inscription, tenue… pas encore payés</span><b id="k-retard-autres">–</b></div>
+        <div class="toolbar mt" style="margin-bottom:0">
+          <button class="btn secondary" data-aller="paiements">Voir le suivi des paiements</button>
+          <button class="btn secondary" data-aller="parents">Envoyer les rappels</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Taux de recouvrement : <span id="k-taux">–</span></h2>
+        <div class="bar"><div id="k-bar" style="width:0"></div></div>
+        <p style="color:var(--muted);font-size:.85rem;margin:8px 0 0">
+          <span id="k-retard">–</span> élève(s) n'ont pas encore tout payé sur l'année.</p>
+      </div>
     </div>
     <div class="card mt">
-      <h2>Taux de recouvrement : <span id="k-taux">–</span></h2>
-      <div class="bar"><div id="k-bar" style="width:0"></div></div>
-      <p style="color:var(--muted);font-size:.85rem;margin:8px 0 0">
-        <span id="k-retard">–</span> élève(s) n'ont pas encore tout payé<span id="k-echeances"></span>.
-      </p>
-    </div>
-    <div class="card mt">
-      <h2>Plus gros impayés</h2>
+      <h2>Plus gros retards</h2>
       <div class="table-wrap"><table id="t-top-impayes"></table></div>
     </div>
   </section>
@@ -320,16 +355,28 @@
         <h2>Nouvelle classe</h2>
         <form id="f-classe">
           <label>Nom<input name="nom" placeholder="6ème A" required></label>
-          <label>Niveau<input name="niveau" placeholder="Collège" required></label>
+          <label>Cycle<input name="niveau" list="liste-cycles" placeholder="Collège" required></label>
           <label data-mode="mensuel">Mensualité (par mois)<input name="mensualite" type="number" min="0" required></label>
           <label data-mode="tranches">Frais de scolarité de l'année<input name="frais_annuels" type="number" min="0" required></label>
           <label>Frais d'inscription<input name="frais_inscription" type="number" min="0" placeholder="0 si aucun"></label>
           <p class="hint" style="margin:0" data-mode="mensuel" id="hint-mensuel"></p>
           <button class="btn">Créer la classe</button>
         </form>
+        <datalist id="liste-cycles"></datalist>
+        <div id="classes-types" class="mt" hidden>
+          <h2 style="font-size:.95rem">Classes types à ajouter</h2>
+          <p class="hint">Coche celles qui existent dans ton école : elles sont créées avec leur cycle et leurs matières.</p>
+          <div id="ct-liste"></div>
+          <button class="btn secondary" id="btn-classes-types" style="margin-top:8px">Créer les classes cochées</button>
+        </div>
       </div>
       <div class="card" id="card-classes">
-        <h2>Liste des classes</h2>
+        <div class="toolbar" style="justify-content:space-between">
+          <h2 style="margin:0">Liste des classes</h2>
+          <button class="btn" id="btn-tarifs" data-roles="directeur">💾 Enregistrer les tarifs</button>
+        </div>
+        <p class="hint" data-roles="directeur">Tape la mensualité et les frais d'inscription de chaque classe directement dans le tableau,
+          puis « Enregistrer les tarifs ». « Classe parallèle » crée la 6ème B à côté de la 6ème A.</p>
         <div class="table-wrap"><table id="t-classes"></table></div>
       </div>
     </div>
@@ -344,8 +391,16 @@
           <form id="f-eleve">
             <label>Nom<input name="nom" required></label>
             <label>Prénom<input name="prenom" required></label>
-            <label>Date de naissance<input name="date_naissance" type="date"></label>
-            <label>Téléphone du parent<input name="telephone_parent" placeholder="+224 6.."></label>
+            <div class="row">
+              <label>Sexe<select name="sexe"><option value="">—</option><option value="F">Fille</option><option value="M">Garçon</option></select></label>
+              <label>Né(e) le<input name="date_naissance" type="date"></label>
+            </div>
+            <label>Lieu de naissance<input name="lieu_naissance" maxlength="80"></label>
+            <div class="row">
+              <label>Parent / tuteur<input name="nom_tuteur" maxlength="80" placeholder="Nom du père, de la mère…"></label>
+              <label>Téléphone du parent<input name="telephone_parent" placeholder="77 123 45 67"></label>
+            </div>
+            <label>Adresse<input name="adresse" maxlength="120" placeholder="Quartier"></label>
             <label>Classe<select name="classe_id" id="i-classe" class="sel-classes" required></select></label>
             <fieldset style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;gap:10px;margin:0">
               <legend style="font-size:.85rem;font-weight:600;padding:0 4px">Premier paiement (obligatoire)</legend>
@@ -354,12 +409,7 @@
               <label>Montant versé<input name="montant" type="number" min="1" required></label>
               <div class="row">
                 <label>Mode
-                  <select name="mode">
-                    <option value="especes">Espèces</option>
-                    <option value="orange_money">Orange Money</option>
-                    <option value="mtn_momo">MTN MoMo</option>
-                    <option value="virement">Virement</option>
-                  </select>
+                  <select name="mode" class="sel-modes"></select>
                 </label>
                 <label>Référence<input name="reference" placeholder="n° transaction"></label>
               </div>
@@ -411,12 +461,7 @@
           <label id="p-frais-zone" hidden>3. Pour<select name="type_frais_id" id="p-frais"></select></label>
           <label>Montant<input name="montant" type="number" min="1" required></label>
           <label>Mode
-            <select name="mode">
-              <option value="especes">Espèces</option>
-              <option value="orange_money">Orange Money</option>
-              <option value="mtn_momo">MTN MoMo</option>
-              <option value="virement">Virement</option>
-            </select>
+            <select name="mode" class="sel-modes"></select>
           </label>
           <label>Référence (n° de transaction)<input name="reference"></label>
           <label>Date<input name="date_paiement" type="date"></label>
@@ -444,7 +489,27 @@
 
   <!-- ===== Notes ===== -->
   <section class="tab" id="notes">
-    <div class="two-eq">
+    <div class="seg" id="n-mode" style="margin-bottom:12px">
+      <button data-mode-notes="matiere" class="actif">📋 Par matière (toute la classe)</button>
+      <button data-mode-notes="eleve">👤 Par élève</button>
+    </div>
+    <div class="card" id="saisie-matiere">
+      <h2>Saisie des notes d'une matière pour toute la classe</h2>
+      <div class="toolbar">
+        <select id="nm-classe" class="sel-classes"></select>
+        <select id="nm-matiere"></select>
+        <select id="nm-trimestre"></select>
+        <span id="nm-info" class="hint" style="margin:0"></span>
+      </div>
+      <div class="table-wrap"><table id="t-notes-classe" class="grille"></table></div>
+      <div class="row" style="margin-top:10px;align-items:center">
+        <button class="btn" id="nm-enregistrer" style="flex:0 0 auto">Enregistrer les notes de la classe</button>
+        <span id="nm-etat" class="hint" style="margin:0"></span>
+      </div>
+      <p class="hint" style="margin:10px 0 0">Astuce : <b>Entrée</b> descend à l'élève suivant dans la même colonne (pratique avec un paquet de copies).
+        Une case vide efface la note.</p>
+    </div>
+    <div class="two-eq" id="saisie-eleve" hidden>
       <div class="card">
         <h2>Saisie des notes</h2>
         <div class="toolbar">
@@ -476,9 +541,19 @@
         <div id="bulletin"></div>
       </div>
     </div>
+    <div class="card mt" data-roles="directeur">
+      <div class="toolbar" style="justify-content:space-between">
+        <h2 style="margin:0">Publier les résultats aux parents</h2>
+        <select id="pub-trimestre" style="max-width:180px"><option value="1">Période 1</option><option value="2">Période 2</option>
+          <option value="3">Période 3</option></select>
+      </div>
+      <p class="hint">Les parents ne voient les notes et le bulletin d'une période qu'après publication. Vérifie que toutes les notes sont saisies.</p>
+      <div class="table-wrap"><table id="t-publications"></table></div>
+    </div>
     <div class="two-eq mt">
       <div class="card" data-roles="directeur">
         <h2>Matières et coefficients</h2>
+        <p class="hint">Un coefficient par cycle. Case vide : la matière n'est pas enseignée dans ce cycle (ex : Philosophie seulement au lycée).</p>
         <form id="f-matiere" class="row" style="align-items:end">
           <label style="flex:3">Nouvelle matière<input name="nom" placeholder="ex : Arabe" required></label>
           <label style="flex:1">Coef.<input name="coefficient" type="number" min="1" max="20" value="1" required></label>
@@ -487,7 +562,7 @@
         <div class="table-wrap mt"><table id="t-matieres"></table></div>
         <button class="link" id="btn-matieres-defaut" style="margin-top:10px">+ Ajouter les matières usuelles manquantes</button>
         <h2 class="mt" style="font-size:.95rem">Coefficients propres à une classe</h2>
-        <p class="hint">Ex : Maths coef 5 en 3ème. Laisse vide pour garder le coefficient par défaut.</p>
+        <p class="hint">Ex : Maths coef 5 en Terminale S. Laisse vide pour garder le coefficient du cycle.</p>
         <label>Classe<select id="cc-classe" class="sel-classes"></select></label>
         <div class="table-wrap"><table id="t-coefs-classe"></table></div>
         <div id="cc-autres"></div>
@@ -495,7 +570,7 @@
       </div>
       <div class="card" id="card-bc">
         <h2>Résultats de l'année</h2>
-        <p class="hint">Moyenne des trimestres notés, rang et décision (seuil réglable dans Paramètres).</p>
+        <p class="hint">Moyenne des périodes notées, rang et décision (moyenne de passage du cycle, réglable dans Paramètres).</p>
         <select id="rc-classe" class="sel-classes"></select>
         <div class="table-wrap" style="margin-top:8px"><table id="t-annuel"></table></div>
         <h2 class="mt">Bulletins de toute une classe</h2>
@@ -507,7 +582,7 @@
         </div>
         <h2 class="mt" style="font-size:.95rem">Exporter les notes</h2>
         <p class="hint">Un fichier Excel, une feuille par classe : moyennes, rang, absences.</p>
-        <button class="btn secondary" id="btn-export-notes">⬇ Excel du trimestre choisi</button>
+        <button class="btn secondary" id="btn-export-notes">⬇ Excel de la période choisie</button>
       </div>
     </div>
     <div class="card mt">
@@ -566,19 +641,30 @@
         <label>Adresse<input name="adresse"></label>
         <label>Téléphone<input name="telephone"></label>
         <div class="row">
+          <label>Pays<select name="pays"><option value="senegal">Sénégal</option><option value="guinee">Guinée</option>
+            <option value="autre">Autre</option></select></label>
           <label>Devise<input name="devise" required></label>
-          <label>Indicatif téléphone<input name="indicatif_tel" placeholder="224" required></label>
+          <label>Indicatif téléphone<input name="indicatif_tel" placeholder="221" required></label>
         </div>
+        <label>Inspection (en-tête des bulletins)<input name="inspection" maxlength="120" placeholder="ex : IA de Dakar — IEF de Dakar-Plateau"></label>
         <div class="row">
           <label>Devoirs par trimestre<input name="nb_devoirs" type="number" min="0" max="6" required></label>
           <label>Poids de la composition<input name="poids_composition" type="number" min="0" max="10" step="0.5" required></label>
           <label>Moyenne pour passer<input name="seuil_admission" type="number" min="0" max="20" step="0.25" required></label>
         </div>
+        <p class="hint" style="margin:0">La moyenne pour passer et le découpage de l'année se règlent aussi par cycle, ci-dessous.</p>
         <p class="hint" style="margin:0">Moyenne d'une matière = (moyenne des devoirs + composition × poids) ÷ (1 + poids).
           Avec un poids de 2 : (devoirs + 2 × composition) ÷ 3.</p>
         <p class="hint" style="margin:0">L'indicatif est ajouté aux numéros des parents écrits sans (pour WhatsApp).</p>
         <button class="btn">Enregistrer</button>
       </form>
+    </div>
+    <div class="card mt">
+      <h2>Cycles et règles de notes</h2>
+      <p class="hint">Chaque classe appartient à un cycle. Exemple sénégalais : primaire en 3 trimestres et notes sur 10 (passage à 5),
+        collège et lycée en 2 semestres et notes sur 20 (passage à 10).</p>
+      <div class="table-wrap"><table id="t-cycles"></table></div>
+      <div class="toolbar" style="margin-top:10px" id="cycles-manquants"></div>
     </div>
     <div class="two-eq mt">
       <div class="card">
@@ -688,8 +774,23 @@
 
   <!-- ===== Caisse ===== -->
   <section class="tab" id="caisse">
+    <div class="card" style="margin-bottom:14px">
+      <div class="toolbar">
+        <h2 style="margin:0">Caisse du jour</h2>
+        <input type="date" id="cj-jour" style="max-width:170px">
+        <button class="btn secondary" id="btn-cj-imprimer">🖨 Imprimer</button>
+      </div>
+      <p class="hint">À vérifier chaque soir : l'argent liquide dans la caisse doit être égal à la ligne « Espèces ».</p>
+      <div class="grid" id="cj-resume"></div>
+      <div class="two-eq mt">
+        <div><b style="font-size:.9rem">Par mode de paiement</b><div id="cj-modes"></div></div>
+        <div><b style="font-size:.9rem">Encaissé par chaque personne</b><div id="cj-caissiers"></div></div>
+      </div>
+      <details class="mt"><summary style="cursor:pointer;color:var(--primary)">Détail des opérations</summary>
+        <div class="table-wrap"><table id="t-caisse-jour"></table></div></details>
+    </div>
     <div class="grid">
-      <div class="card kpi ok"><div class="label">Entrées (paiements des élèves)</div><div class="value" id="c-entrees">–</div></div>
+      <div class="card kpi ok"><div class="label">Entrées de l'année</div><div class="value" id="c-entrees">–</div><div class="sub" id="c-recettes"></div></div>
       <div class="card kpi bad"><div class="label">Sorties (dépenses)</div><div class="value" id="c-sorties">–</div></div>
       <div class="card kpi"><div class="label">Solde de l'année</div><div class="value" id="c-solde">–</div></div>
     </div>
@@ -711,8 +812,7 @@
           </div>
           <div class="row">
             <label>Mode
-              <select name="mode"><option value="especes">Espèces</option><option value="orange_money">Orange Money</option>
-                <option value="mtn_momo">MTN MoMo</option><option value="virement">Virement</option></select></label>
+              <select name="mode" class="sel-modes"></select></label>
             <label>Bénéficiaire<input name="beneficiaire"></label>
           </div>
           <button class="btn">Enregistrer la dépense</button>
@@ -734,6 +834,29 @@
         <select id="c-mois"></select>
       </div>
       <div class="table-wrap"><table id="t-depenses"></table></div>
+    </div>
+    <div class="two mt">
+      <div class="card">
+        <h2>Autre entrée d'argent</h2>
+        <p class="hint">Argent reçu en dehors des frais des élèves : don, vente de tenues ou de livres, location de salle, subvention…</p>
+        <form id="f-recette">
+          <div class="row">
+            <label>Type<select name="categorie"><option value="vente">Vente</option><option value="don">Don</option>
+              <option value="location">Location</option><option value="subvention">Subvention</option><option value="autre">Autre</option></select></label>
+            <label>Montant<input name="montant" type="number" min="1" required></label>
+          </div>
+          <label>Libellé<input name="libelle" required minlength="2" placeholder="ex : Vente de 10 tenues"></label>
+          <div class="row">
+            <label>Mode<select name="mode" class="sel-modes"></select></label>
+            <label>Date<input name="jour" type="date"></label>
+          </div>
+          <button class="btn">Enregistrer l'entrée</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Autres entrées de l'année</h2>
+        <div class="table-wrap" style="max-height:360px;overflow-y:auto"><table id="t-recettes"></table></div>
+      </div>
     </div>
   </section>
 
@@ -823,8 +946,7 @@
           <label>Personne<select name="utilisateur_id" id="av-qui" required></select></label>
           <div class="row">
             <label>Montant<input name="montant" type="number" min="1" required></label>
-            <label>Mode<select name="mode"><option value="especes">Espèces</option><option value="orange_money">Orange Money</option>
-              <option value="mtn_momo">MTN MoMo</option><option value="virement">Virement</option></select></label>
+            <label>Mode<select name="mode" class="sel-modes"></select></label>
           </div>
           <label>Motif<input name="motif" maxlength="120" placeholder="facultatif"></label>
           <button class="btn">Enregistrer l'avance</button>
@@ -834,6 +956,78 @@
         <h2>Avances</h2>
         <div class="table-wrap" style="max-height:360px;overflow-y:auto"><table id="t-avances"></table></div>
       </div>
+    </div>
+    <div class="two-eq mt">
+      <div class="card">
+        <h2>Absences du personnel</h2>
+        <p class="hint">Absence non justifiée : à l'heure, les heures manquées ne sont pas payées ; au mois, une retenue
+          d'1/26 du salaire par jour est proposée sur la fiche (modifiable).</p>
+        <form id="f-absence-perso" class="row" style="align-items:end">
+          <label>Personne<select name="utilisateur_id" id="ap-qui" required></select></label>
+          <label>Date<input name="jour" type="date" required></label>
+          <label>Heures<input name="heures" type="number" min="0.5" max="24" step="0.5" placeholder="Journée"></label>
+          <label style="flex:2">Motif<input name="motif" maxlength="120" placeholder="facultatif"></label>
+          <label style="flex:0 0 auto;flex-direction:row;gap:6px;align-items:center;color:var(--text)">
+            <input type="checkbox" name="justifiee" style="width:auto"> Justifiée</label>
+          <button class="btn" style="flex:0 0 auto">Noter</button>
+        </form>
+        <div class="table-wrap mt" style="max-height:300px;overflow-y:auto"><table id="t-absences-perso"></table></div>
+      </div>
+      <div class="card" data-roles="directeur">
+        <h2>Personnel sans accès au logiciel</h2>
+        <p class="hint">Gardien, cuisinière, chauffeur, femme de ménage… : payés par l'école mais sans compte.</p>
+        <form id="f-agent">
+          <div class="row">
+            <label>Nom<input name="nom" required minlength="2" maxlength="80"></label>
+            <label>Téléphone<input name="telephone" maxlength="30"></label>
+          </div>
+          <label>Poste<select name="poste_id"></select></label>
+          <button class="btn">Ajouter au personnel</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Cahier de textes ===== -->
+  <section class="tab" id="cahier">
+    <div class="two">
+      <div class="card" data-roles="directeur enseignant">
+        <h2>Noter un cours</h2>
+        <form id="f-cahier">
+          <div class="row">
+            <label>Classe<select name="classe_id" id="ct-classe" class="sel-classes" required></select></label>
+            <label>Matière<select name="matiere_id" id="ct-matiere" required></select></label>
+          </div>
+          <label>Date<input name="jour" type="date" required></label>
+          <label>Ce qui a été fait<textarea name="contenu" rows="3" required minlength="3" placeholder="ex : Leçon 4 — les fractions, exercices 1 à 3"></textarea></label>
+          <label>Travail à faire<textarea name="travail" rows="2" placeholder="ex : Exercices 5 et 6 page 42"></textarea></label>
+          <label>Pour le<input name="pour_le" type="date"></label>
+          <button class="btn">Enregistrer</button>
+        </form>
+        <p class="hint" style="margin:10px 0 0">Les parents voient les cours et le travail à faire des 15 derniers jours dans leur espace.</p>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0">Cahier de textes</h2>
+          <select id="cl-classe" class="sel-classes" data-all="Toutes les classes"></select>
+        </div>
+        <div id="cl-liste"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Statistiques ===== -->
+  <section class="tab" id="statistiques">
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0">Statistiques de l'établissement</h2>
+        <select id="st-periode"><option value="1">Période 1</option><option value="2">Période 2</option><option value="3">Période 3</option></select>
+        <button class="btn secondary" id="btn-export-stats">⬇ Excel</button>
+      </div>
+      <p class="hint">Effectifs par classe et par sexe, moyenne de la classe, taux de réussite (moyenne au moins égale à la moitié
+        du barème) et absences, pour les rapports à l'inspection.</p>
+      <div class="grid" id="st-resume"></div>
+      <div class="table-wrap mt"><table id="t-stats"></table></div>
     </div>
   </section>
 
@@ -875,10 +1069,31 @@
   </div>
 </div>
 
+<!-- Dossier d'un élève -->
+<div id="dossier" hidden style="position:fixed;inset:0;background:rgba(17,24,39,.55);z-index:15;overflow-y:auto;padding:24px 12px">
+  <div class="card" style="max-width:860px;margin:0 auto">
+    <div class="toolbar" style="justify-content:space-between;margin:0">
+      <h2 style="margin:0" id="dossier-titre">Dossier</h2>
+      <button class="btn secondary" id="dossier-fermer">✕ Fermer</button>
+    </div>
+    <div id="dossier-contenu"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
-const MODES = { especes: "Espèces", orange_money: "Orange Money", mtn_momo: "MTN MoMo", virement: "Virement" };
+const MODES = { especes: "Espèces", wave: "Wave", orange_money: "Orange Money", free_money: "Free Money",
+  mtn_momo: "MTN MoMo", virement: "Virement", cheque: "Chèque" };
+// Modes de paiement proposés selon le pays (Wave et Free Money au Sénégal, MTN MoMo en Guinée)
+function modesEcole() {
+  const pays = moi?.ecole?.pays;
+  return pays === "guinee" ? ["especes", "orange_money", "mtn_momo", "virement", "cheque"]
+    : pays === "senegal" ? ["especes", "wave", "orange_money", "free_money", "virement", "cheque"]
+    : Object.keys(MODES);
+}
+const optionsModes = () => modesEcole().map((m) => `<option value="${m}">${MODES[m]}</option>`).join("");
+function remplirModes() { document.querySelectorAll("select.sel-modes").forEach((s) => { const v = s.value; s.innerHTML = optionsModes(); if (v) s.value = v; }); }
 const ROLES = { directeur: "Directeur", comptable: "Comptable", enseignant: "Enseignant", surveillant: "Surveillant" };
 
 // ---------- Session (jeton stocké dans le navigateur) ----------
@@ -895,7 +1110,7 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const argent = (n) => Number(n || 0).toLocaleString("fr-FR") + " " + (moi?.ecole.devise ?? "");
 const peut = (...roles) => moi && roles.includes(moi.utilisateur.role);
-const titreEcole = () => { $("#nom-ecole").textContent = `🏫 ${moi.ecole.nom} · ${moi.ecole.annee_scolaire}`; majChampsMode(); };
+const titreEcole = () => { $("#nom-ecole").textContent = `🏫 ${moi.ecole.nom} · ${moi.ecole.annee_scolaire}`; majChampsMode(); remplirModes(); };
 const dateHeure = (d) => {
   if (!d) return "";
   const x = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(d) ? d : d + "Z");   // dates du serveur en UTC
@@ -1129,10 +1344,13 @@ $("#f-login").addEventListener("submit", async (ev) => {
 $("#f-signup").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   try {
-    const r = await api("/auth/inscription", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    const corps = formData(ev.target);
+    corps.cycles = [...ev.target.querySelectorAll("[name=cycles]:checked")].map((c) => c.value);
+    const r = await api("/auth/inscription", { method: "POST", body: JSON.stringify(corps) });
     store.set(r.access_token);
     ev.target.reset();
-    toast("École créée, bienvenue ! Commence par créer tes classes.");
+    toast(corps.cycles.length ? "École créée avec ses classes ! Indique maintenant la mensualité de chaque classe."
+      : "École créée, bienvenue ! Commence par créer tes classes.");
     demarrer("classes");
   } catch (err) { toast(err.message, true); }
 });
@@ -1175,8 +1393,25 @@ $("#f-reinit").addEventListener("submit", async (ev) => {
 let classes = [], eleves = [];
 const classeNom = (id) => classes.find((c) => c.id === id)?.nom ?? "?";
 
+let cycles = [];
+const sansAccent = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+// Règles de notes d'une classe : périodes (3 trimestres / 2 semestres) et barème (sur 10 / 20)
+function reglesClasse(classeId) {
+  const c = classes.find((x) => x.id === Number(classeId));
+  const cy = c && cycles.find((y) => sansAccent(y.nom) === sansAccent(c.niveau) || y.code === sansAccent(c.niveau));
+  return cy ? { periodes: cy.periodes, bareme: cy.bareme, seuil: cy.seuil, nom: cy.periodes === 2 ? "Semestre" : "Trimestre", cycle: cy }
+    : { periodes: 3, bareme: 20, seuil: moi?.ecole?.seuil_admission ?? 10, nom: "Trimestre", cycle: null };
+}
+// Remplit un menu « période » selon la classe (Trimestre 1-3 ou Semestre 1-2), en gardant le choix si possible
+function remplirPeriodes(sel, classeId, court = false) {
+  const r = reglesClasse(classeId), avant = sel.value;
+  sel.innerHTML = Array.from({ length: r.periodes }, (_, i) =>
+    `<option value="${i + 1}">${court ? r.nom[0] + (i + 1) : `${r.nom} ${i + 1}`}</option>`).join("");
+  sel.value = Number(avant) >= 1 && Number(avant) <= r.periodes ? avant : "1";
+}
 async function chargerClasses() {
-  classes = await api("/classes");
+  [classes, cycles] = await Promise.all([api("/classes"), api("/cycles").catch(() => [])]);
+  $("#liste-cycles").innerHTML = cycles.map((c) => `<option value="${esc(c.nom)}">`).join("");
   document.querySelectorAll(".sel-classes").forEach((sel) => {
     const keep = sel.value;
     const first = sel.dataset.all ? `<option value="">${sel.dataset.all}</option>` : "";
@@ -1212,16 +1447,24 @@ async function afficherDashboard() {
   $("#k-taux").textContent = s.taux_recouvrement + " %";
   $("#k-bar").style.width = s.taux_recouvrement + "%";
   $("#k-retard").textContent = s.nb_eleves_en_retard;
-  $("#k-echeances").innerHTML = s.nb_retard_echeances
-    ? ` — dont <b style="color:var(--bad)">${s.nb_retard_echeances} en retard sur une échéance (${argent(s.total_retard_echeances)})</b>` : "";
+  $("#k-jour").textContent = argent(s.encaisse_jour);
+  $("#k-mois").textContent = argent(s.encaisse_mois);
+  $("#k-depenses").textContent = argent(s.depenses_mois);
+  $("#k-absents").textContent = s.absences_jour;
+  $("#k-sexe").textContent = s.garcons || s.filles ? `${s.filles} fille(s) · ${s.garcons} garçon(s)` : "";
+  $("#k-retard-sco").textContent = s.nb_retard_scolarite ? `${argent(s.retard_scolarite)} · ${s.nb_retard_scolarite} élève(s)` : "aucun ✔";
+  $("#k-retard-autres").textContent = s.nb_retard_autres ? `${argent(s.retard_autres)} · ${s.nb_retard_autres} élève(s)` : "aucun ✔";
 
-  const imp = (await api("/impayes")).slice(0, 5);
+  const imp = (await api("/impayes")).filter((x) => x.retard > 0).sort((a, b) => b.retard - a.retard).slice(0, 8);
   table($("#t-top-impayes"),
-    ["Élève", "Classe", { label: "Reste à payer", num: true }],
-    imp.map((s) => `<tr><td>${esc(s.nom_complet)}</td><td>${esc(s.classe)}</td>
-      <td class="num"><span class="badge bad">${argent(s.reste_a_payer)}</span></td></tr>`),
-    s.nb_eleves ? "Aucun impayé 🎉" : "Aucun élève pour l'instant");
+    ["Élève", "Classe", "Payé jusqu'à", { label: "En retard", num: true }, { label: "Reste (année)", num: true }],
+    imp.map((x) => `<tr><td><button class="link" data-dossier="${x.eleve_id}">${esc(x.nom_complet)}</button></td><td>${esc(x.classe)}</td>
+      <td>${esc(x.paye_jusqua || "–")}</td><td class="num"><span class="badge bad">${argent(x.retard)}</span></td>
+      <td class="num">${argent(x.reste_a_payer)}</td></tr>`),
+    s.nb_eleves ? "Aucun retard 🎉" : "Aucun élève pour l'instant");
 }
+
+document.addEventListener("click", (ev) => { const t = ev.target.dataset.aller; if (t) ouvrirOnglet(t); });
 
 // ---------- Classes ----------
 async function afficherClasses() {
@@ -1229,16 +1472,57 @@ async function afficherClasses() {
   eleves.forEach((e) => (counts[e.classe_id] = (counts[e.classe_id] || 0) + 1));
   const dir = peut("directeur"), mensuel = estMensuel();
   majChampsMode();
+  const champ = (c, k, v) => dir ? `<input type="number" min="0" data-tarif="${c.id}" data-k="${k}" value="${v || ""}" placeholder="0"
+      style="width:110px;text-align:right${v ? "" : ";border-color:var(--bad)"}">` : (v ? argent(v) : "–");
+  let cycleAvant = null;
   table($("#t-classes"),
-    ["Classe", "Niveau", { label: "Élèves", num: true }, ...(mensuel ? [{ label: "Mensualité", num: true }] : []),
-     { label: "Scolarité / an", num: true }, { label: "Inscription", num: true }, ...(dir ? [""] : [])],
-    classes.map((c) => `<tr><td>${esc(c.nom)}</td><td>${esc(c.niveau)}</td>
-      <td class="num">${counts[c.id] || 0}</td>${mensuel ? `<td class="num">${argent(mensualiteDe(c))}</td>` : ""}
-      <td class="num">${argent(c.frais_annuels)}</td><td class="num">${c.frais_inscription ? argent(c.frais_inscription) : "–"}</td>
-      ${dir ? `<td class="actions"><button class="link" data-modif-classe="${c.id}">✏️ Modifier</button>${counts[c.id]
-        ? "" : `<button class="link danger" data-suppr-classe="${c.id}">🗑 Supprimer</button>`}</td>` : ""}</tr>`),
+    ["Classe", { label: "Élèves", num: true }, { label: mensuel ? "Mensualité" : "Scolarité / an", num: true },
+     ...(mensuel ? [{ label: "Scolarité / an", num: true }] : []), { label: "Inscription", num: true }, ...(dir ? [""] : [])],
+    classes.flatMap((c) => {
+      const r = reglesClasse(c.id);
+      const titre = c.niveau !== cycleAvant ? `<tr class="groupe"><td colspan="${dir ? (mensuel ? 6 : 5) : (mensuel ? 5 : 4)}">${esc(c.niveau)}${
+        r.cycle ? ` <span class="sub" style="display:inline">· ${r.periodes === 2 ? "2 semestres" : "3 trimestres"} · notes sur ${r.bareme}</span>` : ""}</td></tr>` : "";
+      cycleAvant = c.niveau;
+      return [titre + `<tr><td>${esc(c.nom)}</td><td class="num">${counts[c.id] || 0}</td>
+      <td class="num">${mensuel ? champ(c, "mensualite", c.mensualite || (c.frais_annuels ? mensualiteDe(c) : 0)) : champ(c, "frais_annuels", c.frais_annuels)}</td>
+      ${mensuel ? `<td class="num">${argent(c.frais_annuels)}</td>` : ""}
+      <td class="num">${champ(c, "frais_inscription", c.frais_inscription)}</td>
+      ${dir ? `<td class="actions">${menuActions([`<button class="link" data-modif-classe="${c.id}">✏️ Renommer / changer de cycle</button>`,
+        `<button class="link" data-parallele="${c.id}">➕ Classe parallèle (${esc(c.nom)} B…)</button>`,
+        ...(counts[c.id] ? [] : [`<button class="link danger" data-suppr-classe="${c.id}">🗑 Supprimer</button>`])])}</td>` : ""}</tr>`];
+    }),
     peut("directeur") ? "Crée ta première classe à gauche" : "Aucune classe");
+  if (dir) afficherClassesTypes();
 }
+
+async function afficherClassesTypes() {
+  const types = (await api("/classes/types")).filter((t) => !t.existe);
+  $("#classes-types").hidden = !types.length;
+  const groupes = {};
+  types.forEach((t) => (groupes[t.niveau] ||= []).push(t));
+  $("#ct-liste").innerHTML = Object.entries(groupes).map(([niv, ts]) => `<div><b style="font-size:.85rem">${esc(niv)}</b>
+    <div class="liste-cases">${ts.map((t) => `<label><input type="checkbox" data-type-classe="${esc(t.nom)}"> ${esc(t.nom)}</label>`).join("")}</div></div>`).join("");
+}
+$("#btn-classes-types").addEventListener("click", async () => {
+  const noms = [...document.querySelectorAll("[data-type-classe]:checked")].map((c) => c.dataset.typeClasse);
+  if (!noms.length) return toast("Coche au moins une classe", true);
+  try {
+    const r = await api("/classes/types", { method: "POST", body: JSON.stringify({ noms }) });
+    toast(`${r.length} classe(s) créée(s) ✔ Indique leur mensualité dans le tableau`);
+    rafraichir();
+  } catch (err) { toast(err.message, true); }
+});
+$("#btn-tarifs").addEventListener("click", async () => {
+  const par = {};
+  document.querySelectorAll("[data-tarif]").forEach((i) => {
+    (par[i.dataset.tarif] ||= { classe_id: Number(i.dataset.tarif) })[i.dataset.k] = Number(i.value || 0);
+  });
+  try {
+    await api("/classes/tarifs", { method: "PUT", body: JSON.stringify(Object.values(par)) });
+    toast("Tarifs enregistrés ✔");
+    rafraichir();
+  } catch (err) { toast(err.message, true); }
+});
 
 // Paiement mensuel ou par tranches (réglé dans Paramètres)
 const estMensuel = () => moi?.ecole?.mode_paiement !== "tranches";
@@ -1264,12 +1548,18 @@ $("#t-classes").addEventListener("click", async (ev) => {
     const c = classes.find((x) => x.id === Number(d.modifClasse));
     panneauSous(ev.target.closest("tr"), `<form class="row" data-form-classe="${c.id}" style="align-items:end">
       <label>Nom<input name="nom" value="${esc(c.nom)}" required></label>
-      <label>Niveau<input name="niveau" value="${esc(c.niveau)}" required></label>
-      ${estMensuel() ? `<label>Mensualité<input name="mensualite" type="number" min="0" value="${mensualiteDe(c)}" required></label>`
-        : `<label>Scolarité de l'année<input name="frais_annuels" type="number" min="0" value="${c.frais_annuels}" required></label>`}
-      <label>Inscription<input name="frais_inscription" type="number" min="0" value="${c.frais_inscription || 0}"></label>
-      <button class="btn" style="flex:0 0 auto">Enregistrer</button></form>
-      <span class="sub">Changer les frais change le reste à payer de tous les élèves de la classe.</span>`);
+      <label>Cycle<input name="niveau" list="liste-cycles" value="${esc(c.niveau)}" required></label>
+      <input type="hidden" name="frais_annuels" value="${c.frais_annuels}">
+      <input type="hidden" name="mensualite" value="${c.mensualite || 0}">
+      <input type="hidden" name="frais_inscription" value="${c.frais_inscription || 0}">
+      <button class="btn" style="flex:0 0 auto">Enregistrer</button></form>`);
+  }
+  if (d.parallele) {
+    try {
+      const n = await api(`/classes/${d.parallele}/parallele`, { method: "POST" });
+      toast(`Classe ${n.nom} créée ✔ (mêmes frais et coefficients)`);
+      rafraichir();
+    } catch (err) { toast(err.message, true); }
   }
   if (d.supprClasse) {
     const c = classes.find((x) => x.id === Number(d.supprClasse));
@@ -1336,7 +1626,8 @@ async function afficherEleves() {
            `<button class="link danger" data-depart="${e.id}">🚪 Départ de l'école</button>`];
       return `<tr data-eleve-ligne="${e.id}"><td style="width:40px">${photo}</td><td>${esc(e.matricule)}${anciens && e.annee_sortie
           ? `<span class="sub">sorti${e.date_depart ? " le " + new Date(e.date_depart).toLocaleDateString("fr-FR") : " en " + esc(e.annee_sortie)}${e.motif_depart ? " : " + esc(e.motif_depart) : ""}</span>` : ""}</td>
-        <td>${esc(e.nom)} ${esc(e.prenom)} ${reduc}</td>
+        <td><button class="link" data-dossier="${e.id}" style="text-align:left">${esc(e.nom)} ${esc(e.prenom)}</button>${
+          e.sexe ? ` <span class="sub" style="display:inline">${e.sexe === "F" ? "♀" : "♂"}</span>` : ""} ${reduc}</td>
         <td>${esc(classeNom(e.classe_id))}</td><td>${esc(e.telephone_parent || "–")}</td>
         ${gestion ? `<td class="num">${badge}</td>` : ""}
         ${peut("directeur", "comptable") ? `<td class="actions">${menuActions(actions)}</td>` : ""}</tr>`;
@@ -1350,7 +1641,7 @@ $("#t-eleves").addEventListener("submit", async (ev) => {
   try {
     if (f.dataset.formModif) {
       data.classe_id = Number(data.classe_id);
-      for (const k of ["date_naissance", "telephone_parent"]) if (data[k] === "") data[k] = null;
+      for (const k of ["date_naissance", "telephone_parent", "sexe", "lieu_naissance", "nom_tuteur", "adresse"]) if (data[k] === "") data[k] = null;
       await api(`/eleves/${f.dataset.formModif}`, { method: "PATCH", body: JSON.stringify(data) });
       toast("Élève modifié ✔");
     }
@@ -1365,6 +1656,60 @@ $("#t-eleves").addEventListener("submit", async (ev) => {
     }
     rafraichir();
   } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Dossier d'un élève : tout au même endroit ----------
+async function ouvrirDossier(id) {
+  const e = eleves.find((x) => x.id === Number(id)) || await api(`/eleves/${id}`);
+  const gestion = peut("directeur", "comptable");
+  const rg = reglesClasse(e.classe_id);
+  const [solde, paiements, bulletins, absences] = await Promise.all([
+    gestion ? api(`/eleves/${id}/solde`) : null,
+    gestion ? api(`/eleves/${id}/paiements`) : [],
+    Promise.all(Array.from({ length: rg.periodes }, (_, i) => api(`/eleves/${id}/bulletin?trimestre=${i + 1}`).catch(() => null))),
+    api(`/absences?eleve_id=${id}`).catch(() => []),
+  ]);
+  $("#dossier-titre").textContent = `${e.prenom} ${e.nom}`;
+  const info = (k, v) => v ? `<div class="ligne-info"><span>${k}</span><b>${esc(v)}</b></div>` : "";
+  const date = (d) => d ? new Date(d).toLocaleDateString("fr-FR") : "";
+  $("#dossier-contenu").innerHTML = `
+    <div class="two-eq mt">
+      <div>${info("Matricule", e.matricule)}${info("Classe", classeNom(e.classe_id))}${info("Sexe", { F: "Fille", M: "Garçon" }[e.sexe])}
+        ${info(e.date_naissance ? "Né(e) le" : "Né(e) à", [date(e.date_naissance), e.lieu_naissance].filter(Boolean).join(" à "))}
+        ${info("Parent / tuteur", e.nom_tuteur)}${info("Téléphone", e.telephone_parent)}${info("Adresse", e.adresse)}
+        ${!e.actif ? info("Sorti", [date(e.date_depart) || e.annee_sortie, e.motif_depart].filter(Boolean).join(" — ")) : ""}</div>
+      <div>${solde ? `<b>Frais de l'année</b>${solde.lignes.map((l) => info(l.nom, `${argent(l.paye)} / ${argent(l.du)}${l.reste ? " · reste " + argent(l.reste) : " ✔"}`)).join("")}
+        ${solde.retard ? `<p style="color:var(--bad);margin:6px 0"><b>⚠ En retard : ${argent(solde.retard)}</b></p>` : ""}
+        ${solde.echeances.length ? `<div class="mois-chips">${solde.echeances.map((x) => `<span class="mois ${x.statut}">${x.statut === "payee" ? "✔" : x.paye ? "◐" : x.statut === "en_retard" ? "!" : "○"} ${esc(x.nom)}</span>`).join("")}</div>` : ""}`
+        : ""}</div>
+    </div>
+    <h3 class="mt" style="font-size:.95rem">Résultats</h3>
+    <div class="table-wrap"><table>${[`<tr><th>Période</th><th class="num">Moyenne</th><th class="num">Rang</th><th>Distinction</th><th></th></tr>`,
+      ...bulletins.map((b, i) => b ? `<tr><td>${b.periode} ${i + 1} ${b.publie ? "" : '<span class="sub" style="display:inline">(non publié)</span>'}</td>
+        <td class="num">${b.moyenne_generale == null ? "–" : b.moyenne_generale.toFixed(2) + " / " + b.bareme}</td>
+        <td class="num">${b.rang ? b.rang + " / " + b.effectif : "–"}</td><td>${esc(b.mention || "")}</td>
+        <td class="actions">${b.moyenne_generale == null ? "" : `<button class="link" data-bulletin-dossier="${i + 1}">📄 Bulletin</button>`}</td></tr>` : "")].join("")}</table></div>
+    ${gestion ? `<h3 class="mt" style="font-size:.95rem">Paiements (${paiements.length})</h3>
+    <div class="table-wrap"><table>${paiements.length ? paiements.map((p) => `<tr style="${p.annule ? "text-decoration:line-through;color:var(--muted)" : ""}">
+      <td>${date(p.date_paiement)}</td><td>${esc(p.frais || "Scolarité")}</td><td>${esc(MODES[p.mode] || p.mode)}</td>
+      <td class="num">${argent(p.montant)}</td><td class="actions"><button class="link" data-recu="${p.id}">📄 ${esc(p.numero_recu || "Reçu")}</button></td></tr>`).join("")
+      : `<tr><td class="empty">Aucun paiement</td></tr>`}</table></div>` : ""}
+    <h3 class="mt" style="font-size:.95rem">Absences et retards (${absences.length})</h3>
+    <div class="table-wrap" style="max-height:220px;overflow-y:auto"><table>${absences.length ? absences.slice(0, 50).map((a) => `<tr><td>${date(a.jour)}</td>
+      <td>${a.type === "retard" ? "Retard" : "Absence"}</td><td>${a.justifiee ? '<span class="badge ok">justifiée</span>' : '<span class="badge warn">non justifiée</span>'}</td>
+      <td>${esc(a.motif || "")}</td></tr>`).join("") : `<tr><td class="empty">Aucune</td></tr>`}</table></div>`;
+  $("#dossier").dataset.eleve = id;
+  $("#dossier").hidden = false;
+}
+$("#dossier-fermer").addEventListener("click", () => ($("#dossier").hidden = true));
+$("#dossier").addEventListener("click", (ev) => {
+  if (ev.target.id === "dossier") $("#dossier").hidden = true;
+  const t = ev.target.dataset.bulletinDossier;
+  if (t) ouvrirFichier(`/eleves/${$("#dossier").dataset.eleve}/bulletin.pdf?trimestre=${t}`, "bulletin.pdf");
+});
+document.addEventListener("click", (ev) => {
+  const id = ev.target.closest("[data-dossier]")?.dataset.dossier;
+  if (id) ouvrirDossier(id).catch((err) => toast(err.message, true));
 });
 
 // ---------- Photos, cartes, codes parents ----------
@@ -1387,8 +1732,13 @@ $("#t-eleves").addEventListener("click", async (ev) => {
       return panneauSous(ligne, `<form class="row" data-form-modif="${e.id}" style="align-items:end">
         <label>Nom<input name="nom" value="${esc(e.nom)}" required></label>
         <label>Prénom<input name="prenom" value="${esc(e.prenom)}" required></label>
+        <label>Sexe<select name="sexe"><option value="">—</option><option value="F" ${e.sexe === "F" ? "selected" : ""}>Fille</option>
+          <option value="M" ${e.sexe === "M" ? "selected" : ""}>Garçon</option></select></label>
         <label>Né(e) le<input name="date_naissance" type="date" value="${esc(e.date_naissance || "")}"></label>
+        <label>À<input name="lieu_naissance" value="${esc(e.lieu_naissance || "")}"></label>
+        <label>Parent / tuteur<input name="nom_tuteur" value="${esc(e.nom_tuteur || "")}"></label>
         <label>Téléphone parent<input name="telephone_parent" value="${esc(e.telephone_parent || "")}"></label>
+        <label>Adresse<input name="adresse" value="${esc(e.adresse || "")}"></label>
         <label>Classe<select name="classe_id">${classes.map((c) => `<option value="${c.id}" ${c.id === e.classe_id ? "selected" : ""}>${esc(c.nom)}</option>`).join("")}</select></label>
         <button class="btn" style="flex:0 0 auto">Enregistrer</button></form>`);
     }
@@ -1552,6 +1902,7 @@ $("#f-eleve").addEventListener("submit", async (ev) => {
   const corps = {
     nom: d.nom, prenom: d.prenom, classe_id: d.classe_id,
     date_naissance: d.date_naissance, telephone_parent: d.telephone_parent,
+    sexe: d.sexe || null, lieu_naissance: d.lieu_naissance, nom_tuteur: d.nom_tuteur, adresse: d.adresse,
     paiement: { montant: d.montant, mode: d.mode, reference: d.reference, type_frais_id: d.type_frais_id ?? null },
   };
   try {
@@ -1561,6 +1912,7 @@ $("#f-eleve").addEventListener("submit", async (ev) => {
       <span>${esc(r.eleve.prenom)} ${esc(r.eleve.nom)} — reçu <b>${esc(r.paiement.numero_recu)}</b> · ${argent(r.paiement.montant)}</span>
       <button class="btn" data-recu="${r.paiement.id}">📄 Reçu</button></div>`;
     [...ev.target.elements].forEach((el) => { if (el.tagName === "INPUT") el.value = ""; });
+    ev.target.elements.sexe.value = "";
     rafraichir();
   } catch (err) { toast(err.message, true); }
 });
@@ -1679,8 +2031,9 @@ function dessinerSuivi() {
       const [label, cls] = STATUTS[s.statut];
       lignes.push(`<tr data-ligne="${s.eleve_id}">
         <td>${i + 1}</td>
-        <td>${esc(s.nom_complet)}${s.reduction ? ` <span class="badge violet" title="${esc(s.reduction_motif || "")}">−${argent(s.reduction)}</span>` : ""}<span class="sub">${esc(s.matricule || "")}${s.dernier_paiement ? " · dernier : " + new Date(s.dernier_paiement).toLocaleDateString("fr-FR") : ""}</span></td>
-        <td class="num">${argent(s.total_paye)}<span class="sub">${s.nb_paiements} paiement(s)</span></td>
+        <td><button class="link" data-dossier="${s.eleve_id}" style="text-align:left">${esc(s.nom_complet)}</button>${s.reduction ? ` <span class="badge violet" title="${esc(s.reduction_motif || "")}">−${argent(s.reduction)}</span>` : ""}<span class="sub">${esc(s.matricule || "")}${s.dernier_paiement ? " · dernier : " + new Date(s.dernier_paiement).toLocaleDateString("fr-FR") : ""}</span></td>
+        <td class="num">${argent(s.total_paye)}<span class="sub">${s.echeances.length ? (s.paye_jusqua ? "payé jusqu'à " + esc(s.paye_jusqua) : "aucun mois payé")
+          : s.nb_paiements + " paiement(s)"}</span></td>
         <td class="num">${s.reste_a_payer ? `<b style="color:var(--bad)">${argent(s.reste_a_payer)}</b>` : "–"}${s.retard
           ? `<span class="sub" style="color:var(--bad)">⚠ retard ${argent(s.retard)}</span>` : ""}</td>
         <td><span class="badge ${cls}">${label}</span></td>
@@ -1777,7 +2130,8 @@ let grilleCle = null;            // { eleve, trimestre } de la grille affichée
 let grilleModifiee = false;
 let chargementGrille = 0;
 
-const noteValide = (v) => v === "" || (!isNaN(v) && Number(v) >= 0 && Number(v) <= 20);
+let baremeGrille = 20;
+const noteValide = (v) => v === "" || (!isNaN(v) && Number(v) >= 0 && Number(v) <= baremeGrille);
 
 function elevesClasseNotes() {
   const cid = Number($("#n-classe").value);
@@ -1791,6 +2145,9 @@ async function chargerGrille() {
     if (premier) $("#n-eleve").value = String(premier.id);
   }
   afficherMatieres();
+  remplirPeriodes($("#n-trimestre"), $("#n-classe").value);
+  remplirPeriodes($("#bc-trimestre"), $("#bc-classe").value, true);
+  baremeGrille = reglesClasse($("#n-classe").value).bareme;
   const id = $("#n-eleve").value;
   const liste = elevesClasseNotes();
   const pos = liste.findIndex((e) => e.id === Number(id));
@@ -1813,7 +2170,7 @@ async function chargerGrille() {
   grilleCle = { eleve: id, trimestre };
   grilleModifiee = false;
   const nb = moi.ecole.nb_devoirs;
-  const champ = (i, k, v) => `<input class="note" type="number" inputmode="decimal" min="0" max="20" step="0.25" data-i="${i}" data-k="${k}" value="${v ?? ""}" placeholder="–">`;
+  const champ = (i, k, v) => `<input class="note" type="number" inputmode="decimal" min="0" max="${baremeGrille}" step="0.25" data-i="${i}" data-k="${k}" value="${v ?? ""}" placeholder="–">`;
   const texte = (v) => (v ?? "–");
   table($("#t-grille"),
     ["Matière", { label: "Coef.", num: true }, ...Array.from({ length: nb }, (_, k) => ({ label: `Devoir ${k + 1}`, num: true })),
@@ -1867,19 +2224,19 @@ function majMoyenne() {
     });
     const m = moyenneLigne(ligne);
     const cell = $(`#t-grille [data-moy="${i}"]`);
-    if (cell) { cell.textContent = m == null ? "–" : m.toFixed(2); cell.style.color = m == null ? "" : m >= 10 ? "" : "var(--bad)"; }
+    if (cell) { cell.textContent = m == null ? "–" : m.toFixed(2); cell.style.color = m == null ? "" : m >= baremeGrille / 2 ? "" : "var(--bad)"; }
     if (m != null) { pts += m * c.coefficient; coefs += c.coefficient; }
   });
   const moy = coefs ? pts / coefs : null;
   const el = $("#n-moyenne");
-  el.textContent = moy == null ? "–" : moy.toFixed(2) + " / 20";
-  el.style.color = moy == null ? "" : moy >= 10 ? "var(--ok)" : "var(--bad)";
+  el.textContent = moy == null ? "–" : moy.toFixed(2) + " / " + baremeGrille;
+  el.style.color = moy == null ? "" : moy >= baremeGrille / 2 ? "var(--ok)" : "var(--bad)";
   return ok;
 }
 
 async function enregistrerGrille({ silencieux = false } = {}) {
   if (!grilleCle) return true;
-  if (!majMoyenne()) { toast("Une note doit être entre 0 et 20", true); return false; }
+  if (!majMoyenne()) { toast(`Une note doit être entre 0 et ${baremeGrille}`, true); return false; }
   const saisies = grille.map((c, i) => {
     if (!$(`#t-grille input[data-i="${i}"]`)) return null;
     const l = lireLigne(c, i);
@@ -1971,6 +2328,148 @@ for (const id of ["#n-classe", "#n-eleve", "#n-trimestre"]) {
   });
 }
 
+async function afficherNotes() {
+  afficherPublications();
+  if (modeNotes === "matiere") { await chargerNotesClasse(); afficherMatieres(); afficherAnnuel(); afficherHistoriqueNotes(); }
+  else await chargerGrille();
+}
+
+// ---------- Saisie par matière pour toute la classe ----------
+let modeNotes = "matiere", notesClasse = null, ncModifiee = false;
+document.querySelectorAll("[data-mode-notes]").forEach((b) => b.addEventListener("click", async () => {
+  if (modeNotes === "eleve" && !(await avantChangement())) return;
+  if (modeNotes === "matiere" && ncModifiee && !(await enregistrerNotesClasse(true))) return;
+  modeNotes = b.dataset.modeNotes;
+  document.querySelectorAll("[data-mode-notes]").forEach((x) => x.classList.toggle("actif", x === b));
+  $("#saisie-matiere").hidden = modeNotes !== "matiere";
+  $("#saisie-eleve").hidden = modeNotes !== "eleve";
+  modeNotes === "matiere" ? chargerNotesClasse() : chargerGrille();
+}));
+
+async function chargerNotesClasse() {
+  const cid = $("#nm-classe").value;
+  if (!cid) { $("#t-notes-classe").innerHTML = `<tr><td class="empty">Crée d'abord une classe</td></tr>`; return; }
+  remplirPeriodes($("#nm-trimestre"), cid);
+  // Matières de la classe (l'enseignant ne voit que les siennes)
+  const lignes = await api(`/matieres/coefficients?classe_id=${cid}`);
+  const miennes = peut("enseignant") ? new Set((moi.utilisateur.affectations || []).filter((a) => a.classe_id === Number(cid)).map((a) => a.matiere_id)) : null;
+  const dispo = lignes.filter((l) => !miennes || miennes.has(l.matiere_id));
+  const sel = $("#nm-matiere"), avant = sel.value;
+  sel.innerHTML = dispo.map((l) => `<option value="${l.matiere_id}">${esc(l.matiere)} (coef ${l.coefficient})</option>`).join("")
+    || `<option value="">Aucune matière${miennes ? " attribuée dans cette classe" : ""}</option>`;
+  if (dispo.some((l) => String(l.matiere_id) === avant)) sel.value = avant;
+  if (!sel.value) { $("#t-notes-classe").innerHTML = ""; $("#nm-info").textContent = ""; notesClasse = null; return; }
+  notesClasse = await api(`/notes/classe?classe_id=${cid}&matiere_id=${sel.value}&trimestre=${$("#nm-trimestre").value}`);
+  ncModifiee = false;
+  const n = notesClasse, b = n.bareme;
+  $("#nm-info").textContent = `Notes sur ${b} · ${n.lignes.length} élève(s)`;
+  const champ = (i, k, v) => `<input class="note nc" type="number" inputmode="decimal" min="0" max="${b}" step="0.25" data-i="${i}" data-k="${k}"
+    value="${v ?? ""}" placeholder="–" ${n.modifiable ? "" : "disabled"}>`;
+  table($("#t-notes-classe"),
+    ["Élève", ...Array.from({ length: n.nb_devoirs }, (_, k) => ({ label: `Devoir ${k + 1}`, num: true })),
+     { label: "Compo.", num: true }, { label: "Moy.", num: true }, "Appréciation"],
+    n.lignes.map((l, i) => `<tr><td>${esc(l.eleve)}</td>
+      ${Array.from({ length: n.nb_devoirs }, (_, k) => `<td class="num">${champ(i, "d" + k, l.devoirs[k])}</td>`).join("")}
+      <td class="num">${champ(i, "c", l.composition)}</td>
+      <td class="num moy" data-nc-moy="${i}">${l.moyenne == null ? "–" : l.moyenne.toFixed(2)}</td>
+      <td><input class="appr" style="margin:0" data-i="${i}" data-k="a" maxlength="120" value="${esc(l.appreciation || "")}" ${n.modifiable ? "" : "disabled"}></td></tr>`),
+    "Aucun élève dans cette classe");
+  $("#nm-etat").textContent = n.modifiable ? "" : "Lecture seule : cette matière ne t'est pas attribuée";
+  $("#nm-enregistrer").disabled = !n.modifiable;
+}
+function lireNotesClasse() {
+  const n = notesClasse, val = (i, k) => $(`#t-notes-classe [data-i="${i}"][data-k="${k}"]`)?.value.trim() ?? "";
+  return n.lignes.map((l, i) => ({ l, i, devoirs: Array.from({ length: n.nb_devoirs }, (_, k) => val(i, "d" + k)),
+    composition: val(i, "c"), appreciation: val(i, "a") }));
+}
+function majNotesClasse() {
+  const n = notesClasse, p = moi.ecole.poids_composition;
+  let ok = true;
+  for (const x of lireNotesClasse()) {
+    document.querySelectorAll(`#t-notes-classe input.note[data-i="${x.i}"]`).forEach((inp) => {
+      const v = inp.value.trim(), bon = v === "" || (!isNaN(v) && Number(v) >= 0 && Number(v) <= n.bareme);
+      ok &&= bon;
+      inp.classList.toggle("invalide", !bon);
+    });
+    const d = x.devoirs.filter((v) => v !== "").map(Number), c = x.composition === "" ? null : Number(x.composition);
+    const md = d.length ? d.reduce((a, b) => a + b, 0) / d.length : null;
+    const m = md != null && c != null ? (md + c * p) / (1 + p) : md ?? c;
+    const cell = $(`[data-nc-moy="${x.i}"]`);
+    cell.textContent = m == null ? "–" : m.toFixed(2);
+    cell.style.color = m != null && m < n.bareme / 2 ? "var(--bad)" : "";
+  }
+  return ok;
+}
+async function enregistrerNotesClasse(silencieux = false) {
+  if (!notesClasse) return true;
+  if (!majNotesClasse()) { toast(`Une note doit être entre 0 et ${notesClasse.bareme}`, true); return false; }
+  const num = (v) => (v === "" ? null : Number(v));
+  const saisies = lireNotesClasse().map((x) => ({ eleve_id: x.l.eleve_id, devoirs: x.devoirs.map(num), composition: num(x.composition),
+    effacer_composition: x.composition === "", appreciation: x.appreciation }));
+  try {
+    const n = notesClasse;
+    await api(`/notes/classe?classe_id=${n.classe_id}&matiere_id=${n.matiere_id}&trimestre=${n.trimestre}`,
+      { method: "PUT", body: JSON.stringify(saisies) });
+    ncModifiee = false;
+    $("#nm-etat").textContent = "✔ Enregistré";
+    toast(`Notes de ${n.matiere} enregistrées pour ${n.lignes.length} élève(s) ✔`);
+    if (!silencieux) chargerNotesClasse();
+    return true;
+  } catch (err) { toast(err.message, true); return false; }
+}
+$("#nm-enregistrer").addEventListener("click", () => enregistrerNotesClasse());
+$("#t-notes-classe").addEventListener("input", () => { ncModifiee = true; $("#nm-etat").textContent = "Modifications non enregistrées"; majNotesClasse(); });
+$("#t-notes-classe").addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" || !ev.target.matches("input")) return;
+  ev.preventDefault();   // descend dans la même colonne
+  const i = Number(ev.target.dataset.i), k = ev.target.dataset.k;
+  const suivant = $(`#t-notes-classe [data-i="${i + 1}"][data-k="${k}"]`);
+  if (suivant) { suivant.focus(); suivant.select?.(); } else $("#nm-enregistrer").focus();
+});
+for (const id of ["#nm-classe", "#nm-matiere", "#nm-trimestre"]) {
+  const sel = $(id);
+  sel.addEventListener("focus", () => (sel.dataset.avant = sel.value));
+  sel.addEventListener("change", async () => {
+    if (ncModifiee) {   // on enregistre d'abord ce qui a été tapé pour l'ancienne classe / matière / période
+      const nouveau = sel.value;
+      sel.value = sel.dataset.avant ?? sel.value;
+      if (!(await enregistrerNotesClasse(true))) return;
+      sel.value = nouveau;
+    }
+    sel.dataset.avant = sel.value;
+    chargerNotesClasse();
+  });
+}
+
+// ---------- Publication des résultats ----------
+async function afficherPublications() {
+  if (!peut("directeur")) return;
+  const t = $("#pub-trimestre").value;
+  const liste = await api(`/notes/publications?trimestre=${t}`);
+  table($("#t-publications"), ["Classe", { label: "Élèves notés", num: true }, "État", ""],
+    liste.filter((p) => p.eleves).map((p) => `<tr><td>${esc(p.classe)}</td><td class="num">${p.notes_saisies} / ${p.eleves}</td>
+      <td>${p.publie ? `<span class="badge ok">Publié le ${dateHeure(p.publie_le)}</span>` : `<span class="badge warn">Non publié</span>`}</td>
+      <td class="actions">${p.publie ? `<button class="link danger" data-depublier="${p.classe_id}">Retirer</button>`
+        : `<button class="link" data-publier="${p.classe_id}" ${p.notes_saisies ? "" : "disabled"}>📢 Publier</button>`}</td></tr>`),
+    "Aucune classe n'a de période " + t);
+}
+$("#pub-trimestre").addEventListener("change", afficherPublications);
+$("#t-publications").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset, t = $("#pub-trimestre").value;
+  try {
+    if (d.publier) {
+      const ligne = (await api(`/notes/publications?trimestre=${t}`)).find((p) => p.classe_id === Number(d.publier));
+      if (ligne.notes_saisies < ligne.eleves && !confirm(`${ligne.eleves - ligne.notes_saisies} élève(s) n'ont aucune note. Publier quand même ?`)) return;
+      const p = await api(`/notes/publications/${d.publier}?trimestre=${t}`, { method: "PUT" });
+      toast(`Résultats de ${p.classe} publiés ✔ Annonce-les aux parents dans « Messages aux parents »`);
+    } else if (d.depublier) {
+      await api(`/notes/publications/${d.depublier}?trimestre=${t}`, { method: "DELETE" });
+      toast("Publication retirée : les parents ne voient plus ces résultats");
+    } else return;
+    afficherPublications();
+  } catch (err) { toast(err.message, true); }
+});
+
 // ---------- Historique des notes ----------
 const ACTIONS = { ajout: ["Ajout", "ok"], modification: ["Modification", "warn"], suppression: ["Suppression", "bad"] };
 let equipeChargee = false;
@@ -2011,8 +2510,10 @@ async function afficherAnnuel() {
   if (!cid) { $("#t-annuel").innerHTML = ""; return; }
   const r = await api(`/classes/${cid}/resultats-annuels`);
   const f = (v) => (v == null ? "–" : v.toFixed(2));
+  const rg = reglesClasse(cid);
   table($("#t-annuel"),
-    ["Rang", "Élève", { label: "T1", num: true }, { label: "T2", num: true }, { label: "T3", num: true }, { label: "Année", num: true }, "Décision"],
+    ["Rang", "Élève", ...Array.from({ length: rg.periodes }, (_, i) => ({ label: rg.nom[0] + (i + 1), num: true })),
+     { label: "Année", num: true }, "Décision"],
     r.map((x) => `<tr><td>${x.rang ?? "–"}</td><td>${esc(x.eleve)}</td>${x.moyennes_trimestres.map((m) => `<td class="num">${f(m)}</td>`).join("")}
       <td class="num"><b>${f(x.moyenne_annuelle)}</b></td>
       <td>${x.decision ? `<span class="badge ${x.decision === "Redouble" ? "bad" : "ok"}">${x.decision}</span>` : "–"}</td></tr>`),
@@ -2027,17 +2528,19 @@ async function afficherBulletin() {
   const b = await api(`/eleves/${id}/bulletin?trimestre=${$("#n-trimestre").value}`);
   const moy = b.moyenne_generale;
   const rang = b.rang ? `${b.rang}${b.rang === 1 ? "er" : "e"} / ${b.effectif}` : "–";
+  const etatPub = b.publie ? `<span class="badge ok">Visible des parents</span>` : `<span class="badge warn">Pas encore publié</span>`;
   $("#bulletin").innerHTML = `
     <div class="bulletin-head">
       <div><strong>${esc(b.nom_complet)}</strong><br>
-        <span style="color:var(--muted)">${esc(b.classe)} — Trimestre ${b.trimestre}</span><br>
+        <span style="color:var(--muted)">${esc(b.classe)} — ${b.periode} ${b.trimestre}</span> ${etatPub}<br>
         <span class="badge info">Rang : ${rang}</span>
         <span class="sub" style="display:block;margin-top:4px">Absences : ${b.absences} (dont ${b.absences_justifiees} justifiée(s)) · Retards : ${b.retards}</span>
         ${b.moyenne_annuelle != null ? `<span class="sub" style="display:block;margin-top:4px">Année : <b>${b.moyenne_annuelle.toFixed(2)}</b>
           · rang ${b.rang_annuel ?? "–"} · <span class="badge ${b.decision === "Redouble" ? "bad" : "ok"}">${b.decision}</span></span>` : ""}</div>
       <div style="text-align:right">Moyenne générale<br>
         <span class="moyenne" style="color:${moy == null ? "inherit" : moy >= 10 ? "var(--ok)" : "var(--bad)"}">
-        ${moy == null ? "–" : moy.toFixed(2) + " / 20"}</span><br>
+        ${moy == null ? "–" : moy.toFixed(2) + " / " + b.bareme}</span><br>
+        ${b.mention ? `<span class="badge ${b.mention === "Avertissement" ? "bad" : "ok"}">${esc(b.mention)}</span><br>` : ""}
         <span style="font-size:.85rem;color:var(--muted)">${esc(b.appreciation)}</span>
         ${b.moyenne_classe != null ? `<span class="sub">Moyenne de la classe : ${b.moyenne_classe.toFixed(2)}</span>` : ""}</div>
     </div>
@@ -2051,8 +2554,8 @@ async function afficherBulletin() {
   table($("#t-bulletin"),
     ["Matière", { label: "Coef.", num: true }, { label: "Moy.", num: true }, { label: "Classe", num: true },
      { label: "Min–Max", num: true }, { label: "Rang", num: true }, "Appréciation"],
-    b.matieres.map((m) => `<tr><td>${esc(m.matiere)}</td><td class="num">${m.coefficient}</td>
-      <td class="num" style="${m.moyenne < 10 ? "color:var(--bad)" : ""}"><b>${m.moyenne.toFixed(2)}</b></td>
+    b.matieres.map((m) => `<tr><td>${esc(m.matiere)}${m.professeur ? `<span class="sub">${esc(m.professeur)}</span>` : ""}</td><td class="num">${m.coefficient}</td>
+      <td class="num" style="${m.moyenne < b.bareme / 2 ? "color:var(--bad)" : ""}"><b>${m.moyenne.toFixed(2)}</b></td>
       <td class="num">${f2(m.moyenne_classe)}</td>
       <td class="num" style="white-space:nowrap">${m.min_classe == null ? "–" : `${f2(m.min_classe)}–${f2(m.max_classe)}`}</td>
       <td class="num">${m.rang_matiere ?? "–"}</td><td style="font-size:.85rem">${esc(m.appreciation || "")}</td></tr>`),
@@ -2082,12 +2585,29 @@ $("#btn-bulletins-classe").addEventListener("click", () => {
 async function afficherMatieres() {
   if (!peut("directeur")) return;
   afficherCoefsClasse();
-  const liste = await api("/matieres");
+  const [liste, liens] = await Promise.all([api("/matieres"), cycles.length ? api("/matieres/cycles") : []]);
+  if (!cycles.length) {
+    table($("#t-matieres"),
+      ["Matière", { label: "Coef.", num: true }, ""],
+      liste.map((m) => `<tr data-matiere="${m.id}">
+        <td><input value="${esc(m.nom)}" data-champ="nom" aria-label="Nom"></td>
+        <td class="num"><input type="number" min="1" max="20" value="${m.coefficient}" data-champ="coefficient" aria-label="Coefficient"></td>
+        <td class="actions"><button class="link" data-enreg-matiere="${m.id}">Enregistrer</button><button class="link danger" data-suppr-matiere="${m.id}">Supprimer</button></td>
+      </tr>`),
+      "Aucune matière");
+    return;
+  }
+  // Un coefficient par cycle ; case vide = matière pas enseignée dans ce cycle
+  const coef = {};
+  liens.forEach((l) => ((coef[l.matiere_id] ||= {})[l.cycle_id] = l.coefficient));
   table($("#t-matieres"),
-    ["Matière", { label: "Coef.", num: true }, ""],
+    ["Matière", ...cycles.map((c) => ({ label: c.nom, num: true })), ""],
     liste.map((m) => `<tr data-matiere="${m.id}">
-      <td><input value="${esc(m.nom)}" data-champ="nom" aria-label="Nom"></td>
-      <td class="num"><input type="number" min="1" max="20" value="${m.coefficient}" data-champ="coefficient" aria-label="Coefficient"></td>
+      <td><input value="${esc(m.nom)}" data-champ="nom" aria-label="Nom" style="min-width:130px"></td>
+      ${cycles.map((c) => {
+        const v = coef[m.id] ? coef[m.id][c.id] : m.coefficient;
+        return `<td class="num"><input type="number" min="1" max="20" data-cycle-coef="${c.id}" value="${v ?? ""}" placeholder="–" style="width:56px"></td>`;
+      }).join("")}
       <td class="actions"><button class="link" data-enreg-matiere="${m.id}">Enregistrer</button><button class="link danger" data-suppr-matiere="${m.id}">Supprimer</button></td>
     </tr>`),
     "Aucune matière");
@@ -2145,10 +2665,14 @@ $("#t-matieres").addEventListener("click", async (ev) => {
     if (!(await avantChangement())) return;
     if (enreg) {
       const tr = ev.target.closest("tr");
+      const parCycle = [...tr.querySelectorAll("[data-cycle-coef]")];
+      if (parCycle.length && parCycle.every((i) => !i.value)) return toast("Indique le coefficient dans au moins un cycle", true);
       await api(`/matieres/${enreg}`, { method: "PATCH", body: JSON.stringify({
         nom: tr.querySelector("[data-champ=nom]").value,
-        coefficient: Number(tr.querySelector("[data-champ=coefficient]").value),
+        ...(parCycle.length ? {} : { coefficient: Number(tr.querySelector("[data-champ=coefficient]").value) }),
       }) });
+      if (parCycle.length) await api(`/matieres/${enreg}/cycles`, { method: "PUT", body: JSON.stringify(
+        parCycle.map((i) => ({ cycle_id: Number(i.dataset.cycleCoef), coefficient: i.value ? Number(i.value) : null }))) });
       toast("Matière modifiée ✔ (les notes déjà saisies suivent)");
     } else {
       await api(`/matieres/${suppr}`, { method: "DELETE" });
@@ -2206,11 +2730,11 @@ function resumeAffectations(liste) {
 async function afficherEquipe() {
   const [users, mats] = await Promise.all([api("/utilisateurs"), api("/matieres")]);
   matieresEcole = mats;
-  equipe = users;
+  equipe = users.filter((u) => u.role !== "agent");   // le personnel sans compte est géré dans Paie
   if ($("#u-role").value === "enseignant") matriceAffectations($('[data-matrice="nouveau"]'));
   table($("#t-users"),
     ["Nom", "E-mail", "Rôle", "Statut", ""],
-    users.map((u) => `<tr><td>${esc(u.nom)}${u.role === "enseignant" ? `<span class="sub">${resumeAffectations(u.affectations)
+    equipe.map((u) => `<tr><td>${esc(u.nom)}${u.role === "enseignant" ? `<span class="sub">${resumeAffectations(u.affectations)
         || "<span style='color:var(--bad)'>aucune matière attribuée</span>"}</span>` : ""}</td><td>${esc(u.email)}</td>
       <td>${esc(ROLES[u.role] || u.role)}</td>
       <td>${u.actif ? '<span class="badge ok">Actif</span>' : '<span class="badge bad">Désactivé</span>'}</td>
@@ -2268,14 +2792,56 @@ $("#t-users").addEventListener("click", async (ev) => {
 // ---------- Paramètres ----------
 async function afficherParametres() {
   const f = $("#f-ecole");
-  for (const k of ["nom", "adresse", "telephone", "devise", "indicatif_tel", "nb_devoirs", "poids_composition", "seuil_admission"])
+  for (const k of ["nom", "adresse", "telephone", "devise", "indicatif_tel", "nb_devoirs", "poids_composition", "seuil_admission",
+                   "pays", "inspection"])
     f.elements[k].value = moi.ecole[k] ?? "";
+  if (!moi.ecole.pays) f.elements.pays.value = "autre";
+  afficherCycles();
   afficherModePaiement();
   if (!estMensuel()) dessinerTranches(await api("/tranches"));
   afficherImagesEcole();
   afficherTypesFrais();
   await afficherPassages();
 }
+
+// ---------- Cycles ----------
+const NOMS_CYCLES = { prescolaire: "Préscolaire", primaire: "Primaire", college: "Collège", lycee: "Lycée" };
+function afficherCycles() {
+  table($("#t-cycles"), ["Cycle", "Découpage", "Notes sur", "Moyenne pour passer", ""],
+    cycles.map((c) => `<tr data-cycle="${c.id}"><td><input data-cy="nom" value="${esc(c.nom)}" aria-label="Nom du cycle"></td>
+      <td><select data-cy="periodes"><option value="3" ${c.periodes === 3 ? "selected" : ""}>3 trimestres</option>
+        <option value="2" ${c.periodes === 2 ? "selected" : ""}>2 semestres</option></select></td>
+      <td><select data-cy="bareme"><option value="20" ${c.bareme === 20 ? "selected" : ""}>20</option>
+        <option value="10" ${c.bareme === 10 ? "selected" : ""}>10</option></select></td>
+      <td><input data-cy="seuil" type="number" min="0" max="20" step="0.25" value="${c.seuil}" style="width:90px"></td>
+      <td class="actions"><button class="link" data-enreg-cycle="${c.id}">Enregistrer</button>
+        <button class="link danger" data-suppr-cycle="${c.id}">Supprimer</button></td></tr>`),
+    "Aucun cycle : les règles générales ci-dessus s'appliquent à toutes les classes");
+  const codes = new Set(cycles.map((c) => c.code));
+  const manquants = Object.keys(NOMS_CYCLES).filter((k) => !codes.has(k));
+  $("#cycles-manquants").innerHTML = manquants.length ? `<span class="hint" style="margin:0">Ajouter :</span>` +
+    manquants.map((k) => `<button class="btn secondary" data-ajout-cycle="${k}">+ ${NOMS_CYCLES[k]} (avec ses classes)</button>`).join("") : "";
+}
+$("#parametres").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  try {
+    if (d.enregCycle) {
+      const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-cy="${k}"]`).value;
+      await api(`/cycles/${d.enregCycle}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), periodes: Number(v("periodes")),
+        bareme: Number(v("bareme")), seuil: Number(v("seuil")) }) });
+      toast("Cycle enregistré ✔");
+    } else if (d.supprCycle) {
+      if (!confirm("Supprimer ce cycle ?")) return;
+      await api(`/cycles/${d.supprCycle}`, { method: "DELETE" });
+      toast("Cycle supprimé");
+    } else if (d.ajoutCycle) {
+      await api("/cycles/types", { method: "POST", body: JSON.stringify({ codes: [d.ajoutCycle], classes: true }) });
+      toast(`${NOMS_CYCLES[d.ajoutCycle]} ajouté avec ses classes et ses matières ✔`);
+    } else return;
+    await chargerClasses();
+    afficherCycles();
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---------- Mode de paiement de la scolarité ----------
 function afficherModePaiement() {
@@ -2508,6 +3074,7 @@ async function afficherAbsences() {
 async function chargerAppel() {
   const cid = $("#a-classe").value;
   if (!cid) { $("#t-appel").innerHTML = `<tr><td class="empty">Crée d'abord une classe</td></tr>`; return; }
+  remplirPeriodes($("#a-trimestre"), cid);
   const [etat, resume] = await Promise.all([
     api(`/absences/appel?classe_id=${cid}&jour=${$("#a-jour").value}`),
     api(`/absences/resume?classe_id=${cid}&trimestre=${$("#a-trimestre").value}`),
@@ -2601,6 +3168,7 @@ let messages = [];
 async function afficherMessages() {
   const type = $("#m-type").value;
   $("#m-trimestre").hidden = type !== "bulletin";
+  if ($("#m-classe").value) remplirPeriodes($("#m-trimestre"), $("#m-classe").value);
   const zone = $("#m-liste");
   const cid = $("#m-classe").value;
   $("#m-retard-label").hidden = type !== "impaye";
@@ -2712,10 +3280,68 @@ const CATEGORIES = { salaires: "Salaires", loyer: "Loyer", fournitures: "Fournit
   transport: "Transport", entretien: "Entretien / réparations", impots: "Impôts / taxes", autre: "Autre" };
 const nomMois = (m) => { const [a, mo] = m.split("-"); return new Date(a, mo - 1, 1).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }); };
 
+const TYPES_RECETTES = { vente: "Vente", don: "Don", location: "Location", subvention: "Subvention", autre: "Autre" };
+async function afficherCaisseJour() {
+  if (!$("#cj-jour").value) $("#cj-jour").value = aujourdhui();
+  const j = await api(`/caisse/jour?jour=${$("#cj-jour").value}`);
+  $("#cj-resume").innerHTML = `<div class="card kpi ok"><div class="label">Entrées</div><div class="value">${argent(j.entrees)}</div></div>
+    <div class="card kpi bad"><div class="label">Sorties</div><div class="value">${argent(j.sorties)}</div></div>
+    <div class="card kpi"><div class="label">Solde du jour</div><div class="value">${argent(j.solde)}</div></div>`;
+  const lignes = (o, vide) => Object.keys(o).length ? Object.entries(o).map(([k, v]) =>
+    `<div class="ligne-info"><span>${esc(MODES[k] || k)}</span><b>${argent(v)}</b></div>`).join("") : `<p class="hint">${vide}</p>`;
+  $("#cj-modes").innerHTML = lignes(j.par_mode, "Aucune opération");
+  $("#cj-caissiers").innerHTML = lignes(j.par_caissier, "Aucun encaissement");
+  const TYPES = { paiement: "Paiement", recette: "Autre entrée", depense: "Dépense" };
+  table($("#t-caisse-jour"), ["Type", "Libellé", "Mode", "Par", { label: "Montant", num: true }],
+    j.lignes.map((l) => `<tr><td>${TYPES[l.type]}${l.numero ? `<span class="sub">${esc(l.numero)}</span>` : ""}</td><td>${esc(l.libelle)}</td>
+      <td>${esc(MODES[l.mode] || l.mode)}</td><td>${esc(l.par || "–")}</td>
+      <td class="num" style="color:${l.montant < 0 ? "var(--bad)" : "var(--ok)"}">${argent(l.montant)}</td></tr>`),
+    "Aucune opération ce jour-là");
+}
+$("#cj-jour").addEventListener("change", afficherCaisseJour);
+$("#btn-cj-imprimer").addEventListener("click", () => {
+  const w = window.open("", "_blank");
+  w.document.write(`<html><head><title>Caisse du ${$("#cj-jour").value}</title><style>body{font-family:sans-serif;padding:20px}
+    table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:5px;font-size:12px;text-align:left}</style></head><body>
+    <h2>${esc(moi.ecole.nom)} — caisse du ${new Date($("#cj-jour").value).toLocaleDateString("fr-FR")}</h2>
+    ${$("#cj-resume").innerText.replace(/\n+/g, " · ")}<h3>Par mode</h3>${$("#cj-modes").innerHTML}<h3>Par personne</h3>${$("#cj-caissiers").innerHTML}
+    <h3>Opérations</h3><table>${$("#t-caisse-jour").innerHTML}</table><p style="margin-top:40px">Signature du caissier : ____________ &nbsp;&nbsp; Contrôlé par : ____________</p>
+    </body></html>`);
+  w.document.close();
+  w.print();
+});
+async function afficherRecettes() {
+  if (!$("#f-recette").elements.jour.value) $("#f-recette").elements.jour.value = aujourdhui();
+  const r = await api("/recettes");
+  table($("#t-recettes"), ["Date", "Type", "Libellé", { label: "Montant", num: true }, ""],
+    r.map((x) => `<tr><td>${new Date(x.jour).toLocaleDateString("fr-FR")}</td><td>${TYPES_RECETTES[x.categorie] || x.categorie}</td>
+      <td>${esc(x.libelle)}<span class="sub">${esc(MODES[x.mode] || x.mode)}</span></td><td class="num">${argent(x.montant)}</td>
+      <td class="actions">${peut("directeur") ? `<button class="link danger" data-suppr-recette="${x.id}">Supprimer</button>` : ""}</td></tr>`),
+    "Aucune autre entrée");
+}
+$("#f-recette").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("/recettes", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    toast("Entrée enregistrée ✔");
+    ev.target.elements.libelle.value = ""; ev.target.elements.montant.value = "";
+    afficherCaisse();
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-recettes").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.supprRecette;
+  if (!id || !confirm("Supprimer cette entrée ?")) return;
+  try { await api(`/recettes/${id}`, { method: "DELETE" }); toast("Entrée supprimée"); afficherCaisse(); }
+  catch (err) { toast(err.message, true); }
+});
+
 async function afficherCaisse() {
   if (!$("#f-depense").elements.jour.value) $("#f-depense").elements.jour.value = aujourdhui();
+  afficherCaisseJour();
+  afficherRecettes();
   const b = await api("/caisse/bilan");
   $("#c-entrees").textContent = argent(b.total_entrees);
+  $("#c-recettes").textContent = b.total_recettes ? `dont ${argent(b.total_recettes)} hors frais des élèves` : "";
   $("#c-sorties").textContent = argent(b.total_sorties);
   $("#c-solde").textContent = argent(b.solde);
   $("#c-solde").style.color = b.solde >= 0 ? "var(--ok)" : "var(--bad)";
@@ -2936,14 +3562,17 @@ const ROLES_FR = { directeur: "Directeur", comptable: "Comptable", enseignant: "
 async function afficherPaie() {
   const mois = $("#paie-mois");
   if (!mois.value) mois.value = aujourdhui().slice(0, 7);
+  if (!$("#f-absence-perso").elements.jour.value) $("#f-absence-perso").elements.jour.value = aujourdhui();
   const dir = peut("directeur");
   [personnel, postes] = await Promise.all([api(`/paie/personnel?mois=${mois.value}`), api("/paie/postes")]);
+  const nom = (id) => personnel.find((p) => p.utilisateur_id === id)?.nom || "?";
   afficherPostes();
   const total = personnel.reduce((t, p) => t + (p.fiche?.net || 0), 0);
   const payees = personnel.filter((p) => p.fiche?.payee).length;
   $("#paie-total").textContent = `Total des fiches : ${argent(total)} · ${payees} payée(s)`;
   table($("#t-paie"),
-    ["Nom", "Poste", { label: "Heures prévues", num: true }, { label: "Avances dues", num: true }, { label: "Net du mois", num: true }, ""],
+    ["Nom", "Poste", { label: "Heures prévues", num: true }, { label: "Absences", num: true }, { label: "Avances dues", num: true },
+     { label: "Net du mois", num: true }, ""],
     personnel.map((p) => {
       const f = p.fiche;
       const salaire = p.contrat_montant ? `${argent(p.contrat_montant)} ${p.contrat_type === "horaire" ? "/ heure" : "/ mois"}`
@@ -2957,16 +3586,29 @@ async function afficherPaie() {
         : [`<button class="link" data-fiche-pdf="${f.id}">📄 Fiche de paie</button>`,
            ...(f.payee ? [] : [`<button class="link" data-payer-fiche="${f.id}">💵 Payer</button>`,
                               `<button class="link danger" data-suppr-fiche="${f.id}">🗑 Supprimer la fiche</button>`])];
-      return `<tr data-personne="${p.utilisateur_id}"><td>${esc(p.nom)}<span class="sub">${ROLES_FR[p.role] || p.role}</span></td>
+      if (p.sans_compte && dir) actions.push(`<button class="link danger" data-retirer-agent="${p.utilisateur_id}">🚪 Ne travaille plus ici</button>`);
+      const abs = [p.jours_absence ? `${p.jours_absence} j` : "", p.heures_absence && p.contrat_type === "horaire" ? `${p.heures_absence} h` : ""].filter(Boolean).join(" · ");
+      return `<tr data-personne="${p.utilisateur_id}"><td>${esc(p.nom)}<span class="sub">${p.sans_compte ? "Sans accès au logiciel" + (p.telephone ? " · " + esc(p.telephone) : "") : ROLES_FR[p.role] || p.role}</span></td>
         <td style="white-space:nowrap">${contrat}</td>
         <td class="num">${p.heures_prevues ?? "–"}</td>
+        <td class="num">${abs ? `<span style="color:var(--bad)">${abs}</span>${p.retenue_proposee ? `<span class="sub">retenue ${argent(p.retenue_proposee)}</span>` : ""}` : "–"}</td>
         <td class="num">${p.avances_en_cours ? argent(p.avances_en_cours) : "–"}</td>
         <td class="num">${f ? `<b>${argent(f.net)}</b><span class="sub">${f.payee ? `<span class="badge ok">payée</span>` : `<span class="badge warn">à payer</span>`}</span>` : "–"}</td>
         <td class="actions">${actions.length ? menuActions(actions) : ""}</td></tr>`;
     }), "Aucun membre du personnel");
   $("#av-qui").innerHTML = personnel.map((p) => `<option value="${p.utilisateur_id}">${esc(p.nom)}</option>`).join("");
+  $("#ap-qui").innerHTML = $("#av-qui").innerHTML;
+  $("#f-agent").elements.poste_id.innerHTML = `<option value="">Personnel d'appui</option>` + postes.filter((q) => !q.role || q.role === "agent")
+    .map((q) => `<option value="${q.id}">${esc(q.nom)}</option>`).join("");
+  const absP = await api(`/paie/absences?mois=${mois.value}`);
+  table($("#t-absences-perso"), ["Date", "Personne", "Durée", "État", ""],
+    absP.map((a) => `<tr><td>${new Date(a.jour).toLocaleDateString("fr-FR")}</td><td>${esc(nom(a.utilisateur_id))}${a.motif ? `<span class="sub">${esc(a.motif)}</span>` : ""}</td>
+      <td>${a.heures ? a.heures + " h" : "Journée"}</td>
+      <td>${a.justifiee ? `<span class="badge ok">justifiée</span>` : `<span class="badge warn">non justifiée</span>`}</td>
+      <td class="actions">${dir ? `<button class="link" data-justifier-abs="${a.id}" data-valeur="${!a.justifiee}">${a.justifiee ? "Ne plus justifier" : "Justifier"}</button>` : ""}
+        <button class="link danger" data-suppr-abs="${a.id}">Supprimer</button></td></tr>`),
+    "Aucune absence ce mois-ci");
   const avances = await api("/paie/avances");
-  const nom = (id) => personnel.find((p) => p.utilisateur_id === id)?.nom || "?";
   table($("#t-avances"), ["Date", "Personne", { label: "Montant", num: true }, "État"],
     avances.map((a) => `<tr><td>${new Date(a.jour).toLocaleDateString("fr-FR")}</td><td>${esc(nom(a.utilisateur_id))}${a.motif ? `<span class="sub">${esc(a.motif)}</span>` : ""}</td>
       <td class="num">${argent(a.montant)}</td><td>${a.deduite_sur ? `<span class="badge ok">retirée du salaire</span>` : `<span class="badge warn">à retirer</span>`}</td></tr>`),
@@ -2979,20 +3621,28 @@ $("#t-paie").addEventListener("click", async (ev) => {
     if (d.preparer) {
       const p = personnel.find((x) => x.utilisateur_id === Number(d.preparer));
       return panneauSous(tr, `<form class="row" data-form-fiche="${p.utilisateur_id}" style="align-items:end">
-        ${p.contrat_type === "horaire" ? `<label>Heures faites<input name="heures" type="number" min="0" max="400" step="0.5" value="${p.heures_prevues ?? ""}"></label>` : ""}
+        ${p.contrat_type === "horaire" ? `<label>Heures faites<input name="heures" type="number" min="0" max="400" step="0.5"
+            value="${p.heures_prevues == null ? "" : Math.max(p.heures_prevues - p.heures_absence, 0)}"></label>` : ""}
         <label>Primes<input name="primes" type="number" min="0" value="0"></label>
-        <label>Retenues<input name="retenues" type="number" min="0" value="0"></label>
+        <label>Retenues<input name="retenues" type="number" min="0" value="${p.retenue_proposee || 0}"></label>
         <label style="flex:2">Note<input name="note" maxlength="120" placeholder="facultatif"></label>
         <button class="btn" style="flex:0 0 auto">Calculer la fiche</button></form>
-        ${p.avances_en_cours ? `<span class="sub">${argent(p.avances_en_cours)} d'avances seront retirées.</span>` : ""}`);
+        ${p.avances_en_cours ? `<span class="sub">${argent(p.avances_en_cours)} d'avances seront retirées.</span>` : ""}
+        ${p.heures_absence && p.contrat_type === "horaire" ? `<span class="sub">${p.heures_absence} h d'absence non justifiée déjà retirées des heures prévues.</span>` : ""}
+        ${p.retenue_proposee ? `<span class="sub">Retenue proposée pour ${p.jours_absence} jour(s) d'absence non justifiée.</span>` : ""}`);
     }
     if (d.payerFiche) {
       return panneauSous(tr, `<form class="row" data-form-payer="${d.payerFiche}" style="align-items:end">
-        <label>Mode<select name="mode"><option value="especes">Espèces</option><option value="orange_money">Orange Money</option>
-          <option value="mtn_momo">MTN MoMo</option><option value="virement">Virement</option></select></label>
+        <label>Mode<select name="mode">${optionsModes()}</select></label>
         <button class="btn" style="flex:0 0 auto">Confirmer le paiement</button></form>`);
     }
     if (d.fichePdf) return ouvrirFichier(`/paie/fiches/${d.fichePdf}.pdf`, "fiche_paie.pdf");
+    if (d.retirerAgent) {
+      if (!confirm("Cette personne ne fait plus partie du personnel ? (son historique de paie est gardé)")) return;
+      await api(`/paie/agents/${d.retirerAgent}`, { method: "DELETE" });
+      toast("Retiré du personnel");
+      return afficherPaie();
+    }
     if (d.supprFiche) {
       if (!confirm("Supprimer cette fiche ? Les avances retirées redeviennent à retirer.")) return;
       await api(`/paie/fiches/${d.supprFiche}`, { method: "DELETE" });
@@ -3016,6 +3666,37 @@ $("#t-paie").addEventListener("submit", async (ev) => {
     afficherPaie();
   } catch (err) { toast(err.message, true); }
 });
+$("#f-agent").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = formData(ev.target);
+  try {
+    await api("/paie/agents", { method: "POST", body: JSON.stringify(d) });
+    toast(`${d.nom} ajouté(e) au personnel ✔`);
+    ev.target.reset();
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-absence-perso").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = formData(ev.target);
+  d.justifiee = ev.target.elements.justifiee.checked;
+  try {
+    await api("/paie/absences", { method: "POST", body: JSON.stringify(d) });
+    toast("Absence notée ✔");
+    ev.target.elements.heures.value = ""; ev.target.elements.motif.value = ""; ev.target.elements.justifiee.checked = false;
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-absences-perso").addEventListener("click", async (ev) => {
+  const d = ev.target.dataset;
+  try {
+    if (d.justifierAbs) await api(`/paie/absences/${d.justifierAbs}?justifiee=${d.valeur}`, { method: "PATCH" });
+    else if (d.supprAbs) await api(`/paie/absences/${d.supprAbs}`, { method: "DELETE" });
+    else return;
+    afficherPaie();
+  } catch (err) { toast(err.message, true); }
+});
+
 $("#f-avance").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   try {
@@ -3026,12 +3707,76 @@ $("#f-avance").addEventListener("submit", async (ev) => {
   } catch (err) { toast(err.message, true); }
 });
 
+
+// ---------- Cahier de textes ----------
+async function afficherCahier() {
+  const f = $("#f-cahier");
+  if (!f.elements.jour.value) f.elements.jour.value = aujourdhui();
+  await remplirMatieresCahier();
+  const cid = $("#cl-classe").value;
+  const liste = await api("/cahier" + (cid ? `?classe_id=${cid}` : ""));
+  const date = (d) => new Date(d).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  $("#cl-liste").innerHTML = liste.length ? liste.map((e) => `<div class="msg">
+      <div class="tete"><span><b>${date(e.jour)}</b> · ${esc(e.classe)} · ${esc(e.matiere)}</span>
+        <span style="font-size:.85rem;color:var(--muted)">${esc(e.enseignant)}${e.modifiable ? ` · <button class="link danger" data-effacer-cahier="${e.id}">Effacer</button>` : ""}</span></div>
+      <div class="texte" style="white-space:pre-wrap">${esc(e.contenu)}</div>
+      ${e.travail ? `<div style="margin-top:6px;font-size:.9rem">📝 <b>À faire${e.pour_le ? " pour le " + new Date(e.pour_le).toLocaleDateString("fr-FR") : ""} :</b> ${esc(e.travail)}</div>` : ""}
+    </div>`).join("") : `<p class="empty">Rien d'écrit pour l'instant</p>`;
+}
+async function remplirMatieresCahier() {
+  const cid = $("#ct-classe").value;
+  if (!cid) return;
+  const lignes = await api(`/matieres/coefficients?classe_id=${cid}`);
+  const miennes = peut("enseignant") ? new Set((moi.utilisateur.affectations || []).filter((a) => a.classe_id === Number(cid)).map((a) => a.matiere_id)) : null;
+  const sel = $("#ct-matiere"), avant = sel.value;
+  sel.innerHTML = lignes.filter((l) => !miennes || miennes.has(l.matiere_id)).map((l) => `<option value="${l.matiere_id}">${esc(l.matiere)}</option>`).join("")
+    || `<option value="">Aucune matière attribuée dans cette classe</option>`;
+  if ([...sel.options].some((o) => o.value === avant)) sel.value = avant;
+}
+$("#ct-classe").addEventListener("change", remplirMatieresCahier);
+$("#cl-classe").addEventListener("change", afficherCahier);
+$("#f-cahier").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = formData(ev.target);
+  try {
+    await api("/cahier", { method: "POST", body: JSON.stringify(d) });
+    toast("Cours noté ✔");
+    ev.target.elements.contenu.value = ""; ev.target.elements.travail.value = ""; ev.target.elements.pour_le.value = "";
+    afficherCahier();
+  } catch (err) { toast(err.message, true); }
+});
+$("#cl-liste").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.effacerCahier;
+  if (!id || !confirm("Effacer cette entrée ?")) return;
+  try { await api(`/cahier/${id}`, { method: "DELETE" }); afficherCahier(); } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Statistiques ----------
+async function afficherStatistiques() {
+  const st = await api(`/statistiques?trimestre=${$("#st-periode").value}`);
+  $("#st-resume").innerHTML = `<div class="card kpi"><div class="label">Élèves</div><div class="value">${st.effectif}</div></div>
+    <div class="card kpi"><div class="label">Filles</div><div class="value">${st.filles}</div></div>
+    <div class="card kpi"><div class="label">Garçons</div><div class="value">${st.garcons}</div></div>
+    <div class="card kpi ok"><div class="label">Taux de réussite</div><div class="value">${st.taux_reussite == null ? "–" : st.taux_reussite + " %"}</div></div>`;
+  const f2 = (v) => (v == null ? "–" : v.toFixed(2));
+  table($("#t-stats"), ["Classe", { label: "Effectif", num: true }, { label: "Filles", num: true }, { label: "Garçons", num: true },
+      { label: "Moy. classe", num: true }, { label: "Réussite", num: true }, { label: "Absences", num: true }, { label: "Retards", num: true }],
+    st.classes.map((c) => `<tr><td>${esc(c.classe)}<span class="sub">${esc(c.cycle)}</span></td><td class="num">${c.effectif}</td>
+      <td class="num">${c.filles}</td><td class="num">${c.garcons}${c.non_renseigne ? `<span class="sub">${c.non_renseigne} non renseigné(s)</span>` : ""}</td>
+      <td class="num">${f2(c.moyenne_classe)}${c.moyenne_classe != null ? " / " + c.bareme : ""}</td>
+      <td class="num">${c.taux_reussite == null ? "–" : `${c.taux_reussite} %<span class="sub">${c.reussite} / ${c.notes}</span>`}</td>
+      <td class="num">${c.absences}</td><td class="num">${c.retards}</td></tr>`), "Aucune classe");
+}
+$("#st-periode").addEventListener("change", afficherStatistiques);
+$("#btn-export-stats").addEventListener("click", () =>
+  ouvrirFichier(`/export/statistiques.xlsx?trimestre=${$("#st-periode").value}`, "statistiques.xlsx"));
+
 // ---------- Navigation ----------
 const vues = {
   dashboard: afficherDashboard, classes: afficherClasses, eleves: afficherEleves,
-  paiements: afficherSuivi, notes: chargerGrille, equipe: afficherEquipe,
+  paiements: afficherSuivi, notes: afficherNotes, equipe: afficherEquipe,
   parametres: afficherParametres, absences: afficherAbsences, parents: afficherMessages, caisse: afficherCaisse,
-  emploi: afficherEmploi, paie: afficherPaie,
+  emploi: afficherEmploi, paie: afficherPaie, cahier: afficherCahier, statistiques: afficherStatistiques,
   compte: () => { $("#f-tel").elements.telephone.value = moi.utilisateur.telephone || ""; },
 };
 let vueActive = null;
@@ -3065,7 +3810,7 @@ function ouvrirOnglet(nom) {
 function limiterClassesEnseignant() {
   if (!peut("enseignant")) return;
   const miennes = new Set(moi.utilisateur.affectations.map((a) => a.classe_id));
-  for (const id of ["#n-classe", "#bc-classe", "#a-classe", "#al-classe", "#rc-classe"]) {
+  for (const id of ["#n-classe", "#bc-classe", "#a-classe", "#al-classe", "#rc-classe", "#nm-classe", "#ct-classe"]) {
     const sel = $(id);
     if (!sel) continue;
     [...sel.options].forEach((o) => { if (o.value && !miennes.has(Number(o.value))) o.remove(); });

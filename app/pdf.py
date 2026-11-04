@@ -339,7 +339,7 @@ def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
         Paragraph(f"BULLETIN DE NOTES — {rang_p} {b.periode.upper()}", S_TITRE),
         _tableau_infos([
             ("Élève", b.nom_complet + {"M": " (garçon)", "F": " (fille)"}.get(b.sexe or "", "")),
-            *([("Né(e) le", naissance)] if naissance else []),
+            *([("Né(e) le" if b.date_naissance else "Né(e) à", naissance)] if naissance else []),
             ("Matricule", b.matricule or "–"),
             ("Classe", f"{b.classe} ({b.effectif} élève{'s' if b.effectif > 1 else ''})"),
         ], largeur),

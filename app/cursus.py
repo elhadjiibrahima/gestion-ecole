@@ -175,7 +175,8 @@ def classes_types(session: Session, ecole: Ecole) -> list[tuple[str, str, bool]]
     for code, nom, *_ in CYCLES[pays]:
         niveau = cycles[code].nom if code in cycles else nom
         for cnom in CLASSES[pays][code]:
-            sortie.append((cnom, niveau, normaliser(cnom) in noms))
+            t = normaliser(cnom)       # « 6ème » existe aussi si l'école a « 6ème A », « 6ème B »…
+            sortie.append((cnom, niveau, any(n == t or re.fullmatch(re.escape(t) + r" [a-z0-9]{1,2}", n) for n in noms)))
     return sortie
 
 
