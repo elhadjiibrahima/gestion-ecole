@@ -167,3 +167,27 @@ def test_inscription_avec_tenue_et_premier_mois(client):
         "paiement": {"montant": 10000, "type_frais_id": ins["id"]},
         "autres_paiements": [{"montant": 99999, "type_frais_id": tenue["id"]}]}).status_code == 400
     assert len(client.get("/eleves", headers=h).json()) == avant
+
+
+def test_prix_par_niveau(client):
+    h, cl, ins = ecole(client, "prix@c.sn")
+    cyc = {c["code"]: c["id"] for c in client.get("/cycles", headers=h).json()}
+    tenue = client.post("/frais", headers=h, json={"nom": "Tenue", "montant": 15000, "obligatoire": True}).json()
+    cantine = client.post("/frais", headers=h, json={"nom": "Cantine", "montant": 10000, "obligatoire": False, "mensuel": True}).json()
+    r = client.put(f"/frais/{tenue['id']}/niveaux", headers=h, json=[{"cycle_id": cyc["primaire"], "montant": 12000},
+                                                                     {"cycle_id": cyc["college"], "montant": None}])
+    assert [(x["cycle_id"], x["montant"]) for x in r.json()] == [(cyc["primaire"], 12000)]
+    client.put(f"/frais/{cantine['id']}/niveaux", headers=h, json=[{"cycle_id": cyc["primaire"], "montant": 7500}])
+    a = eleve(client, h, cl, ins, "Awa", "CE1")
+    b = eleve(client, h, cl, ins, "Modou", "6ème", tel="70 000 00 01")
+    la = {l["nom"]: l for l in client.get(f"/eleves/{a['id']}/solde", headers=h).json()["lignes"]}
+    lb = {l["nom"]: l for l in client.get(f"/eleves/{b['id']}/solde", headers=h).json()["lignes"]}
+    assert la["Tenue"]["du"] == 12000 and lb["Tenue"]["du"] == 15000          # primaire / prix par défaut
+    assert {f["nom"]: f["montant"] for f in client.get(f"/eleves/{a['id']}/frais", headers=h).json()}["Cantine"] == 7500
+    client.put(f"/eleves/{a['id']}/frais", headers=h, json=[cantine["id"]])
+    la = {l["nom"]: l for l in client.get(f"/eleves/{a['id']}/solde", headers=h).json()["lignes"]}
+    assert la["Cantine"]["montant_mois"] == 7500
+    assert len(client.get("/frais/niveaux", headers=h).json()) == 2
+    # Gratuit pour un niveau : la ligne disparaît
+    client.put(f"/frais/{tenue['id']}/niveaux", headers=h, json=[{"cycle_id": cyc["primaire"], "montant": 0}])
+    assert "Tenue" not in {l["nom"] for l in client.get(f"/eleves/{a['id']}/solde", headers=h).json()["lignes"]}

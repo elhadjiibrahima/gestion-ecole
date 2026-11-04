@@ -39,7 +39,7 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Modifier un élève ou une classe** (nom, date de naissance, téléphone, changement de classe, frais) ; supprimer une classe créée par erreur
 - **Départ en cours d'année** (motif, date) : l'élève sort des listes et des impayés, son historique reste ; réintégration possible
 - **Paiement mensuel** (par défaut) : chaque classe a une mensualité et des frais d'inscription ; nombre de mois, premier mois et jour limite réglables ; mois réglés affichés au paiement et sur le reçu. Le paiement par tranches reste possible
-- **Plusieurs types de frais** : scolarité + frais d'inscription, cantine, transport… pour tous ou pour les élèves choisis ; chaque paiement indique ce qu'il règle
+- **Plusieurs types de frais** : scolarité + frais d'inscription, cantine, transport… pour tous ou pour les élèves choisis ; chaque paiement indique ce qu'il règle ; **prix par niveau** (tenue, cantine, transport moins chers au primaire…, 0 = gratuit)
 - **Envoi groupé** des rappels par SMS (fournisseur payant à configurer), ou assistant WhatsApp « un clic par parent »
 - **Logo et cachet** de l'école sur les reçus, bulletins, cartes et fiches de paie
 - **Bulletin complet** : moyenne, min et max de la classe et rang par matière, appréciation de l'enseignant, avis du conseil de classe
@@ -111,8 +111,8 @@ Pour essayer le logiciel avec une école déjà remplie, lance (serveur arrêté
 - ou : `python -m app.cli remplir-test`
 
 Seuls le nom de l'école, le pays et le compte du directeur sont demandés. Sont créés : toutes les classes du complexe
-(CI → terminale), 3 élèves par classe avec inscription et mensualités payées, un maître par classe au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, l'emploi du temps complet de chaque
-classe (sans conflit), un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
+(CI → terminale), 3 élèves par classe avec inscription et mensualités payées, un maître par classe au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, un emploi du temps léger pour chaque
+classe (1 h par matière, 2 h pour les grosses matières, sans conflit), des prix de tenue et de cantine par niveau, un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
 les salaires des postes et les notes de la 1re période. Le mot de passe des comptes créés est affiché à la fin.
 
 ## Tests

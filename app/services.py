@@ -245,6 +245,18 @@ def type_inscription(session: Session, ecole_id: int, creer: bool = False):
     return t
 
 
+def prix_frais(session: Session, t, classe: Classe) -> int:
+    """Prix d'un frais pour la classe : celui de son niveau s'il est fixé, sinon le prix par défaut."""
+    from app.cursus import cycle_de
+    from app.models import FraisNiveau
+    cycle = cycle_de(session, classe)
+    if cycle:
+        p = session.exec(select(FraisNiveau).where(FraisNiveau.type_frais_id == t.id, FraisNiveau.cycle_id == cycle.id)).first()
+        if p:
+            return p.montant
+    return t.montant
+
+
 def frais_annexes(session: Session, eleve: Eleve) -> list:
     """Autres frais dus par l'élève cette année : les obligatoires + les facultatifs souscrits."""
     from app.models import SouscriptionFrais, TypeFrais
@@ -307,13 +319,17 @@ def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | Non
         elif t.mensuel:
             debut = debuts.get(t.id)
             applicables = [m for m in mois if not debut or m.date_limite >= date(debut.year, debut.month, 1)]
-            du = t.montant * len(applicables)
-            exigible = t.montant * sum(1 for m in applicables if m.date_limite < aujourd_hui)
+            prix = prix_frais(session, t, classe)
+            du = prix * len(applicables)
+            exigible = prix * sum(1 for m in applicables if m.date_limite < aujourd_hui)
             lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=du, paye=p, reste=max(du - p, 0), mensuel=True,
-                                     montant_mois=t.montant, exigible=exigible, retard=max(exigible - p, 0)))
+                                     montant_mois=prix, exigible=exigible, retard=max(exigible - p, 0)))
         else:
-            lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=t.montant, paye=p, reste=max(t.montant - p, 0),
-                                     exigible=t.montant, retard=max(t.montant - p, 0)))
+            prix = prix_frais(session, t, classe)
+            if prix == 0 and p == 0:
+                continue                  # frais gratuit pour ce niveau
+            lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=prix, paye=p, reste=max(prix - p, 0),
+                                     exigible=prix, retard=max(prix - p, 0)))
     for (tid, ti), (p, _) in par_type.items():   # payé pour un frais qui ne s'applique plus : on le montre quand même
         if tid is not None and tid not in ids_annexes:
             t = session.get(TypeFrais, tid)

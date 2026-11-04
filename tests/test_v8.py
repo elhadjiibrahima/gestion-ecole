@@ -213,7 +213,7 @@ def test_remplir_ecole_de_test(client):
     from app.models import AffectationSaisie
     session = next(app.dependency_overrides[get_session]())
     r = remplir(session, "Complexe Test", "senegal", "Directeur Test", "dir@test-complexe.sn", "motdepasse1", graine=1)
-    assert r["classes"] == 16 and r["eleves"] == 48 and r["creneaux"] > 250
+    assert r["classes"] == 16 and r["eleves"] == 48 and 100 < r["creneaux"] < 250
     h = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": "dir@test-complexe.sn",
                                                                        "password": "motdepasse1"}).json()["access_token"]}
     assert len(client.get("/eleves", headers=h).json()) == 48
@@ -241,7 +241,7 @@ def test_remplir_ecole_de_test(client):
     assert edt and len({(c["jour"], c["debut"]) for c in edt}) == len(edt)
     for nom in ("CP", "6ème", "Terminale S"):
         e = client.get(f"/emploi-du-temps?classe_id={cl[nom]}", headers=h).json()
-        assert len(e) >= 15 and len({(c["jour"], c["debut"]) for c in e}) == len(e)
+        assert len(e) >= 8 and len({(c["jour"], c["debut"]) for c in e}) == len(e)
     pers = client.get("/paie/personnel?mois=2026-11", headers=h).json()
     assert sum(1 for p in pers if p["sans_compte"]) == 3 and all(p["contrat_montant"] for p in pers)
     assert next(p for p in pers if p["nom"] == maths_college["nom"])["heures_prevues"] > 0

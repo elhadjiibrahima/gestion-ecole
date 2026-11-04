@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from app.cursus import regles_classe
 from app.models import (
-    Affectation, Classe, Ecole, Eleve, InscriptionEcole, ModePaiement, Note, Role, SouscriptionFrais, Tiers, TypeFrais,
+    Affectation, Classe, Ecole, Eleve, FraisNiveau, InscriptionEcole, ModePaiement, Note, Role, SouscriptionFrais, Tiers, TypeFrais,
     Utilisateur,
 )
 from app.routers.paie import postes_ecole
@@ -41,13 +41,13 @@ HEURES = [("08:00", "09:00"), ("09:00", "10:00"), ("10:15", "11:15"), ("11:15", 
 
 def _emploi_du_temps(session: Session, ecole_id: int, service: list, hasard: random.Random) -> int:
     """Emploi du temps de la semaine (lundi → vendredi, 6 heures par jour) sans conflit de classe ni de professeur.
-    Heures par semaine : 2 par matière au primaire, sinon selon le coefficient (1 à 3)."""
+    Emploi du temps léger : 1 heure par matière et par semaine (2 si le coefficient est de 4 ou plus)."""
     from app.models import Creneau
     occupe_classe, occupe_prof = set(), set()
     unites = []
     for prof, c, m in service:
         coef = dict((x.id, k) for x, k in matieres_classe(session, c)).get(m.id, 1)
-        nb = 2 if regles_classe(session, c).cycle and regles_classe(session, c).cycle.enseignement == "classe" else min(max(coef, 1), 3)
+        nb = 2 if coef >= 4 else 1            # emploi du temps léger : 1 heure par matière, 2 pour les grosses
         unites += [(prof, c, m)] * nb
     hasard.shuffle(unites)
     unites.sort(key=lambda u: -sum(1 for x in unites if x[0].id == u[0].id))   # les profs les plus chargés d'abord
@@ -203,6 +203,14 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
     cantine = TypeFrais(ecole_id=ecole.id, nom="Cantine", montant=10000, obligatoire=False, mensuel=True, ordre=2)
     transport = TypeFrais(ecole_id=ecole.id, nom="Transport", montant=12500, obligatoire=False, mensuel=True, ordre=3)
     session.add_all([tenue, cantine, transport])
+    session.flush()
+    # Prix selon le niveau : tenue et cantine moins chères au primaire
+    from app.cursus import cycles_ecole
+    for cy in cycles_ecole(session, ecole.id):
+        prix = {"primaire": (12000, 8000), "college": (15000, 10000), "lycee": (18000, 10000)}.get(cy.code)
+        if prix:
+            session.add(FraisNiveau(type_frais_id=tenue.id, cycle_id=cy.id, montant=prix[0]))
+            session.add(FraisNiveau(type_frais_id=cantine.id, cycle_id=cy.id, montant=prix[1]))
     ecole.reduction_fratrie_pct = 10                  # 10 % à partir du 2e enfant
     ong = Tiers(ecole_id=ecole.id, nom="ONG Éducation pour tous", contact="M. Sy")
     session.add_all([ecole, ong])
@@ -233,7 +241,8 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
             session.flush()
             creer_paiement(session, e, c.frais_inscription, hasard.choice(modes), None, None, directeur.id, type_ins.id)
             if hasard.random() < 0.6:
-                creer_paiement(session, e, 15000, hasard.choice(modes), None, None, directeur.id, tenue.id)
+                prix_tenue = next(l.reste for l in calculer_solde(session, e).lignes if l.type_frais_id == tenue.id)
+                creer_paiement(session, e, prix_tenue, hasard.choice(modes), None, None, directeur.id, tenue.id)
             solde = calculer_solde(session, e)
             mois = hasard.choice([0, 1, 1, 2])
             if mois:

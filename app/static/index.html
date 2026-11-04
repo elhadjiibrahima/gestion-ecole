@@ -755,7 +755,8 @@
         <h2>Autres frais</h2>
         <p class="hint">Tenue, fournitures (une fois), cantine, transport (chaque mois)… Les frais d'inscription se règlent dans chaque classe.
           « Pour tous » : dû par chaque élève.
-          Sinon, choisis les élèves concernés dans Élèves → Actions → « Cantine, transport… ».</p>
+          Sinon, choisis les élèves concernés dans Élèves → Actions → « Cantine, transport… ».
+          <b>Prix par niveau</b> : mets un prix dans la colonne du niveau (Primaire, Collège…) puis « Enregistrer ». Case vide : prix par défaut ; 0 : gratuit pour ce niveau.</p>
         <div class="table-wrap"><table id="t-types-frais"></table></div>
         <form id="f-type-frais" class="row" style="align-items:end;margin-top:10px">
           <label style="flex:2">Nom<input name="nom" placeholder="ex : Cantine" required minlength="2" maxlength="40"></label>
@@ -1996,16 +1997,20 @@ $("#f-import").addEventListener("submit", async (ev) => {
 });
 
 // ---------- Inscription (élève + premier paiement) ----------
-let typesFrais = [];
+let typesFrais = [], prixNiveaux = [];
 async function chargerTypesFrais() {
-  try { typesFrais = await api("/frais"); } catch { typesFrais = []; }
+  try { [typesFrais, prixNiveaux] = await Promise.all([api("/frais"), api("/frais/niveaux").catch(() => [])]); }
+  catch { typesFrais = []; prixNiveaux = []; }
   return typesFrais;
 }
+// Prix d'un frais pour un niveau (cycle) : prix du niveau s'il est fixé, sinon le prix par défaut
+const prixPour = (t, cycleId) => prixNiveaux.find((p) => p.type_frais_id === t.id && p.cycle_id === cycleId)?.montant ?? t.montant;
 // Premier paiement à l'inscription : inscription et frais obligatoires (tenue…) cochés d'office, 1er mois au choix
 async function afficherFraisInscription(recharger = true) {
   if (recharger && peut("directeur", "comptable")) await chargerTypesFrais();
   const c = classes.find((x) => x.id === Number($("#i-classe").value));
-  const montantDe = (t) => (t.code === "inscription" ? (c?.frais_inscription || 0) : t.montant);
+  const cyc = c ? reglesClasse(c.id).cycle : null;
+  const montantDe = (t) => (t.code === "inscription" ? (c?.frais_inscription || 0) : prixPour(t, cyc?.id));
   const obligatoires = typesFrais.filter((t) => t.obligatoire && montantDe(t) > 0)
     .sort((a, b) => (b.code === "inscription") - (a.code === "inscription"));
   const mens = c ? (estMensuel() ? mensualiteDe(c) : c.frais_annuels) : 0;
@@ -3351,10 +3356,15 @@ $("#parametres").addEventListener("change", async (ev) => {
 // ---------- Autres frais (cantine, transport…) ----------
 async function afficherTypesFrais() {
   const liste = await chargerTypesFrais();
-  table($("#t-types-frais"), ["Frais", { label: "Montant", num: true }, "Payé", "Qui paie", ""],
-    liste.map((t) => t.code === "inscription" ? `<tr><td><b>${esc(t.nom)}</b></td><td class="num" colspan="3">montant fixé dans chaque classe</td><td></td></tr>` : `<tr data-type-frais="${t.id}">
+  if (!cycles.length) cycles = await api("/cycles").catch(() => []);
+  const niv = [...cycles].sort((a, b) => a.ordre - b.ordre);
+  table($("#t-types-frais"), ["Frais", { label: "Prix par défaut", num: true }, ...niv.map((cy) => ({ label: cy.nom, num: true })), "Payé", "Qui paie", ""],
+    liste.map((t) => t.code === "inscription" ? `<tr><td><b>${esc(t.nom)}</b></td><td class="num" colspan="${niv.length + 3}">montant fixé dans chaque classe</td><td></td></tr>` : `<tr data-type-frais="${t.id}">
       <td><input data-tf="nom" value="${esc(t.nom)}" aria-label="Nom"></td>
-      <td class="num"><input data-tf="montant" type="number" min="0" value="${t.montant}" style="width:110px;text-align:right" aria-label="Montant"></td>
+      <td class="num"><input data-tf="montant" type="number" min="0" value="${t.montant}" style="width:100px;text-align:right" aria-label="Prix par défaut"></td>
+      ${niv.map((cy) => { const p = prixNiveaux.find((x) => x.type_frais_id === t.id && x.cycle_id === cy.id);
+        return `<td class="num"><input data-tf-niveau="${cy.id}" type="number" min="0" value="${p ? p.montant : ""}" placeholder="${t.montant}"
+          title="Prix pour ${esc(cy.nom)} — vide : prix par défaut, 0 : gratuit" style="width:90px;text-align:right" aria-label="Prix ${esc(cy.nom)}"></td>`; }).join("")}
       <td><select data-tf="mensuel"><option value="0">une fois</option><option value="1" ${t.mensuel ? "selected" : ""}>chaque mois</option></select></td>
       <td><select data-tf="obligatoire"><option value="1" ${t.obligatoire ? "selected" : ""}>Tous les élèves</option>
         <option value="0" ${t.obligatoire ? "" : "selected"}>Élèves choisis</option></select></td>
@@ -3368,6 +3378,9 @@ $("#t-types-frais").addEventListener("click", async (ev) => {
       const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-tf="${k}"]`).value;
       await api(`/frais/${d.enregTf}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), montant: Number(v("montant")),
         obligatoire: v("obligatoire") === "1", mensuel: v("mensuel") === "1" }) });
+      const prix = [...tr.querySelectorAll("[data-tf-niveau]")].filter((i) => i.value !== "")
+        .map((i) => ({ cycle_id: Number(i.dataset.tfNiveau), montant: Number(i.value) }));
+      await api(`/frais/${d.enregTf}/niveaux`, { method: "PUT", body: JSON.stringify(prix) });
       toast("Frais modifié ✔");
     }
     if (d.supprTf) {

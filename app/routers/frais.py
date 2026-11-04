@@ -4,7 +4,7 @@ from sqlmodel import Session, func, select
 
 from app.database import get_session
 from app.models import (
-    FraisEleve, Paiement, Role, SouscriptionFrais, TypeFrais, TypeFraisSaisie, Utilisateur,
+    Classe, FraisEleve, FraisNiveau, Paiement, PrixNiveau, Role, SouscriptionFrais, TypeFrais, TypeFraisSaisie, Utilisateur,
 )
 from app.security import GESTION, TOUS, exiger_role
 from app.services import annee_courante, get_eleve
@@ -69,6 +69,8 @@ def supprimer(type_id: int, user: Utilisateur = Depends(exiger_role(Role.directe
     else:
         for s in session.exec(select(SouscriptionFrais).where(SouscriptionFrais.type_frais_id == t.id)).all():
             session.delete(s)
+        for x in session.exec(select(FraisNiveau).where(FraisNiveau.type_frais_id == t.id)).all():
+            session.delete(x)
         session.delete(t)
     session.commit()
 
@@ -83,6 +85,34 @@ def _debut_souscription(session: Session, ecole_id: int):
     return auj.replace(day=1) if mois and auj > mois[0].date_limite.replace(day=1) else None
 
 
+# ---------- Prix par niveau (tenue, cantine, transport…) ----------
+@router.get("/frais/niveaux", response_model=list[FraisNiveau])
+def prix_par_niveau(user: Utilisateur = Depends(exiger_role(*TOUS)), session: Session = Depends(get_session)):
+    ids = [t.id for t in lister(user, session)]
+    return session.exec(select(FraisNiveau).where(FraisNiveau.type_frais_id.in_(ids))).all() if ids else []
+
+
+@router.put("/frais/{type_id}/niveaux", response_model=list[FraisNiveau])
+def fixer_prix_niveaux(type_id: int, prix: list[PrixNiveau], user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                       session: Session = Depends(get_session)):
+    """Prix du frais pour chaque niveau (vide : le prix par défaut s'applique)."""
+    from app.cursus import cycles_ecole
+    t = _get(session, type_id, user.ecole_id)
+    if t.code:
+        raise HTTPException(400, "Le montant de l'inscription se règle dans chaque classe")
+    cycles = {c.id for c in cycles_ecole(session, user.ecole_id)}
+    if any(p.cycle_id not in cycles for p in prix):
+        raise HTTPException(400, "Niveau inconnu")
+    for x in session.exec(select(FraisNiveau).where(FraisNiveau.type_frais_id == t.id)).all():
+        session.delete(x)
+    session.flush()
+    for p in prix:
+        if p.montant is not None:
+            session.add(FraisNiveau(type_frais_id=t.id, cycle_id=p.cycle_id, montant=p.montant))
+    session.commit()
+    return session.exec(select(FraisNiveau).where(FraisNiveau.type_frais_id == t.id)).all()
+
+
 @router.get("/eleves/{eleve_id}/frais", response_model=list[FraisEleve])
 def frais_de_l_eleve(eleve_id: int, user: Utilisateur = Depends(exiger_role(*GESTION)),
                      session: Session = Depends(get_session)):
@@ -90,7 +120,9 @@ def frais_de_l_eleve(eleve_id: int, user: Utilisateur = Depends(exiger_role(*GES
     annee = annee_courante(session, user.ecole_id)
     souscrits = set(session.exec(select(SouscriptionFrais.type_frais_id).where(
         SouscriptionFrais.eleve_id == eleve.id, SouscriptionFrais.annee_scolaire == annee)).all())
-    return [FraisEleve(type_frais_id=t.id, nom=t.nom, montant=t.montant, obligatoire=t.obligatoire, mensuel=t.mensuel,
+    from app.services import prix_frais
+    classe = session.get(Classe, eleve.classe_id)
+    return [FraisEleve(type_frais_id=t.id, nom=t.nom, montant=prix_frais(session, t, classe), obligatoire=t.obligatoire, mensuel=t.mensuel,
                        souscrit=t.obligatoire or t.id in souscrits)
             for t in lister(user, session)]
 

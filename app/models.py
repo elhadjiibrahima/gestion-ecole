@@ -915,6 +915,19 @@ class TypeFraisSaisie(SQLModel):
     mensuel: bool = False
 
 
+class FraisNiveau(SQLModel, table=True):
+    """Prix d'un frais pour un niveau (ex : tenue 12 000 au primaire, 15 000 au lycée). Sans ligne : prix par défaut."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    type_frais_id: int = Field(foreign_key="typefrais.id", index=True)
+    cycle_id: int = Field(foreign_key="cycle.id", index=True)
+    montant: int = Field(ge=0)
+
+
+class PrixNiveau(SQLModel):
+    cycle_id: int
+    montant: Optional[int] = Field(default=None, ge=0)     # vide : prix par défaut
+
+
 class SouscriptionFrais(SQLModel, table=True):
     """Élève inscrit à un frais facultatif (cantine, transport…) pour une année."""
     id: Optional[int] = Field(default=None, primary_key=True)
