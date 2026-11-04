@@ -40,12 +40,17 @@ def inscrire_eleve(
     eleve = Eleve.model_validate(data.model_dump(exclude={"paiement"}), update={"ecole_id": user.ecole_id})
     session.add(eleve)
     _attribuer_matricule(session, eleve)
-    p = data.paiement
-    paiement = creer_paiement(session, eleve, p.montant, p.mode, p.reference, None, user.id, p.type_frais_id)
-    session.commit()  # si le paiement est refusé, rien n'est enregistré
+    import uuid
+    groupe = uuid.uuid4().hex[:12] if data.autres_paiements else None
+    crees = []
+    for p in [data.paiement, *data.autres_paiements]:
+        crees.append(creer_paiement(session, eleve, p.montant, data.paiement.mode, data.paiement.reference, None, user.id,
+                                    p.type_frais_id, groupe=groupe))
+    session.commit()  # si un paiement est refusé, rien n'est enregistré
     session.refresh(eleve)
-    session.refresh(paiement)
-    return EleveInscrit(eleve=eleve, paiement=paiement)
+    for p in crees:
+        session.refresh(p)
+    return EleveInscrit(eleve=eleve, paiement=crees[0], paiements=crees, groupe=groupe)
 
 
 @router.get("", response_model=list[Eleve])

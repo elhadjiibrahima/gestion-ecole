@@ -149,3 +149,21 @@ def test_cloture_prevision_rapprochement_bulletin_retenu(client):
     assert esp["bulletins_retenus"] == (retard > 0)
     if retard:
         assert client.get("/parents/bulletin.pdf?trimestre=1", headers=hp).status_code == 403
+
+
+def test_inscription_avec_tenue_et_premier_mois(client):
+    h, cl, ins = ecole(client, "ins@c.sn")
+    tenue = client.post("/frais", headers=h, json={"nom": "Tenue", "montant": 15000, "obligatoire": True}).json()
+    r = client.post("/eleves", headers=h, json={"nom": "Ka", "prenom": "Awa", "classe_id": cl["CE1"]["id"],
+        "paiement": {"montant": 10000, "type_frais_id": ins["id"], "mode": "wave", "reference": "W1"},
+        "autres_paiements": [{"montant": 15000, "type_frais_id": tenue["id"]}, {"montant": 20000}]}).json()
+    assert len(r["paiements"]) == 3 and r["groupe"] and all(p["mode"] == "wave" for p in r["paiements"])
+    assert client.get(f"/paiements/groupe/{r['groupe']}/recu.pdf", headers=h).content.startswith(b"%PDF")
+    s = client.get(f"/eleves/{r['eleve']['id']}/solde", headers=h).json()
+    assert {l["nom"]: l["reste"] for l in s["lignes"]}["Tenue"] == 0
+    # Une ligne de trop : rien n'est enregistré, pas même l'élève
+    avant = len(client.get("/eleves", headers=h).json())
+    assert client.post("/eleves", headers=h, json={"nom": "X", "prenom": "Y", "classe_id": cl["CE1"]["id"],
+        "paiement": {"montant": 10000, "type_frais_id": ins["id"]},
+        "autres_paiements": [{"montant": 99999, "type_frais_id": tenue["id"]}]}).status_code == 400
+    assert len(client.get("/eleves", headers=h).json()) == avant

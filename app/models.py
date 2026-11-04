@@ -299,11 +299,14 @@ class PaiementInitial(SQLModel):
 
 class EleveCreate(EleveBase):
     paiement: PaiementInitial
+    autres_paiements: list[PaiementInitial] = []   # payés en même temps (tenue, 1er mois…) : un seul reçu
 
 
 class EleveInscrit(SQLModel):
     eleve: Eleve
     paiement: Paiement
+    paiements: list[Paiement] = []
+    groupe: Optional[str] = None
 
 
 

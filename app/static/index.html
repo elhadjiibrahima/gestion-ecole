@@ -162,6 +162,13 @@
     background: #fff; padding: 8px 10px; cursor: pointer; font-size: .9rem; }
   .suggestion:hover { background: var(--primary-light); }
   .suggestion span { display: block; color: var(--muted); font-size: .8rem; }
+  .i-ligne { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
+  .i-ligne label { flex-direction: row; gap: 6px; align-items: center; color: var(--text); font-size: .9rem; }
+  .i-ligne label input { width: auto; }
+  .i-ligne input[type=number] { width: 120px; text-align: right; }
+  .g-ajouts, .g-famille { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+  .g-ajouts .btn, .g-famille .btn { padding: 6px 10px; font-size: .85rem; }
+  .g-famille { border-top: 1px dashed var(--border); padding-top: 8px; font-size: .85rem; color: var(--muted); }
   .g-eleve { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
   .g-eleve.frere { background: #fafafa; }
   table.g-lignes td { vertical-align: top; padding: 6px 4px; }
@@ -435,8 +442,8 @@
             <fieldset style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;gap:10px;margin:0">
               <legend style="font-size:.85rem;font-weight:600;padding:0 4px">Premier paiement (obligatoire)</legend>
               <div id="i-frais" class="hint" style="font-size:.85rem;margin:0"></div>
-              <label id="i-pour-zone" hidden>Pour<select name="type_frais_id" id="i-pour"></select></label>
-              <label>Montant versé<input name="montant" type="number" min="1" required></label>
+              <div id="i-lignes"></div>
+              <div class="g-total" style="margin:0;padding:4px 0"><span>Total versé</span><b id="i-total">0</b></div>
               <div class="row">
                 <label>Mode
                   <select name="mode" class="sel-modes"></select>
@@ -1429,7 +1436,7 @@ function deconnexion(ev) {
   store.set(null);
   moi = null;
   // On recharge la page : rien de l'utilisateur précédent ne reste affiché (ordinateur partagé)
-  if (etaitConnecte) { location.reload(); return; }
+  if (etaitConnecte) { try { history.replaceState(null, "", location.pathname); } catch {} location.reload(); return; }
   afficherAuth("login");
 }
 
@@ -1974,33 +1981,33 @@ async function chargerTypesFrais() {
   try { typesFrais = await api("/frais"); } catch { typesFrais = []; }
   return typesFrais;
 }
-async function afficherFraisInscription(recharger = true, reinitialiser = recharger) {
+// Premier paiement à l'inscription : inscription et frais obligatoires (tenue…) cochés d'office, 1er mois au choix
+async function afficherFraisInscription(recharger = true) {
   if (recharger && peut("directeur", "comptable")) await chargerTypesFrais();
   const c = classes.find((x) => x.id === Number($("#i-classe").value));
-  const sel = $("#i-pour");
-  const avant = sel.value;
-  // L'inscription (montant de la classe) d'abord, puis la scolarité et les autres frais obligatoires
   const montantDe = (t) => (t.code === "inscription" ? (c?.frais_inscription || 0) : t.montant);
   const obligatoires = typesFrais.filter((t) => t.obligatoire && montantDe(t) > 0)
     .sort((a, b) => (b.code === "inscription") - (a.code === "inscription"));
-  const insc = obligatoires.find((t) => t.code === "inscription");
-  const sco = `<option value="">Scolarité${estMensuel() && c ? ` (mensualité ${argent(mensualiteDe(c))})` : ""}</option>`;
-  const autres = obligatoires.map((t) => `<option value="${t.id}" data-max="${montantDe(t)}">${esc(t.nom)} (${argent(montantDe(t))})</option>`);
-  sel.innerHTML = insc ? autres[0] + sco + autres.slice(1).join("") : sco + autres.join("");
-  if (reinitialiser || ![...sel.options].some((o) => o.value === avant)) sel.selectedIndex = 0;
-  else sel.value = avant;
-  $("#i-pour-zone").hidden = !obligatoires.length;
-  const opt = sel.selectedOptions[0];
-  const max = opt?.dataset.max ? Number(opt.dataset.max) : c?.frais_annuels;
-  const montant = $("#f-eleve").elements.montant;
+  const mens = c ? (estMensuel() ? mensualiteDe(c) : c.frais_annuels) : 0;
+  const lignes = [...obligatoires.map((t) => ({ id: t.id, nom: t.nom, montant: montantDe(t), coche: true, mensuel: t.mensuel })),
+    ...(mens ? [{ id: "", nom: estMensuel() ? "Scolarité — 1er mois" : "Scolarité", montant: mens, coche: !obligatoires.length }] : [])];
   $("#i-frais").textContent = c ? (estMensuel() ? `${c.nom} : ${argent(mensualiteDe(c))} par mois (${argent(c.frais_annuels)} sur l'année)`
-      : `Scolarité de ${c.nom} : ${argent(c.frais_annuels)}`) +
-    (obligatoires.length ? ` + ${obligatoires.map((t) => `${t.nom} ${argent(montantDe(t))}`).join(", ")}` : "") : "";
-  montant.max = max ?? "";
-  montant.placeholder = max != null ? "Maximum " + argent(max) : "";
+    : `Scolarité de ${c.nom} : ${argent(c.frais_annuels)}`) : "";
+  $("#i-lignes").innerHTML = lignes.map((l) => `<div class="i-ligne"><label><input type="checkbox" data-i-coche ${l.coche ? "checked" : ""}> ${esc(l.nom)}${
+      l.mensuel ? " (1 mois)" : ""}</label>
+    <input type="number" min="0" data-i-frais="${l.id}" value="${l.montant}" max="${l.id === "" && !estMensuel() ? c.frais_annuels : l.montant}"></div>`).join("");
+  majTotalInscription();
 }
-$("#i-classe").addEventListener("change", () => afficherFraisInscription(false, true));
-$("#i-pour").addEventListener("change", () => afficherFraisInscription(false));
+function majTotalInscription() {
+  const t = [...document.querySelectorAll(".i-ligne")].filter((d) => d.querySelector("[data-i-coche]").checked)
+    .reduce((s, d) => s + Number(d.querySelector("[data-i-frais]").value || 0), 0);
+  $("#i-total").textContent = argent(t);
+}
+$("#i-lignes").addEventListener("input", (ev) => {
+  if (ev.target.matches("[data-i-frais]")) ev.target.closest(".i-ligne").querySelector("[data-i-coche]").checked = Number(ev.target.value) > 0;
+  majTotalInscription();
+});
+$("#i-classe").addEventListener("change", () => afficherFraisInscription(false));
 
 $("#f-eleve").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -2009,16 +2016,23 @@ $("#f-eleve").addEventListener("submit", async (ev) => {
     nom: d.nom, prenom: d.prenom, classe_id: d.classe_id,
     date_naissance: d.date_naissance, telephone_parent: d.telephone_parent,
     sexe: d.sexe || null, lieu_naissance: d.lieu_naissance, nom_tuteur: d.nom_tuteur, adresse: d.adresse,
-    paiement: { montant: d.montant, mode: d.mode, reference: d.reference, type_frais_id: d.type_frais_id ?? null },
   };
+  const payes = [...document.querySelectorAll(".i-ligne")].filter((x) => x.querySelector("[data-i-coche]").checked)
+    .map((x) => { const i = x.querySelector("[data-i-frais]"); return { type_frais_id: i.dataset.iFrais ? Number(i.dataset.iFrais) : null, montant: Number(i.value || 0) }; })
+    .filter((x) => x.montant > 0);
+  if (!payes.length) return toast("Coche au moins un frais payé à l'inscription", true);
+  corps.paiement = { ...payes[0], mode: d.mode, reference: d.reference };
+  corps.autres_paiements = payes.slice(1);
   try {
     const r = await api("/eleves", { method: "POST", body: JSON.stringify(corps) });
+    const total = r.paiements.reduce((t, p) => t + p.montant, 0);
     toast(`${r.eleve.prenom} ${r.eleve.nom} inscrit(e) ✔ Matricule ${r.eleve.matricule}`);
     $("#i-recu").innerHTML = `<div class="recu-pret">
-      <span>${esc(r.eleve.prenom)} ${esc(r.eleve.nom)} — reçu <b>${esc(r.paiement.numero_recu)}</b> · ${argent(r.paiement.montant)}</span>
-      <button class="btn" data-recu="${r.paiement.id}">📄 Reçu</button></div>`;
+      <span>${esc(r.eleve.prenom)} ${esc(r.eleve.nom)} — reçu <b>${esc(r.paiement.numero_recu)}</b> · ${argent(total)}</span>
+      <button class="btn" ${r.groupe ? `data-recu-groupe="${r.groupe}"` : `data-recu="${r.paiement.id}"`}>📄 Reçu</button></div>`;
     [...ev.target.elements].forEach((el) => { if (el.tagName === "INPUT") el.value = ""; });
     ev.target.elements.sexe.value = "";
+    afficherFraisInscription(false);
     rafraichir();
   } catch (err) { toast(err.message, true); }
 });
@@ -2068,10 +2082,14 @@ $("#g-classe").addEventListener("change", async () => {
 $("#g-eleve").addEventListener("change", () => { if ($("#g-eleve").value) ouvrirGuichet(Number($("#g-eleve").value)); });
 
 async function ouvrirGuichet(id, garderRecu = false) {
-  const [famille, frais] = await Promise.all([api(`/eleves/${id}/famille`), api(`/eleves/${id}/frais`)]);
-  guichet = { eleve: id, famille, facultatifs: {} };
-  guichet.facultatifs[id] = frais.filter((f) => !f.obligatoire && !f.souscrit);
+  const garder = guichet.eleve === id;           // même élève : on garde les frères et sœurs déjà ajoutés
+  const affiches = garder ? guichet.affiches : new Set([id]);
+  const famille = await api(`/eleves/${id}/famille`);
+  const frais = await Promise.all([...affiches].map((e) => api(`/eleves/${e}/frais`)));
+  guichet = { eleve: id, famille, affiches, facultatifs: {} };
+  [...affiches].forEach((e, i) => (guichet.facultatifs[e] = frais[i].filter((f) => !f.obligatoire && !f.souscrit)));
   if (!garderRecu) $("#g-recu").innerHTML = "";
+  if (!garder) { etatGuichet = {}; $("#g-panier").innerHTML = ""; }
   dessinerGuichet();
   $("#f-guichet").hidden = false;
   $("#guichet").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2099,12 +2117,20 @@ function raccourcis(s, l) {
   return r.filter(([, v]) => v > 0 && !vus.has(v) && vus.add(v));
 }
 
+// Ce qui est coché / tapé au guichet : gardé quand on ajoute un frais ou un frère
+let etatGuichet = {};
+function memoriserGuichet() {
+  for (const l of lignesGuichet()) etatGuichet[l.cle] = { coche: l.coche, montant: l.tr.querySelector("[data-g-valeur]").value };
+}
 function dessinerGuichet() {
-  const blocs = guichet.famille.map((s, n) => {
+  memoriserGuichet();
+  const montres = guichet.famille.filter((s) => guichet.affiches.has(s.eleve_id));
+  const autres = guichet.famille.filter((s) => !guichet.affiches.has(s.eleve_id));
+  const blocs = montres.map((s, n) => {
     const lignes = s.lignes.filter((l) => l.reste > 0);
+    const reglees = s.lignes.filter((l) => l.du > 0 && l.reste === 0);
     const fac = guichet.facultatifs[s.eleve_id] || [];
     return `<div class="g-eleve ${n ? "frere" : ""}">
-      ${n === 1 ? `<div class="hint" style="margin:10px 0 4px">👪 Même famille (même téléphone) :</div>` : ""}
       <div class="toolbar" style="justify-content:space-between;margin:0 0 4px">
         <div><button class="link" data-dossier="${s.eleve_id}"><b>${esc(s.nom_complet)}</b></button> · ${esc(s.classe)}
           ${s.paye_jusqua ? `<span class="badge ok">payé jusqu'à ${esc(s.paye_jusqua)}</span>` : ""}
@@ -2127,17 +2153,29 @@ function dessinerGuichet() {
             <div class="chips-montant">${raccourcis(s, l).map(([t, v]) => `<button type="button" data-g-montant="${v}">${esc(t)} <b>${argent(v)}</b></button>`).join("")}</div></td>
           <td class="num"><input type="number" min="0" max="${l.reste}" data-g-valeur placeholder="0" style="width:120px;text-align:right"></td></tr>`;
       }).join("")}</table>` : `<p class="hint" style="margin:4px 0">✔ Rien à payer pour l'instant</p>`}
-      ${fac.length ? `<div class="hint" style="margin:4px 0 0">Ajouter : ${fac.map((f) => `<button type="button" class="link" data-g-ajout="${s.eleve_id}:${f.type_frais_id}">+ ${esc(f.nom)} (${argent(f.montant)}${f.mensuel ? "/mois" : ""})</button>`).join(" · ")}</div>` : ""}
+      ${reglees.length ? `<div class="hint" style="margin:2px 0">✔ Déjà réglé : ${reglees.map((l) => esc(l.nom)).join(", ")}</div>` : ""}
+      ${fac.length ? `<div class="g-ajouts">${fac.map((f) => `<button type="button" class="btn secondary" data-g-ajout="${s.eleve_id}:${f.type_frais_id}">+ ${esc(f.nom)} <small>${argent(f.montant)}${f.mensuel ? "/mois" : ""}</small></button>`).join("")}</div>` : ""}
+      ${n ? `<button type="button" class="link danger" data-g-retirer="${s.eleve_id}" style="margin-top:4px">Retirer ${esc(s.nom_complet.split(" ")[0])} de ce paiement</button>` : ""}
     </div>`;
   });
-  $("#g-panier").innerHTML = blocs.join("");
+  const famille = autres.length ? `<div class="g-famille">👪 Même famille (même téléphone) : ${autres.map((s) =>
+    `<button type="button" class="btn secondary" data-g-frere="${s.eleve_id}">+ ${esc(s.nom_complet)} <small>${esc(s.classe)}${s.reste_a_payer ? " · reste " + argent(s.reste_a_payer) : " · à jour"}</small></button>`).join("")}</div>` : "";
+  $("#g-panier").innerHTML = blocs.join("") + famille;
+  // On remet ce qui était coché et tapé
+  for (const l of lignesGuichet()) {
+    const e = etatGuichet[l.cle];
+    if (!e) continue;
+    l.tr.querySelector("[data-g-coche]").checked = e.coche;
+    l.tr.querySelector("[data-g-valeur]").value = e.montant;
+    l.tr.querySelectorAll("[data-g-montant]").forEach((b) => b.classList.toggle("actif", e.montant !== "" && b.dataset.gMontant === e.montant));
+  }
   majTotalGuichet();
 }
 
 function lignesGuichet() {
   return [...document.querySelectorAll("[data-g-ligne]")].map((tr) => {
     const [e, t, ti] = tr.dataset.gLigne.split("|");
-    return { tr, eleve_id: Number(e), type_frais_id: t ? Number(t) : null, tiers_id: ti ? Number(ti) : null,
+    return { tr, cle: tr.dataset.gLigne, eleve_id: Number(e), type_frais_id: t ? Number(t) : null, tiers_id: ti ? Number(ti) : null,
              coche: tr.querySelector("[data-g-coche]").checked, montant: Number(tr.querySelector("[data-g-valeur]").value || 0),
              max: Number(tr.querySelector("[data-g-valeur]").max) };
   });
@@ -2160,15 +2198,32 @@ $("#g-panier").addEventListener("click", async (ev) => {
     tr.querySelectorAll("[data-g-montant]").forEach((b) => b.classList.toggle("actif", b.dataset.gMontant === v));
     return majTotalGuichet();
   }
-  const d = ev.target.dataset;
+  const cible = ev.target.closest("button") || ev.target;   // un clic sur le petit texte du bouton compte aussi
+  const d = cible.dataset;
   const zone = (id) => $(`[data-g-panneau="${id}"]`);
   try {
     if (d.gAjout) {
       const [e, t] = d.gAjout.split(":").map(Number);
+      cible.disabled = true;
       const actuels = (await api(`/eleves/${e}/frais`)).filter((f) => !f.obligatoire && f.souscrit).map((f) => f.type_frais_id);
       await api(`/eleves/${e}/frais`, { method: "PUT", body: JSON.stringify([...actuels, t]) });
-      toast("Frais ajouté ✔");
-      return ouvrirGuichet(guichet.eleve);
+      memoriserGuichet();
+      await rafraichirEleveGuichet(e);
+      // la nouvelle ligne arrive cochée avec le premier montant proposé (1 mois)
+      const tr = $(`[data-g-ligne="${e}|${t}|"]`);
+      tr?.querySelector("[data-g-montant]")?.click();
+      return;
+    }
+    if (d.gFrere) {
+      memoriserGuichet();
+      guichet.affiches.add(Number(d.gFrere));
+      await rafraichirEleveGuichet(Number(d.gFrere));
+      return;
+    }
+    if (d.gRetirer) {
+      memoriserGuichet();
+      guichet.affiches.delete(Number(d.gRetirer));
+      return dessinerGuichet();
     }
     if (d.gFrais) {
       const liste = (await api(`/eleves/${d.gFrais}/frais`)).filter((f) => !f.obligatoire);
@@ -2207,6 +2262,14 @@ $("#g-panier").addEventListener("click", async (ev) => {
     }
   } catch (err) { toast(err.message, true); }
 });
+// Met à jour un seul élève du guichet (solde et frais au choix) sans perdre le reste
+async function rafraichirEleveGuichet(id) {
+  const [famille, frais] = await Promise.all([api(`/eleves/${guichet.eleve}/famille`), api(`/eleves/${id}/frais`)]);
+  guichet.famille = famille;
+  guichet.facultatifs[id] = frais.filter((f) => !f.obligatoire && !f.souscrit);
+  dessinerGuichet();
+}
+
 $("#g-panier").addEventListener("input", (ev) => {
   if (ev.target.matches("[data-g-valeur]")) {
     const tr = ev.target.closest("tr");
@@ -2223,6 +2286,8 @@ $("#g-panier").addEventListener("submit", async (ev) => {
     if (f.dataset.gFormFrais) {
       await api(`/eleves/${f.dataset.gFormFrais}/frais`, { method: "PUT", body: JSON.stringify([...f.querySelectorAll("input:checked")].map((c) => Number(c.value))) });
       toast("Frais de l'élève enregistrés ✔");
+      memoriserGuichet();
+      return rafraichirEleveGuichet(Number(f.dataset.gFormFrais));
     } else if (f.dataset.gFormPromesse) {
       await api("/promesses", { method: "POST", body: JSON.stringify({ ...d, eleve_id: Number(f.dataset.gFormPromesse) }) });
       toast("Promesse notée ✔ Le parent sera relancé ce jour-là");
@@ -2255,6 +2320,8 @@ $("#f-guichet").addEventListener("submit", async (ev) => {
         <button class="btn" data-recu-groupe="${r.groupe}">📄 Imprimer le reçu</button>
         ${r.lien_whatsapp ? `<a class="btn wa" href="${esc(r.lien_whatsapp)}" target="_blank" rel="noopener" data-recu-wa="${r.paiements[0].eleve_id}">Envoyer au parent (WhatsApp)</a>` : ""}</div>`;
       ev.target.elements.reference.value = "";
+      etatGuichet = {};
+      $("#g-panier").innerHTML = "";
       await ouvrirGuichet(guichet.eleve, true);
     }
     if (vueActive === "paiements") afficherSuivi();
@@ -4313,6 +4380,7 @@ document.querySelectorAll("#groupes button").forEach((g) => g.addEventListener("
 function ouvrirOnglet(nom) {
   if (vueActive === "notes" && nom !== "notes" && grilleModifiee) enregistrerGrille({ silencieux: true });
   vueActive = nom;
+  try { history.replaceState(null, "", "#" + nom); } catch {}   // au rechargement, on revient sur cet écran
   majMenu(nom);
   document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === nom));
   document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("active", s.id === nom));
@@ -4448,7 +4516,9 @@ async function demarrer(ongletDemande) {
   $("#auth").hidden = true;
   $("#appli").hidden = false;
   const premier = [...document.querySelectorAll("nav button[data-tab]")].find((b) => !b.hidden).dataset.tab;
-  ouvrirOnglet(ongletDemande && !$(`nav button[data-tab=${ongletDemande}]`).hidden ? ongletDemande : premier);
+  ongletDemande ||= decodeURIComponent(location.hash.slice(1));
+  const permis = (t) => t && /^[a-z]+$/.test(t) && $(`nav button[data-tab=${t}]`) && !$(`nav button[data-tab=${t}]`).hidden;
+  ouvrirOnglet(permis(ongletDemande) ? ongletDemande : premier);
 }
 
 demarrer().then(() => { majBandeau(); synchroniser(); });
