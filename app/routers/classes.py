@@ -6,7 +6,7 @@ from app.models import Classe, ClasseCreate, Ecole, Eleve, Role, Utilisateur
 from app.pdf import en_tete_pdf, pdf_bulletins, pdf_etat_paiements
 from app.security import GESTION, TOUS, exiger_role
 from app.models import ResultatAnnuel
-from app.services import bulletins_classe, get_classe, resultats_annuels, soldes_ecole, type_inscription
+from app.services import bulletins_classe, get_classe, resultats_annuels, soldes_ecole, trier_classes, type_inscription
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 
@@ -39,9 +39,7 @@ def lister_classes(
     user: Utilisateur = Depends(exiger_role(*TOUS)),
     session: Session = Depends(get_session),
 ):
-    return session.exec(
-        select(Classe).where(Classe.ecole_id == user.ecole_id).order_by(Classe.nom)
-    ).all()
+    return trier_classes(session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all())
 
 
 @router.patch("/{classe_id}", response_model=Classe)

@@ -25,7 +25,7 @@ def test_inscription_exige_un_paiement(client, dir_headers, setup):
     assert len(client.get("/eleves", headers=dir_headers).json()) == 1
     r = client.post("/eleves", headers=dir_headers, json={
         **base, "paiement": {"montant": 150000, "mode": "orange_money", "reference": "OM1"}}).json()
-    assert r["paiement"]["numero_recu"].endswith("000002") and r["paiement"]["eleve_id"] == r["eleve"]["id"]
+    assert r["paiement"]["numero_recu"].endswith("-1-00002") and r["paiement"]["eleve_id"] == r["eleve"]["id"]
     solde = client.get(f"/eleves/{r['eleve']['id']}/solde", headers=dir_headers).json()
     assert solde["total_paye"] == 150000 and solde["statut"] == "partiel"
 
@@ -43,7 +43,7 @@ def test_paiements_solde_et_impayes(client, dir_headers, setup):
     _, eleve = setup
     p = client.post("/paiements", headers=dir_headers, json={
         "eleve_id": eleve["id"], "montant": 200000, "mode": "orange_money", "reference": "OM123"}).json()
-    assert p["numero_recu"].startswith("R") and p["numero_recu"].endswith("000002")
+    assert p["numero_recu"].startswith("R") and p["numero_recu"].endswith("-1-00002")
     client.post("/paiements", headers=dir_headers, json={"eleve_id": eleve["id"], "montant": 100000})
 
     solde = client.get(f"/eleves/{eleve['id']}/solde", headers=dir_headers).json()

@@ -14,6 +14,7 @@ from app.pdf import en_tete_pdf
 from app.routers.paiements import details_paiements
 from app.security import GESTION, PEDAGOGIE, exiger_role
 from app.services import bulletins_classe, matieres_ecole, soldes_ecole
+from app.services import trier_classes
 
 router = APIRouter(prefix="/export", tags=["Exports"])
 
@@ -111,7 +112,7 @@ def export_notes(
     ecole = session.get(Ecole, user.ecole_id)
     matieres = [m.nom for m in matieres_ecole(session, user.ecole_id)]
     wb = Workbook()
-    classes = session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id).order_by(Classe.nom)).all()
+    classes = trier_classes(session.exec(select(Classe).where(Classe.ecole_id == user.ecole_id)).all())
     for classe in classes:
         bulletins = bulletins_classe(session, classe, trimestre)
         autres = sorted({l.matiere for b in bulletins for l in b.matieres} - set(matieres))

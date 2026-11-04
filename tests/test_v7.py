@@ -364,3 +364,22 @@ def test_paiement_mensuel_et_inscription(client, dir_headers):
     r2 = client.post("/eleves", headers=h, json={"nom": "Sow", "prenom": "Mo", "classe_id": c2["id"],
                                                  "paiement": {"montant": 30000}}).json()
     assert [l["nom"] for l in client.get(f"/eleves/{r2['eleve']['id']}/solde", headers=h).json()["lignes"]] == ["Scolarité"]
+
+
+def test_numeros_recus_par_ecole_et_tri_des_classes(client):
+    from tests.conftest import creer_ecole
+    h1, h2 = creer_ecole(client, "A", "a@a.gn"), creer_ecole(client, "B", "b@b.gn")
+    for h in (h1, h2):
+        for nom in ["10ème A", "7ème B", "CM1", "7ème A", "8ème A", "CP1"]:
+            client.post("/classes", headers=h, json={"nom": nom, "niveau": "X", "mensualite": 1000})
+    assert [c["nom"] for c in client.get("/classes", headers=h1).json()] == ["CP1", "CM1", "7ème A", "7ème B", "8ème A", "10ème A"]
+    c1 = client.get("/classes", headers=h1).json()[0]["id"]
+    c2 = client.get("/classes", headers=h2).json()[0]["id"]
+    r1 = client.post("/eleves", headers=h1, json={"nom": "A", "prenom": "B", "classe_id": c1, "paiement": {"montant": 1000}}).json()
+    r2 = client.post("/eleves", headers=h2, json={"nom": "A", "prenom": "B", "classe_id": c2, "paiement": {"montant": 1000}}).json()
+    assert r1["paiement"]["numero_recu"].endswith("-00001") and r2["paiement"]["numero_recu"].endswith("-00001")
+    assert r1["paiement"]["numero_recu"] != r2["paiement"]["numero_recu"]
+    # Passage : 7ème B monte en 8ème A (pas de 8ème B), CP1 n'a pas de CP2 → à vérifier par le directeur
+    p = {x["classe"]: x["vers_classe_id"] for x in client.get("/annee/proposition", headers=h1).json()["passages"]}
+    noms = {c["id"]: c["nom"] for c in client.get("/classes", headers=h1).json()}
+    assert noms[p["7ème A"]] == "8ème A" and noms[p["7ème B"]] == "8ème A" and p["CP1"] is None and p["10ème A"] is None

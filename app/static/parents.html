@@ -176,7 +176,10 @@ async function charger() {
     <div class="bar"><div style="width:${pct}%"></div></div>
     <div class="ligne"><span>Reste à payer</span><span class="grand" style="color:${s.reste_a_payer ? "var(--bad)" : "var(--ok)"}">${s.reste_a_payer ? argent(s.reste_a_payer) : "✔ Tout est payé"}</span></div>
     ${s.retard ? `<div class="ligne"><span class="badge bad">⚠ En retard</span><b style="color:var(--bad)">${argent(s.retard)}</b></div>` : ""}
-    ${s.echeances.length ? `<h2 style="margin-top:12px;font-size:.92rem">Échéancier</h2>` + s.echeances.map((e) => `
+    ${(s.lignes || []).length > 1 ? `<h2 style="margin-top:12px;font-size:.92rem">Détail des frais</h2>` + s.lignes.map((l) => `
+      <div class="ligne"><span>${esc(l.nom)}<br><span class="muted">payé ${argent(l.paye)} sur ${argent(l.du)}</span></span>
+        <span class="badge ${l.reste ? "bad" : "ok"}">${l.reste ? "Reste " + argent(l.reste) : "Réglé"}</span></div>`).join("") : ""}
+    ${s.echeances.length ? `<h2 style="margin-top:12px;font-size:.92rem">${s.echeances.length > 4 ? "Scolarité mois par mois" : "Échéancier"}</h2>` + s.echeances.map((e) => `
       <div class="ligne"><span>${esc(e.nom)}<br><span class="muted">avant le ${dateFr(e.date_limite)} · ${argent(e.montant)}</span></span>
         <span class="badge ${{ payee: "ok", en_retard: "bad", a_venir: "info" }[e.statut]}">${{ payee: "Payée", en_retard: "Reste " + argent(e.reste), a_venir: e.paye ? "Reste " + argent(e.reste) : "À venir" }[e.statut]}</span></div>`).join("") : ""}
     <p class="muted" style="margin:8px 0 0">Frais de l'année : ${argent(s.frais_annuels)}</p>`;

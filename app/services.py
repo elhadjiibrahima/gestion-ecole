@@ -1,4 +1,5 @@
 """Logique métier partagée : accès limité à l'école, soldes, bulletins."""
+import re
 from datetime import date
 
 from fastapi import HTTPException
@@ -44,6 +45,23 @@ def etat_abonnement(ecole: Ecole):
 
 
 # ---------- Année scolaire ----------
+def cle_classe(nom: str) -> tuple:
+    """Tri naturel : CP1, CP2, CE1… puis 7ème A, 8ème A… 10ème A (et pas 10ème avant 7ème)."""
+    n = (nom or "").strip().lower()
+    for i, p in enumerate(PRIMAIRE):
+        if n.startswith(p):
+            return (0, i, n)
+    m = re.search(r"\d+", n)
+    return (1, int(m.group()), n) if m else (2, 0, n)
+
+
+PRIMAIRE = ["maternelle", "petite", "moyenne", "grande", "cp1", "cp2", "ce1", "ce2", "cm1", "cm2", "cp", "ce", "cm"]
+
+
+def trier_classes(classes: list) -> list:
+    return sorted(classes, key=lambda c: cle_classe(c.nom))
+
+
 def annee_courante(session: Session, ecole_id: int) -> str:
     return session.get(Ecole, ecole_id).annee_scolaire
 
@@ -101,7 +119,11 @@ def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference
                         annee_scolaire=annee_courante(session, eleve.ecole_id))
     session.add(paiement)
     session.flush()
-    paiement.numero_recu = f"R{date.today().year}-{paiement.id:06d}"
+    # Numérotation propre à l'école et à l'année : R2026-1-00001, R2026-1-00002…
+    prefixe = f"R{date.today().year}-{eleve.ecole_id}-"
+    dernier = session.exec(select(func.max(Paiement.numero_recu)).join(Eleve, Eleve.id == Paiement.eleve_id)
+                           .where(Eleve.ecole_id == eleve.ecole_id, Paiement.numero_recu.like(prefixe + "%"))).one()
+    paiement.numero_recu = f"{prefixe}{(int(dernier.rsplit('-', 1)[1]) if dernier else 0) + 1:05d}"
     return paiement
 
 
@@ -273,7 +295,7 @@ def soldes_ecole(session: Session, ecole_id: int, classe_id: int | None = None) 
         stmt = stmt.where(Eleve.classe_id == classe_id)
     tranches = tranches_annee(session, ecole_id)
     soldes = [calculer_solde(session, e, tranches) for e in session.exec(stmt.order_by(Eleve.nom, Eleve.prenom)).all()]
-    return sorted(soldes, key=lambda s: s.classe.lower())
+    return sorted(soldes, key=lambda s: cle_classe(s.classe))
 
 
 # ---------- Bulletins ----------

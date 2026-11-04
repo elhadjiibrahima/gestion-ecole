@@ -156,7 +156,8 @@
   .apercu-image { width: 140px; height: 100px; border: 1px dashed var(--border); border-radius: 8px; display: grid;
     place-items: center; color: var(--muted); font-size: .8rem; background: #fff; overflow: hidden; }
   .apercu-image img { max-width: 100%; max-height: 100%; }
-  table.grille input.appr { width: 170px; text-align: left; font-size: .85rem; padding: 6px 8px; }
+  table.grille input.appr { display: block; width: 100%; min-width: 140px; text-align: left; font-size: .8rem; padding: 4px 6px; margin-top: 4px; }
+  textarea { font: inherit; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
   .liste-cases { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; }
   .liste-cases label { display: flex; flex-direction: row; gap: 6px; align-items: center; color: var(--text); font-size: .9rem; }
   .liste-cases input { width: auto; }
@@ -1816,18 +1817,17 @@ async function chargerGrille() {
   const texte = (v) => (v ?? "–");
   table($("#t-grille"),
     ["Matière", { label: "Coef.", num: true }, ...Array.from({ length: nb }, (_, k) => ({ label: `Devoir ${k + 1}`, num: true })),
-     { label: "Compo.", num: true }, { label: "Moy.", num: true }, "Appréciation"],
+     { label: "Compo.", num: true }, { label: "Moy.", num: true }],
     grille.map((c, i) => {
       const ok = c.modifiable && c.matiere_id;
       return `<tr class="${ok ? "" : "verrou"}">
       <td>${esc(c.matiere)}${c.matiere_id ? "" : ' <span class="sub">matière retirée de la liste</span>'}${!c.modifiable && peut("enseignant")
-        ? '<span class="sub">non attribuée</span>' : ""}${c.saisi_par ? `<span class="sub">par ${esc(c.saisi_par)} · ${dateHeure(c.saisi_le)}</span>` : ""}</td>
+        ? '<span class="sub">non attribuée</span>' : ""}${ok ? `<input class="appr" data-i="${i}" data-k="a" maxlength="120" value="${esc(c.appreciation || "")}" placeholder="Appréciation (facultatif)">`
+        : c.appreciation ? `<span class="sub">« ${esc(c.appreciation)} »</span>` : ""}${c.saisi_par ? `<span class="sub">par ${esc(c.saisi_par)} · ${dateHeure(c.saisi_le)}</span>` : ""}</td>
       <td class="num">${c.coefficient}</td>
       ${Array.from({ length: nb }, (_, k) => `<td class="num">${ok ? champ(i, "d" + k, c.devoirs[k]) : texte(c.devoirs[k])}</td>`).join("")}
       <td class="num">${ok ? champ(i, "c", c.composition) : texte(c.composition)}</td>
-      <td class="num moy" data-moy="${i}">${c.valeur == null ? "–" : c.valeur.toFixed(2)}</td>
-      <td>${ok ? `<input class="appr" data-i="${i}" data-k="a" maxlength="120" value="${esc(c.appreciation || "")}" placeholder="ex : Bon travail">`
-        : `<span class="sub" style="margin:0">${esc(c.appreciation || "")}</span>`}</td></tr>`;
+      <td class="num moy" data-moy="${i}">${c.valeur == null ? "–" : c.valeur.toFixed(2)}</td></tr>`;
     }),
     peut("directeur") ? "Aucune matière : ajoute-les ci-dessous" : "Aucune matière définie par le directeur");
   majMoyenne();
@@ -2446,7 +2446,8 @@ async function afficherPassages() {
   const lignes = [];
   for (const p of proposition.passages) {
     lignes.push(`<tr data-passage="${p.classe_id}"><td><b>${esc(p.classe)}</b><span class="sub">${p.nb_eleves} élève(s)</span></td>
-      <td><select data-vers="${p.classe_id}">${options(p.vers_classe_id)}</select></td>
+      <td><select data-vers="${p.classe_id}">${options(p.vers_classe_id)}</select>
+        <span class="sub" data-alerte-sortie="${p.classe_id}" style="color:var(--bad)"></span></td>
       <td class="actions"><button class="link" data-voir-redoublants="${p.classe_id}">Redoublants (<span data-nb-red="${p.classe_id}">${p.redoublants_proposes.length}</span>)</button></td></tr>
       <tr data-liste-red="${p.classe_id}" hidden><td colspan="3"><div class="liste-cases">${
         eleves.filter((e) => e.classe_id === p.classe_id).map((e) =>
@@ -2454,12 +2455,21 @@ async function afficherPassages() {
         || "<span style='color:var(--muted)'>Aucun élève</span>"}</div></td></tr>`);
   }
   table($("#t-passages"), ["Classe actuelle", "L'année prochaine", ""], lignes, "Aucune classe");
+  majAlertesSortie();
+}
+function majAlertesSortie() {
+  for (const p of proposition.passages) {
+    const sort = !$(`[data-vers="${p.classe_id}"]`).value && p.nb_eleves;
+    $(`[data-alerte-sortie="${p.classe_id}"]`).textContent = sort
+      ? `⚠ Les ${p.nb_eleves} élèves (sauf redoublants) iront dans « Anciens élèves ». Fin de cycle ou examen ? Sinon choisis leur classe.` : "";
+  }
 }
 $("#t-passages").addEventListener("click", (ev) => {
   const id = ev.target.closest("[data-voir-redoublants]")?.dataset.voirRedoublants;
   if (id) { const tr = $(`tr[data-liste-red="${id}"]`); tr.hidden = !tr.hidden; }
 });
 $("#t-passages").addEventListener("change", (ev) => {
+  if (ev.target.dataset.vers) majAlertesSortie();
   const cid = ev.target.dataset.red;
   if (cid) $(`[data-nb-red="${cid}"]`).textContent = document.querySelectorAll(`[data-red="${cid}"]:checked`).length;
 });
@@ -2470,6 +2480,9 @@ $("#btn-nouvelle-annee").addEventListener("click", async () => {
     vers_classe_id: Number($(`[data-vers="${p.classe_id}"]`).value) || null,
     redoublants: [...document.querySelectorAll(`[data-red="${p.classe_id}"]:checked`)].map((c) => Number(c.value)),
   }));
+  const sortants = proposition.passages.filter((p) => !$(`[data-vers="${p.classe_id}"]`).value)
+    .reduce((n, p) => n + p.nb_eleves - document.querySelectorAll(`[data-red="${p.classe_id}"]:checked`).length, 0);
+  if (sortants && !confirm(`${sortants} élève(s) vont quitter l'école (fin de cycle). Continuer ?`)) return;
   const btn = $("#btn-nouvelle-annee");
   btn.disabled = true;
   try {

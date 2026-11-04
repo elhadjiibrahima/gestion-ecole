@@ -79,19 +79,19 @@ def rappels_impayes(
         if s.reste_a_payer <= 0 or (en_retard and s.retard <= 0):
             continue
         eleve = session.get(Eleve, s.eleve_id)
-        echues = [e for e in s.echeances if e.statut == "en_retard"]
-        if echues:
-            noms = ", ".join(f"{e.nom} (échue le {e.date_limite:%d/%m/%Y})" for e in echues)
-            detail = (f"la scolarité de {eleve.prenom} {eleve.nom} ({s.classe}) a un retard de "
-                      f"{argent(s.retard, ecole.devise)} : {noms}. Reste total de l'année : "
-                      f"{argent(s.reste_a_payer, ecole.devise)}.")
-        else:
-            detail = (f"il reste {argent(s.reste_a_payer, ecole.devise)} à payer pour la scolarité de "
-                      f"{eleve.prenom} {eleve.nom} ({s.classe}), sur {argent(s.frais_annuels, ecole.devise)} "
-                      f"de frais annuels." + (f" Prochaine échéance : {s.prochaine_echeance:%d/%m/%Y} "
-                                              f"({argent(s.prochain_montant, ecole.devise)})."
-                                              if s.prochaine_echeance else ""))
-        texte = (f"Bonjour, {ecole.nom} vous informe que {detail} "
+        a = lambda m: argent(m, ecole.devise)  # noqa: E731
+        # Ce qui est dû maintenant : mois (ou tranches) échus, puis autres frais (inscription, tenue…)
+        dus = [f"{e.nom} (échu le {e.date_limite:%d/%m/%Y}) : {a(e.reste)}" for e in s.echeances if e.statut == "en_retard"]
+        dus += [f"{l.nom} : {a(l.reste)}" for l in s.lignes[1:] if l.reste > 0]
+        if not s.echeances and s.lignes and s.lignes[0].reste > 0:
+            dus.insert(0, f"Scolarité : {a(s.lignes[0].reste)}")
+        prochaine = next((e for e in s.echeances if e.statut == "a_venir"), None)
+        detail = (f"pour {eleve.prenom} {eleve.nom} ({s.classe}), " +
+                  (f"il reste à payer : {' ; '.join(dus)}." if dus else "tout est réglé à ce jour.") +
+                  (f" Prochaine échéance : {prochaine.nom}, avant le {prochaine.date_limite:%d/%m/%Y} ({a(prochaine.reste)})."
+                   if prochaine else "") +
+                  f" Reste total de l'année : {a(s.reste_a_payer)}.")
+        texte = (f"Bonjour, {ecole.nom} vous rappelle que {detail} "
                  f"Merci de passer régulariser à l'école. Pour toute question : {ecole.telephone or 'contactez l’école'}.")
         messages.append(_message(ecole, eleve, s.classe, texte, derniers.get(eleve.id)))
     return messages
