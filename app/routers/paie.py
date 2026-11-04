@@ -10,7 +10,8 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.models import (
     AbsencePersonnel, AbsencePersonnelSaisie, AgentSaisie, Avance, AvanceSaisie, CategorieDepense, ChoixPoste, Depense, Ecole, FicheDetail, FichePaie,
-    FicheSaisie, LignePersonnel, PaiementFiche, Poste, PosteDetail, PosteSaisie, Role, Utilisateur,
+    FicheSaisie, LignePersonnel, PaiementFiche, Poste, PosteDetail, PosteSaisie, Role, SalaireNiveau, SalaireNiveauSaisie,
+    Utilisateur,
 )
 from app.pdf import en_tete_pdf, pdf_fiche_paie
 from app.routers.emploi import heures_du_jour, heures_prevues
@@ -81,6 +82,28 @@ def poste_de(u: Utilisateur, postes: list[Poste]) -> Poste | None:
         next((p for p in postes if p.role == u.role.value), None)
 
 
+def niveau_personne(session: Session, u: Utilisateur):
+    """Niveau (cycle) où enseigne la personne, d'après ses classes (un enseignant reste dans un niveau)."""
+    from app.cursus import cycle_de
+    from app.models import Affectation, Classe
+    c = session.exec(select(Classe).join(Affectation, Affectation.classe_id == Classe.id)
+                     .where(Affectation.utilisateur_id == u.id)).first()
+    return cycle_de(session, c) if c else None
+
+
+def contrat_de(session: Session, u: Utilisateur, postes: list[Poste]) -> Poste | None:
+    """Poste de la personne avec le salaire de son niveau s'il est fixé (copie non enregistrée), sinon le salaire du poste."""
+    p = poste_de(u, postes)
+    if not p:
+        return None
+    cy = niveau_personne(session, u)
+    if cy:
+        s = session.exec(select(SalaireNiveau).where(SalaireNiveau.poste_id == p.id, SalaireNiveau.cycle_id == cy.id)).first()
+        if s:
+            return Poste(id=p.id, ecole_id=p.ecole_id, nom=f"{p.nom} — {cy.nom}", type=s.type, montant=s.montant, role=p.role)
+    return p
+
+
 def _personnel(session: Session, ecole_id: int) -> list[Utilisateur]:
     return session.exec(select(Utilisateur).where(Utilisateur.ecole_id == ecole_id, Utilisateur.actif == True)  # noqa: E712
                         .order_by(Utilisateur.nom)).all()
@@ -97,8 +120,32 @@ def _poste(session: Session, poste_id: int, ecole_id: int) -> Poste:
 def lister_postes(user: Utilisateur = Depends(exiger_role(*GESTION)), session: Session = Depends(get_session)):
     postes = postes_ecole(session, user.ecole_id)
     gens = _personnel(session, user.ecole_id)
+    niveaux = session.exec(select(SalaireNiveau).where(SalaireNiveau.poste_id.in_([p.id for p in postes]))).all() if postes else []
     return [PosteDetail(**p.model_dump(include={"id", "nom", "type", "montant", "role"}),
-                        effectif=sum(1 for u in gens if (q := poste_de(u, postes)) and q.id == p.id)) for p in postes]
+                        effectif=sum(1 for u in gens if (q := poste_de(u, postes)) and q.id == p.id),
+                        niveaux=[SalaireNiveauSaisie(cycle_id=n.cycle_id, type=n.type, montant=n.montant)
+                                 for n in niveaux if n.poste_id == p.id]) for p in postes]
+
+
+@router.put("/postes/{poste_id}/niveaux", response_model=list[SalaireNiveauSaisie])
+def salaires_par_niveau(poste_id: int, data: list[SalaireNiveauSaisie], user: Utilisateur = Depends(exiger_role(Role.directeur)),
+                        session: Session = Depends(get_session)):
+    """Salaire du poste selon le niveau où la personne enseigne (niveau absent : salaire du poste)."""
+    from app.cursus import cycles_ecole
+    p = _poste(session, poste_id, user.ecole_id)
+    cycles = {c.id for c in cycles_ecole(session, user.ecole_id)}
+    if any(n.cycle_id not in cycles for n in data):
+        raise HTTPException(400, "Niveau inconnu")
+    for x in session.exec(select(SalaireNiveau).where(SalaireNiveau.poste_id == p.id)).all():
+        session.delete(x)
+    session.flush()
+    vus = set()
+    for n in data:
+        if n.cycle_id not in vus:
+            vus.add(n.cycle_id)
+            session.add(SalaireNiveau(poste_id=p.id, cycle_id=n.cycle_id, type=n.type, montant=n.montant))
+    session.commit()
+    return [n for n in data]
 
 
 @router.post("/postes", response_model=Poste, status_code=201)
@@ -136,6 +183,8 @@ def supprimer_poste(poste_id: int, user: Utilisateur = Depends(exiger_role(Role.
     postes = postes_ecole(session, user.ecole_id)
     if any((q := poste_de(u, postes)) and q.id == p.id for u in _personnel(session, user.ecole_id)):
         raise HTTPException(400, "Des membres du personnel occupent ce poste : change d'abord leur poste")
+    for x in session.exec(select(SalaireNiveau).where(SalaireNiveau.poste_id == p.id)).all():
+        session.delete(x)
     for u in session.exec(select(Utilisateur).where(Utilisateur.poste_id == p.id)).all():   # comptes désactivés
         u.poste_id = None
         session.add(u)
@@ -161,14 +210,15 @@ def personnel(mois: str, user: Utilisateur = Depends(exiger_role(*GESTION)), ses
     postes = postes_ecole(session, user.ecole_id)
     lignes = []
     for u in _personnel(session, user.ecole_id):
-        c = poste_de(u, postes)
+        c = contrat_de(session, u, postes)
+        cy = niveau_personne(session, u) if u.role == Role.enseignant else None
         f = session.exec(select(FichePaie).where(FichePaie.utilisateur_id == u.id, FichePaie.mois == mois)).first()
         jours, heures = _absences_mois(session, u, mois)
         prevues = heures_prevues(session, user.ecole_id, u.id, mois) if c and c.type == "horaire" else None
         lignes.append(LignePersonnel(
             utilisateur_id=u.id, nom=u.nom, role=ROLES.get(u.role.value, u.role.value),
             poste_id=c.id if c else None, poste=c.nom if c else None,
-            contrat_type=c.type if c else None, contrat_montant=c.montant if c else None,
+            contrat_type=c.type if c else None, contrat_montant=c.montant if c else None, niveau=cy.nom if cy else None,
             heures_prevues=prevues,
             avances_en_cours=sum(a.montant for a in _avances_en_cours(session, u.id)),
             fiche=_detail(session, f) if f else None,
@@ -315,7 +365,7 @@ def preparer_fiche(data: FicheSaisie, user: Utilisateur = Depends(exiger_role(*G
     """Calcule la fiche du mois : (salaire fixe ou heures × taux) + primes − retenues − avances en cours."""
     mois = _mois(data.mois)
     u = _membre(session, data.utilisateur_id, user.ecole_id)
-    c = poste_de(u, postes_ecole(session, user.ecole_id))
+    c = contrat_de(session, u, postes_ecole(session, user.ecole_id))
     if not c or not c.montant:
         raise HTTPException(400, f"Le directeur doit d'abord définir le salaire du poste « {c.nom if c else '?'} »")
     if session.exec(select(FichePaie).where(FichePaie.utilisateur_id == u.id, FichePaie.mois == mois)).first():

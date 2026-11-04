@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.models import (
     Alerte, ARelancer, Classe, ClotureCaisse, ClotureDetail, ClotureSaisie, Depense, Ecole, Eleve, MessageEnvoye,
-    MoisPrevision, MoratoireSaisie, Paiement, PaiementGroupe, PriseEnCharge, Promesse, PromesseSaisie, Rapprochement,
+    Budget, LigneBudget, MoisPrevision, MoratoireSaisie, SalaireBudget, Paiement, PaiementGroupe, PriseEnCharge, Promesse, PromesseSaisie, Rapprochement,
     LigneRapprochement, ResultatGroupe, Role, Solde, Tiers, TiersSaisie, Utilisateur,
 )
 from app.notifications import envoyer_sms, sms_disponible
@@ -434,7 +434,7 @@ def prevision(user: Utilisateur = Depends(exiger_role(*GESTION)), session: Sessi
     """Pour chaque mois restant de l'année : argent attendu des familles, salaires, autres dépenses, trésorerie prévue."""
     from app.routers.caisse import bilan
     from app.routers.emploi import heures_prevues
-    from app.routers.paie import _personnel, poste_de, postes_ecole
+    from app.routers.paie import _personnel, contrat_de, postes_ecole
     ecole = session.get(Ecole, user.ecole_id)
     mois = [m.date_limite.strftime("%Y-%m") for m in mensualites(ecole)]
     courant = date.today().strftime("%Y-%m")
@@ -454,10 +454,11 @@ def prevision(user: Utilisateur = Depends(exiger_role(*GESTION)), session: Sessi
                     attendu[k] += l.montant_mois
     postes = postes_ecole(session, user.ecole_id)
     gens = _personnel(session, user.ecole_id)
+    contrats = {u.id: contrat_de(session, u, postes) for u in gens}
     def salaires(m: str) -> int:
         total = 0
         for u in gens:
-            p = poste_de(u, postes)
+            p = contrats[u.id]
             if p and p.montant:
                 total += p.montant if p.type == "mensuel" else round(p.montant * heures_prevues(session, user.ecole_id, u.id, m))
         return total
@@ -473,6 +474,82 @@ def prevision(user: Utilisateur = Depends(exiger_role(*GESTION)), session: Sessi
         tresorerie += attendu[m] - sal - moyenne
         sortie.append(MoisPrevision(mois=m, attendu=attendu[m], salaires=sal, autres_depenses=moyenne, solde_prevu=tresorerie))
     return sortie
+
+
+# ---------- Budget de l'année ----------
+@router.get("/caisse/budget", response_model=Budget)
+def budget(user: Utilisateur = Depends(exiger_role(*GESTION)), session: Session = Depends(get_session)):
+    """Budget de l'année scolaire : recettes prévues / encaissées, salaires prévus / versés (par poste et niveau),
+    autres dépenses, résultat."""
+    from app.models import FichePaie, Recette
+    from app.routers.caisse import bilan
+    from app.routers.emploi import heures_prevues
+    from app.routers.paie import ROLES, _personnel, contrat_de, niveau_personne, postes_ecole
+    ecole = session.get(Ecole, user.ecole_id)
+    mois = [m.date_limite.strftime("%Y-%m") for m in mensualites(ecole)]
+    courant = date.today().strftime("%Y-%m")
+    passes = sum(1 for m in mois if m < courant)
+    # Recettes : ce que les familles (et les tiers) doivent sur l'année, par frais
+    rec: dict[str, list[int]] = {}
+    soldes = soldes_ecole(session, user.ecole_id)
+    for s in soldes:
+        for l in s.lignes:
+            nom = "Scolarité" if l.type_frais_id is None else l.nom
+            r = rec.setdefault(nom, [0, 0])
+            r[0] += l.du
+            r[1] += l.paye
+    autres_entrees = sum(r.montant for r in session.exec(select(Recette).where(
+        Recette.ecole_id == user.ecole_id, Recette.annee_scolaire == ecole.annee_scolaire)).all())
+    recettes = [LigneBudget(libelle=k, prevu=v[0], realise=v[1]) for k, v in rec.items()]
+    if autres_entrees:
+        recettes.append(LigneBudget(libelle="Autres entrées (dons, ventes…)", prevu=autres_entrees, realise=autres_entrees))
+    # Salaires : chaque personne, selon son poste et son niveau
+    postes = postes_ecole(session, user.ecole_id)
+    fiches = session.exec(select(FichePaie).where(FichePaie.ecole_id == user.ecole_id, FichePaie.payee == True,  # noqa: E712
+                                                  FichePaie.mois.in_(mois))).all() if mois else []
+    verse: dict[int, int] = {}
+    for f in fiches:
+        verse[f.utilisateur_id] = verse.get(f.utilisateur_id, 0) + f.net
+    personnel, par_poste = [], {}
+    for u in _personnel(session, user.ecole_id):
+        c = contrat_de(session, u, postes)
+        cy = niveau_personne(session, u) if u.role == Role.enseignant else None
+        if c and c.montant:
+            annuel = c.montant * len(mois) if c.type == "mensuel" else \
+                round(sum(c.montant * heures_prevues(session, user.ecole_id, u.id, m) for m in mois))
+        else:
+            annuel = 0
+        v = verse.get(u.id, 0)
+        personnel.append(SalaireBudget(utilisateur_id=u.id, nom=u.nom, role=ROLES.get(u.role.value, u.role.value),
+                                       poste=c.nom if c else None, niveau=cy.nom if cy else None, type=c.type if c else None,
+                                       taux=c.montant if c else 0, par_mois=round(annuel / max(len(mois), 1)), prevu=annuel, verse=v))
+        k = c.nom if c else "Sans poste"
+        x = par_poste.setdefault(k, [0, 0])
+        x[0] += annuel
+        x[1] += v
+    salaires = [LigneBudget(libelle=k, prevu=v[0], realise=v[1]) for k, v in par_poste.items()]
+    # Autres dépenses : ce qui est déjà dépensé, prolongé sur l'année au même rythme
+    b = bilan(session, user.ecole_id)
+    autres = []
+    for cat, total in b.par_categorie.items():
+        if cat == "salaires":
+            continue
+        prevu = round(total / max(passes, 1) * len(mois)) if passes else total
+        autres.append(LigneBudget(libelle=CATEGORIES_FR.get(cat, cat), prevu=max(prevu, total), realise=total))
+    hors_fiches = b.par_categorie.get("salaires", 0) - sum(verse.values())   # salaires payés sans fiche
+    if hors_fiches > 0:
+        autres.append(LigneBudget(libelle="Salaires payés hors fiches", prevu=hors_fiches, realise=hors_fiches))
+    somme = lambda lignes: LigneBudget(libelle="Total", prevu=sum(l.prevu for l in lignes), realise=sum(l.realise for l in lignes))
+    tr, ts, ta = somme(recettes), somme(salaires), somme(autres)
+    td = LigneBudget(libelle="Total des dépenses", prevu=ts.prevu + ta.prevu, realise=ts.realise + ta.realise)
+    return Budget(annee_scolaire=ecole.annee_scolaire, nb_mois=len(mois), mois_passes=passes, eleves=len(soldes),
+                  recettes=sorted(recettes, key=lambda l: -l.prevu), salaires=sorted(salaires, key=lambda l: -l.prevu),
+                  autres_depenses=autres, personnel=personnel, total_recettes=tr, total_salaires=ts, total_depenses=td,
+                  resultat=LigneBudget(libelle="Résultat", prevu=tr.prevu - td.prevu, realise=tr.realise - td.realise))
+
+
+CATEGORIES_FR = {"loyer": "Loyer", "fournitures": "Fournitures", "electricite_eau": "Électricité et eau", "transport": "Transport",
+                 "entretien": "Entretien", "impots": "Impôts et taxes", "autre": "Autres dépenses", "salaires": "Salaires"}
 
 
 # ---------- Rapprochement avec le relevé Wave / Orange Money ----------

@@ -1,5 +1,6 @@
-"""Remplit une école de test : toutes les classes du complexe, 3 élèves par classe, un professeur par matière,
-le reste du personnel, les salaires, des paiements et des notes du 1er trimestre / semestre.
+"""Remplit une école de test : toutes les classes du complexe, 7 élèves par classe, un professeur par matière,
+le reste du personnel, les salaires (selon le niveau pour les enseignants), les salaires des mois passés versés,
+quelques dépenses, des paiements et des notes du 1er trimestre / semestre.
 
 Lancement : ./remplir_test.sh (Linux, Mac, Git Bash) ou remplir_test.bat (Windows),
 ou directement : python -m app.cli remplir-test
@@ -12,12 +13,13 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
-from app.cursus import regles_classe
+from app.cursus import cycles_ecole, regles_classe
 from app.models import (
-    Affectation, Classe, Ecole, Eleve, FraisNiveau, InscriptionEcole, ModePaiement, Note, Role, SouscriptionFrais, Tiers, TypeFrais,
-    Utilisateur,
+    Affectation, CategorieDepense, Classe, Depense, Ecole, Eleve, FichePaie, FraisNiveau, InscriptionEcole, ModePaiement, Note, Role,
+    SalaireNiveau, SouscriptionFrais, Tiers, TypeFrais, Utilisateur,
 )
-from app.routers.paie import postes_ecole
+from app.routers.emploi import heures_prevues
+from app.routers.paie import _personnel, contrat_de, postes_ecole
 from app.security import hacher_mot_de_passe
 from app.services import calculer_solde, creer_paiement, matieres_classe, trier_classes, type_inscription
 
@@ -28,6 +30,9 @@ VILLES = ["Dakar", "Thiès", "Kaolack", "Saint-Louis", "Ziguinchor", "Touba", "R
 
 # Mensualité et inscription de départ par cycle (à modifier ensuite dans Élèves → Classes)
 TARIFS = {"prescolaire": (15000, 20000), "primaire": (20000, 25000), "college": (25000, 30000), "lycee": (30000, 35000)}
+ELEVES_PAR_CLASSE = 7
+# Salaire des enseignants selon le niveau (par mois)
+SALAIRE_NIVEAU = {"primaire": 150000, "college": 175000, "lycee": 200000}
 SALAIRES = {"directeur": 500000, "comptable": 250000, "enseignant": 3000, "surveillant": 150000, "agent": 75000}
 AGE_CLASSE = {"petite section": 3, "moyenne section": 4, "grande section": 5, "ci": 6, "cp": 7, "cp1": 6, "cp2": 7,
               "ce1": 8, "ce2": 9, "cm1": 10, "cm2": 11}
@@ -192,8 +197,13 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
         if p.role in SALAIRES:
             p.montant = SALAIRES[p.role]
             session.add(p)
+        if p.role == "enseignant":
+            for cy in cycles_ecole(session, ecole.id):
+                if cy.code in SALAIRE_NIVEAU:
+                    session.add(SalaireNiveau(poste_id=p.id, cycle_id=cy.id, type="mensuel", montant=SALAIRE_NIVEAU[cy.code]))
+    session.flush()
 
-    # Élèves : 3 par classe, avec l'inscription payée et 0 à 2 mois de scolarité
+    # Élèves : 7 par classe, avec l'inscription payée et 0 à 2 mois de scolarité
     nb_eleves = 0
     modes = [ModePaiement.especes, ModePaiement.wave, ModePaiement.orange_money] if ecole.pays != "guinee" \
         else [ModePaiement.especes, ModePaiement.orange_money, ModePaiement.mtn_momo]
@@ -205,7 +215,6 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
     session.add_all([tenue, cantine, transport])
     session.flush()
     # Prix selon le niveau : tenue et cantine moins chères au primaire
-    from app.cursus import cycles_ecole
     for cy in cycles_ecole(session, ecole.id):
         prix = {"primaire": (12000, 8000), "college": (15000, 10000), "lycee": (18000, 10000)}.get(cy.code)
         if prix:
@@ -217,7 +226,7 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
     session.flush()
     familles: list[tuple[str, str]] = []              # (nom de famille, téléphone) : des frères et sœurs dans d'autres classes
     for c in classes:
-        for _ in range(3):
+        for _ in range(ELEVES_PAR_CLASSE):
             sexe = hasard.choice("MF")
             if familles and hasard.random() < 0.25:   # un enfant sur 4 a un frère ou une sœur dans l'école
                 nom, tel = hasard.choice(familles)
@@ -258,6 +267,39 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
                     session.add(Note(eleve_id=e.id, matiere=m.nom, coefficient=coef, valeur=note(), trimestre=1,
                                      type=typ, numero=num, annee_scolaire=ecole.annee_scolaire))
             nb_eleves += 1
+    salaires_verses = _mois_passes(session, ecole, directeur, hasard)
     session.commit()
     return {"ecole": ecole.nom, "classes": len(classes), "eleves": nb_eleves, "professeurs": profs, "creneaux": creneaux,
-            "comptes": comptes, "mot_de_passe_equipe": mdp_equipe}
+            "comptes": comptes, "mot_de_passe_equipe": mdp_equipe, "salaires_verses": salaires_verses}
+
+
+def _mois_passes(session: Session, ecole: Ecole, directeur: Utilisateur, hasard: random.Random) -> int:
+    """Pour chaque mois déjà passé de l'année : fiches de paie versées (dépense « Salaires ») et dépenses courantes."""
+    from app.services import mensualites
+    debut_mois = date.today().replace(day=1)
+    passes = [m.date_limite.replace(day=1) for m in mensualites(ecole) if m.date_limite.replace(day=1) < debut_mois]
+    postes = postes_ecole(session, ecole.id)
+    gens = _personnel(session, ecole.id)
+    total = 0
+    for jour in passes:
+        mois = jour.strftime("%Y-%m")
+        fin = (jour + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        for u in gens:
+            c = contrat_de(session, u, postes)
+            if not c or not c.montant:
+                continue
+            heures = heures_prevues(session, ecole.id, u.id, mois) if c.type == "horaire" else None
+            brut = round(heures * c.montant) if heures is not None else c.montant
+            d = Depense(ecole_id=ecole.id, annee_scolaire=ecole.annee_scolaire, jour=fin, categorie=CategorieDepense.salaires,
+                        libelle=f"Salaire {mois} — {u.nom}", montant=brut, mode=ModePaiement.virement, beneficiaire=u.nom, saisi_par_id=directeur.id)
+            session.add(d)
+            session.flush()
+            session.add(FichePaie(ecole_id=ecole.id, utilisateur_id=u.id, mois=mois, type=c.type, heures=heures, taux=c.montant,
+                                  brut=brut, net=brut, payee=True, paye_le=fin, depense_id=d.id))
+            total += brut
+        for cat, libelle, montant in ((CategorieDepense.electricite_eau, "Facture Senelec et SDE", hasard.randint(90, 140) * 1000),
+                                      (CategorieDepense.fournitures, "Craies, cahiers, photocopies", hasard.randint(40, 90) * 1000),
+                                      (CategorieDepense.entretien, "Produits d'entretien", hasard.randint(15, 30) * 1000)):
+            session.add(Depense(ecole_id=ecole.id, annee_scolaire=ecole.annee_scolaire, jour=fin - timedelta(days=5),
+                                categorie=cat, libelle=libelle, montant=montant, saisi_par_id=directeur.id))
+    return total

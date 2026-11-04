@@ -46,7 +46,8 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Menu simplifié** en 5 groupes, utilisable sur téléphone
 - **Mot de passe oublié** : code à 6 chiffres par SMS ou e-mail (si configuré), sinon le directeur réinitialise
 - **Emploi du temps** par classe et par enseignant, contrôle des chevauchements (classe, enseignant, salle), PDF
-- **Paie** : le directeur fixe un salaire par poste (Directeur, Comptable, Enseignant, Surveillant, et postes ajoutés : vacataire…), au mois ou à l'heure (heures proposées d'après l'emploi du temps), primes, retenues, avances retirées automatiquement, fiche de paie PDF, salaire ajouté aux dépenses de la caisse
+- **Budget de l'année** (Caisse) : recettes prévues / encaissées par frais, salaires prévus / versés par poste et niveau, autres dépenses, résultat prévu, salaire de chaque membre du personnel
+- **Paie** : le directeur fixe un salaire par poste (et pour les enseignants, un salaire selon le niveau : primaire, collège, lycée…) (Directeur, Comptable, Enseignant, Surveillant, et postes ajoutés : vacataire…), au mois ou à l'heure (heures proposées d'après l'emploi du temps), primes, retenues, avances retirées automatiquement, fiche de paie PDF, salaire ajouté aux dépenses de la caisse
 - **Complexe scolaire (modèle sénégalais)** : à la création de l'école, choix du pays (Sénégal, Guinée) et des cycles ; les classes
   (Petite section… CI, CP… CM2, 6ème… 3ème, 2nde L/S… Terminale L/S), les matières de chaque cycle et leurs coefficients sont créés
   tout de suite. Classes types à ajouter en un clic, classe parallèle (6ème A → 6ème B), tarifs de toutes les classes sur un écran
@@ -111,9 +112,10 @@ Pour essayer le logiciel avec une école déjà remplie, lance (serveur arrêté
 - ou : `python -m app.cli remplir-test`
 
 Seuls le nom de l'école, le pays et le compte du directeur sont demandés. Sont créés : toutes les classes du complexe
-(CI → terminale), 3 élèves par classe avec inscription et mensualités payées, un maître par classe au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, un emploi du temps léger pour chaque
+(CI → terminale), 7 élèves par classe avec inscription et mensualités payées, un maître par classe au primaire, des professeurs de 2 matières au collège et d'une matière au lycée, un emploi du temps léger pour chaque
 classe (1 h par matière, 2 h pour les grosses matières, sans conflit), des prix de tenue et de cantine par niveau, un comptable, un surveillant, un gardien, une cuisinière, un agent d'entretien,
-les salaires des postes et les notes de la 1re période. Le mot de passe des comptes créés est affiché à la fin.
+les salaires des postes (enseignants payés selon le niveau : 150 000 au primaire, 175 000 au collège, 200 000 au lycée),
+les salaires des mois passés déjà versés, quelques dépenses (électricité, fournitures, entretien) et les notes de la 1re période. Le mot de passe des comptes créés est affiché à la fin.
 
 ## Tests
 

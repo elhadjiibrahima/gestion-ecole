@@ -1035,6 +1035,21 @@ class PosteSaisie(SQLModel):
     montant: int = Field(ge=0)
 
 
+class SalaireNiveau(SQLModel, table=True):
+    """Salaire d'un poste pour un niveau (ex : Enseignant au lycée, 200 000 par mois)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    poste_id: int = Field(foreign_key="poste.id", index=True)
+    cycle_id: int = Field(foreign_key="cycle.id", index=True)
+    type: str = "mensuel"
+    montant: int = Field(ge=0)
+
+
+class SalaireNiveauSaisie(SQLModel):
+    cycle_id: int
+    type: Literal["mensuel", "horaire"] = "mensuel"
+    montant: int = Field(ge=0)
+
+
 class PosteDetail(SQLModel):
     id: int
     nom: str
@@ -1042,6 +1057,7 @@ class PosteDetail(SQLModel):
     montant: int
     role: Optional[str]
     effectif: int
+    niveaux: list[SalaireNiveauSaisie] = []
 
 
 class ChoixPoste(SQLModel):
@@ -1126,6 +1142,7 @@ class LignePersonnel(SQLModel):
     poste: Optional[str]
     contrat_type: Optional[str]
     contrat_montant: Optional[int]
+    niveau: Optional[str] = None             # niveau où il enseigne (le salaire peut dépendre du niveau)
     heures_prevues: Optional[float]          # d'après l'emploi du temps, pour le mois choisi
     avances_en_cours: int
     sans_compte: bool = False                # gardien, cuisinière… (pas d'accès au logiciel)
@@ -1526,6 +1543,40 @@ class MoisPrevision(SQLModel):
     salaires: int
     autres_depenses: int                     # moyenne des mois passés (hors salaires)
     solde_prevu: int                         # trésorerie en fin de mois
+
+
+class LigneBudget(SQLModel):
+    libelle: str
+    prevu: int
+    realise: int
+
+
+class SalaireBudget(SQLModel):
+    utilisateur_id: int
+    nom: str
+    role: str
+    poste: Optional[str]
+    niveau: Optional[str]
+    type: Optional[str]
+    taux: int                                # salaire du mois ou taux horaire
+    par_mois: int                            # salaire moyen d'un mois
+    prevu: int                               # sur toute l'année
+    verse: int                               # fiches payées
+
+
+class Budget(SQLModel):
+    annee_scolaire: str
+    nb_mois: int
+    mois_passes: int
+    eleves: int
+    recettes: list[LigneBudget]
+    salaires: list[LigneBudget]              # par poste et niveau
+    autres_depenses: list[LigneBudget]
+    personnel: list[SalaireBudget]
+    total_recettes: LigneBudget
+    total_salaires: LigneBudget
+    total_depenses: LigneBudget
+    resultat: LigneBudget
 
 
 class LigneRapprochement(SQLModel):

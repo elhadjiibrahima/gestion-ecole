@@ -213,10 +213,18 @@ def test_remplir_ecole_de_test(client):
     from app.models import AffectationSaisie
     session = next(app.dependency_overrides[get_session]())
     r = remplir(session, "Complexe Test", "senegal", "Directeur Test", "dir@test-complexe.sn", "motdepasse1", graine=1)
-    assert r["classes"] == 16 and r["eleves"] == 48 and 100 < r["creneaux"] < 250
+    assert r["classes"] == 16 and r["eleves"] == 112 and 100 < r["creneaux"] < 250
     h = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": "dir@test-complexe.sn",
                                                                        "password": "motdepasse1"}).json()["access_token"]}
-    assert len(client.get("/eleves", headers=h).json()) == 48
+    assert len(client.get("/eleves", headers=h).json()) == 112
+    # Budget : salaire des enseignants selon le niveau, recettes et dépenses de l'année
+    b = client.get("/caisse/budget", headers=h).json()
+    niv = {p["niveau"]: p["taux"] for p in b["personnel"] if p["role"] == "Enseignant"}
+    assert niv == {"Primaire": 150000, "Collège": 175000, "Lycée": 200000}
+    assert b["total_salaires"]["prevu"] > 0 and b["total_recettes"]["prevu"] > b["total_recettes"]["realise"] > 0
+    assert b["resultat"]["prevu"] == b["total_recettes"]["prevu"] - b["total_depenses"]["prevu"]
+    if b["mois_passes"]:
+        assert b["total_salaires"]["realise"] == r["salaires_verses"] > 0
     users = client.get("/utilisateurs", headers=h).json()
     profs = [u for u in users if u["role"] == "enseignant"]
     cl = {c["nom"]: c["id"] for c in client.get("/classes", headers=h).json()}
@@ -236,7 +244,7 @@ def test_remplir_ecole_de_test(client):
     hp = {"Authorization": "Bearer " + client.post("/auth/token", data={"username": maths_college["email"],
                                                                         "password": r["mot_de_passe_equipe"]}).json()["access_token"]}
     n = client.get(f"/notes/classe?classe_id={cl['6ème']}&matiere_id={mats['Mathématiques']}&trimestre=1", headers=hp).json()
-    assert n["modifiable"] and len(n["lignes"]) == 3 and all(l["moyenne"] is not None for l in n["lignes"])
+    assert n["modifiable"] and len(n["lignes"]) == 7 and all(l["moyenne"] is not None for l in n["lignes"])
     edt = client.get("/emploi-du-temps", headers=hp).json()
     assert edt and len({(c["jour"], c["debut"]) for c in edt}) == len(edt)
     for nom in ("CP", "6ème", "Terminale S"):
@@ -244,7 +252,8 @@ def test_remplir_ecole_de_test(client):
         assert len(e) >= 8 and len({(c["jour"], c["debut"]) for c in e}) == len(e)
     pers = client.get("/paie/personnel?mois=2026-11", headers=h).json()
     assert sum(1 for p in pers if p["sans_compte"]) == 3 and all(p["contrat_montant"] for p in pers)
-    assert next(p for p in pers if p["nom"] == maths_college["nom"])["heures_prevues"] > 0
+    pm = next(p for p in pers if p["nom"] == maths_college["nom"])
+    assert (pm["niveau"], pm["contrat_type"], pm["contrat_montant"]) == ("Collège", "mensuel", 175000)
     assert client.get(f"/classes/{cl['CP']}/bulletins.pdf?trimestre=1", headers=h).content.startswith(b"%PDF")
 
 

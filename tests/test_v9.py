@@ -191,3 +191,26 @@ def test_prix_par_niveau(client):
     # Gratuit pour un niveau : la ligne disparaît
     client.put(f"/frais/{tenue['id']}/niveaux", headers=h, json=[{"cycle_id": cyc["primaire"], "montant": 0}])
     assert "Tenue" not in {l["nom"] for l in client.get(f"/eleves/{a['id']}/solde", headers=h).json()["lignes"]}
+
+
+def test_salaire_par_niveau(client):
+    h, cl, ins = ecole(client, "salniv@c.sn")
+    cyc = {c["code"]: c["id"] for c in client.get("/cycles", headers=h).json()}
+    mats = {m["nom"]: m["id"] for m in client.get("/matieres", headers=h).json()}
+    prof = client.post("/utilisateurs", headers=h, json={"nom": "Prof Collège", "email": "pc@c.sn", "mot_de_passe": "motdepasse1",
+                                                         "role": "enseignant", "affectations": [
+                                                             {"matiere_id": mats["Mathématiques"], "classe_id": cl["6ème"]["id"]}]})
+    assert prof.status_code == 201, prof.text
+    prof = prof.json()
+    poste = next(p for p in client.get("/paie/postes", headers=h).json() if p["role"] == "enseignant")
+    client.patch(f"/paie/postes/{poste['id']}", headers=h, json={"nom": poste["nom"], "type": "horaire", "montant": 3000})
+    r = client.put(f"/paie/postes/{poste['id']}/niveaux", headers=h,
+                   json=[{"cycle_id": cyc["college"], "type": "mensuel", "montant": 200000}])
+    assert r.status_code == 200
+    assert next(p for p in client.get("/paie/postes", headers=h).json() if p["id"] == poste["id"])["niveaux"][0]["montant"] == 200000
+    pers = next(p for p in client.get("/paie/personnel?mois=2026-11", headers=h).json() if p["utilisateur_id"] == prof["id"])
+    assert (pers["niveau"], pers["contrat_type"], pers["contrat_montant"]) == ("Collège", "mensuel", 200000)
+    f = client.post("/paie/fiches", headers=h, json={"utilisateur_id": prof["id"], "mois": "2026-11"}).json()
+    assert f["brut"] == 200000
+    b = client.get("/caisse/budget", headers=h).json()
+    assert next(p for p in b["personnel"] if p["utilisateur_id"] == prof["id"])["prevu"] == 200000 * b["nb_mois"]

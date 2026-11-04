@@ -883,6 +883,18 @@
       <div class="table-wrap mt" style="max-height:260px;overflow-y:auto"><table id="t-clotures"></table></div>
     </div>
     <div class="card" style="margin-bottom:14px">
+      <h2>Budget de l'année <span class="hint" id="bu-annee" style="font-weight:normal"></span></h2>
+      <p class="hint">Ce que l'école doit recevoir sur toute l'année (scolarité, inscription, tenue, cantine, transport…) face aux
+        salaires du personnel (les enseignants selon leur niveau) et aux autres dépenses. « Réalisé » : déjà encaissé ou déjà payé.</p>
+      <div class="grid" id="bu-kpi"></div>
+      <div class="two-eq mt">
+        <div><h3>Recettes</h3><div class="table-wrap"><table id="t-bu-recettes"></table></div></div>
+        <div><h3>Dépenses</h3><div class="table-wrap"><table id="t-bu-depenses"></table></div></div>
+      </div>
+      <details class="mt"><summary><b>Salaire de chaque membre du personnel</b></summary>
+        <div class="table-wrap mt" style="max-height:420px;overflow-y:auto"><table id="t-bu-personnel"></table></div></details>
+    </div>
+    <div class="card" style="margin-bottom:14px">
       <h2>Prévision de trésorerie</h2>
       <p class="hint">Argent attendu des familles chaque mois (mensualités, cantine, transport, retards), salaires et dépenses habituelles :
         tu vois à l'avance si les salaires pourront être payés.</p>
@@ -1062,7 +1074,9 @@
     <div class="card mt">
       <h2>Postes et salaires</h2>
       <p class="hint">Le directeur fixe le salaire de chaque poste : par mois, ou par heure de cours (les heures sont
-        proposées d'après l'emploi du temps). Un nouveau salaire s'applique aux prochaines fiches.</p>
+        proposées d'après l'emploi du temps). <b>Salaire selon le niveau</b> : remplis la colonne Primaire, Collège, Lycée…
+        pour les enseignants ; chaque enseignant est payé selon le niveau de ses classes (case vide : salaire du poste).
+        Un nouveau salaire s'applique aux prochaines fiches.</p>
       <div class="table-wrap"><table id="t-postes"></table></div>
       <form id="f-poste" class="row" data-roles="directeur" style="align-items:end;margin-top:10px">
         <label style="flex:2">Nouveau poste<input name="nom" placeholder="ex : Enseignant vacataire" required minlength="2" maxlength="40"></label>
@@ -3820,6 +3834,36 @@ async function afficherPrevision() {
     "Pas de mois restant cette année");
 }
 
+// ---------- Budget de l'année ----------
+async function afficherBudget() {
+  let b;
+  try { b = await api("/caisse/budget"); } catch { return; }
+  $("#bu-annee").textContent = `${b.annee_scolaire} · ${b.nb_mois} mois · ${b.mois_passes} passé(s) · ${b.eleves} élèves`;
+  const pct = (l) => (l.prevu ? Math.round((l.realise / l.prevu) * 100) : 0);
+  const kpi = (titre, l, cls, sansPct) => `<div class="card kpi ${cls}"><div class="label">${titre}</div><div class="value">${argent(l.prevu)}</div>
+    <div class="sub">${sansPct ? "à ce jour" : "réalisé"} : ${argent(l.realise)}${sansPct ? "" : ` (${pct(l)} %)`}</div></div>`;
+  $("#bu-kpi").innerHTML = kpi("Recettes prévues", b.total_recettes, "ok") + kpi("Salaires prévus", b.total_salaires, "warn")
+    + kpi("Dépenses prévues (tout)", b.total_depenses, "bad")
+    + kpi("Résultat prévu", b.resultat, b.resultat.prevu < 0 ? "bad" : "ok", true);
+  const lignes = (ls, total) => [...ls.map((l) => `<tr><td>${esc(l.libelle)}</td><td class="num">${argent(l.prevu)}</td>
+      <td class="num">${argent(l.realise)}<span class="sub">${pct(l)} %</span></td></tr>`),
+    `<tr><td><b>${esc(total.libelle)}</b></td><td class="num"><b>${argent(total.prevu)}</b></td><td class="num"><b>${argent(total.realise)}</b></td></tr>`];
+  const cols = ["", { label: "Prévu", num: true }, { label: "Réalisé", num: true }];
+  table($("#t-bu-recettes"), cols, lignes(b.recettes, b.total_recettes), "Aucune recette prévue");
+  table($("#t-bu-depenses"), cols, [
+    `<tr><td colspan="3"><b>Salaires</b></td></tr>`, ...lignes(b.salaires, { ...b.total_salaires, libelle: "Total des salaires" }),
+    ...(b.autres_depenses.length ? [`<tr><td colspan="3"><b>Autres dépenses</b></td></tr>`, ...b.autres_depenses.map((l) =>
+      `<tr><td>${esc(l.libelle)}</td><td class="num">${argent(l.prevu)}</td><td class="num">${argent(l.realise)}</td></tr>`)] : []),
+    `<tr><td><b>${esc(b.total_depenses.libelle)}</b></td><td class="num"><b>${argent(b.total_depenses.prevu)}</b></td>
+      <td class="num"><b>${argent(b.total_depenses.realise)}</b></td></tr>`], "Aucune dépense");
+  table($("#t-bu-personnel"), ["Nom", "Poste", "Niveau", { label: "Salaire", num: true }, { label: "Sur l'année", num: true }, { label: "Déjà versé", num: true }],
+    b.personnel.map((p) => `<tr><td>${esc(p.nom)}<span class="sub">${esc(p.role)}</span></td><td>${esc(p.poste || "–")}</td>
+      <td>${esc(p.niveau || "–")}</td>
+      <td class="num">${p.taux ? `${argent(p.taux)}<span class="sub">${p.type === "horaire" ? `par heure · ≈ ${argent(p.par_mois)} / mois` : "par mois"}</span>`
+        : `<span style="color:var(--bad)">à définir</span>`}</td>
+      <td class="num">${argent(p.prevu)}</td><td class="num">${argent(p.verse)}</td></tr>`), "Aucun membre du personnel");
+}
+
 // ---------- Rapprochement Wave / Orange Money ----------
 const STATUTS_RAPPROCHEMENT = { trouve: ["Trouvé", "ok"], absent_logiciel: ["Reçu mais pas saisi", "bad"],
   absent_releve: ["Saisi mais pas sur le relevé", "warn"], montant_different: ["Montant différent", "bad"], doublon: ["Doublon", "bad"] };
@@ -3939,6 +3983,7 @@ async function afficherCaisse() {
   afficherRecettes();
   afficherClotures();
   afficherPrevision();
+  afficherBudget();
   afficherTiers();
   const b = await api("/caisse/bilan");
   $("#c-entrees").textContent = argent(b.total_entrees);
@@ -4144,18 +4189,31 @@ $("#f-creneau").addEventListener("submit", async (ev) => {
 let personnel = [], postes = [];
 function afficherPostes() {
   const dir = peut("directeur");
-  table($("#t-postes"), ["Poste", "Payé", { label: "Salaire", num: true }, { label: "Personnes", num: true }, ...(dir ? [""] : [])],
+  const niv = [...cycles].sort((a, b) => a.ordre - b.ordre);
+  const parNiveau = (q) => q.role === "enseignant" || !q.role;      // enseignants et postes ajoutés (vacataires…)
+  const cellNiveaux = (q) => niv.map((cy) => {
+    const n = q.niveaux.find((x) => x.cycle_id === cy.id);
+    if (!parNiveau(q)) return `<td class="num">–</td>`;
+    if (!dir) return `<td class="num">${n ? `${argent(n.montant)}<span class="sub">${n.type === "horaire" ? "/ heure" : "/ mois"}</span>` : "–"}</td>`;
+    return `<td class="num"><input data-po-niveau="${cy.id}" type="number" min="0" value="${n ? n.montant : ""}" placeholder="${q.montant || ""}"
+        title="Salaire au ${esc(cy.nom)} — vide : salaire du poste" style="width:100px;text-align:right" aria-label="Salaire ${esc(cy.nom)}">
+      <select data-po-niveau-type="${cy.id}" style="width:auto;font-size:.8em"><option value="mensuel">/ mois</option>
+        <option value="horaire" ${n?.type === "horaire" ? "selected" : ""}>/ heure</option></select></td>`;
+  }).join("");
+  table($("#t-postes"), ["Poste", "Payé", { label: "Salaire", num: true }, ...niv.map((cy) => ({ label: cy.nom, num: true })),
+    { label: "Personnes", num: true }, ...(dir ? [""] : [])],
     postes.map((q) => dir ? `<tr data-poste="${q.id}">
-        <td><input data-po="nom" value="${esc(q.nom)}" aria-label="Nom du poste"></td>
+        <td><input data-po="nom" value="${esc(q.nom)}" aria-label="Nom du poste" style="min-width:150px"></td>
         <td><select data-po="type" style="width:auto"><option value="mensuel" ${q.type === "mensuel" ? "selected" : ""}>par mois</option>
           <option value="horaire" ${q.type === "horaire" ? "selected" : ""}>par heure</option></select></td>
         <td class="num"><input data-po="montant" type="number" min="0" value="${q.montant || ""}" placeholder="à définir"
           style="width:120px;text-align:right;${q.montant ? "" : "border-color:var(--bad)"}"></td>
+        ${cellNiveaux(q)}
         <td class="num">${q.effectif}</td>
         <td class="actions"><button class="link" data-enreg-poste="${q.id}">Enregistrer</button>${q.role ? ""
           : `<button class="link danger" data-suppr-poste="${q.id}">Supprimer</button>`}</td></tr>`
       : `<tr><td>${esc(q.nom)}</td><td>${q.type === "horaire" ? "par heure" : "par mois"}</td>
-        <td class="num">${q.montant ? argent(q.montant) : "à définir"}</td><td class="num">${q.effectif}</td></tr>`),
+        <td class="num">${q.montant ? argent(q.montant) : "à définir"}</td>${cellNiveaux(q)}<td class="num">${q.effectif}</td></tr>`),
     "Aucun poste");
 }
 $("#t-postes").addEventListener("click", async (ev) => {
@@ -4164,6 +4222,9 @@ $("#t-postes").addEventListener("click", async (ev) => {
     if (d.enregPoste) {
       const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-po="${k}"]`).value;
       await api(`/paie/postes/${d.enregPoste}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), type: v("type"), montant: Number(v("montant") || 0) }) });
+      const niveaux = [...tr.querySelectorAll("[data-po-niveau]")].filter((i) => i.value !== "").map((i) => ({ cycle_id: Number(i.dataset.poNiveau),
+        montant: Number(i.value), type: tr.querySelector(`[data-po-niveau-type="${i.dataset.poNiveau}"]`).value }));
+      if (tr.querySelector("[data-po-niveau]")) await api(`/paie/postes/${d.enregPoste}/niveaux`, { method: "PUT", body: JSON.stringify(niveaux) });
       toast("Salaire du poste enregistré ✔");
     } else if (d.supprPoste) {
       if (!confirm("Supprimer ce poste ?")) return;
@@ -4198,6 +4259,7 @@ async function afficherPaie() {
   if (!$("#f-absence-perso").elements.jour.value) $("#f-absence-perso").elements.jour.value = aujourdhui();
   const dir = peut("directeur");
   [personnel, postes] = await Promise.all([api(`/paie/personnel?mois=${mois.value}`), api("/paie/postes")]);
+  if (!cycles.length) cycles = await api("/cycles").catch(() => []);
   const nom = (id) => personnel.find((p) => p.utilisateur_id === id)?.nom || "?";
   afficherPostes();
   const total = personnel.reduce((t, p) => t + (p.fiche?.net || 0), 0);
@@ -4213,7 +4275,7 @@ async function afficherPaie() {
       const contrat = (dir
         ? `<select data-choix-poste="${p.utilisateur_id}" style="width:auto">${postes.map((q) =>
             `<option value="${q.id}" ${q.id === p.poste_id ? "selected" : ""}>${esc(q.nom)}</option>`).join("")}</select>`
-        : esc(p.poste || "–")) + `<span class="sub">${salaire}</span>`;
+        : esc(p.poste || "–")) + `<span class="sub">${salaire}${p.niveau ? ` · ${esc(p.niveau)}` : ""}</span>`;
       const actions = !f
         ? (p.contrat_montant ? [`<button class="link" data-preparer="${p.utilisateur_id}">🧾 Préparer la fiche</button>`] : [])
         : [`<button class="link" data-fiche-pdf="${f.id}">📄 Fiche de paie</button>`,
