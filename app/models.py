@@ -27,6 +27,11 @@ class EcoleBase(SQLModel):
     jour_limite: int = 5                     # la mensualité est due avant le 5 du mois
     pays: str = ""                           # senegal / guinee : en-tête officiel des bulletins
     inspection: Optional[str] = None         # ex : IA de Dakar — IEF de Dakar-Plateau (en-tête des bulletins)
+    reduction_fratrie_pct: float = 0         # réduction sur la scolarité à partir du 2e enfant d'une même famille
+    bloquer_bulletin_impaye: bool = False    # le parent ne voit le bulletin que si la scolarité est à jour
+    relances_auto: bool = False              # rappels envoyés seuls par SMS (si un fournisseur est configuré)
+    relance_jours_avant: int = 3             # rappel avant l'échéance
+    relance_jours_apres: int = 5             # rappel après l'échéance non payée
 
 
 class Ecole(EcoleBase, table=True):
@@ -52,6 +57,11 @@ class EcoleUpdate(SQLModel):
     nb_mois: Optional[int] = Field(default=None, ge=1, le=12)
     mois_debut: Optional[int] = Field(default=None, ge=1, le=12)
     jour_limite: Optional[int] = Field(default=None, ge=1, le=28)
+    reduction_fratrie_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    bloquer_bulletin_impaye: Optional[bool] = None
+    relances_auto: Optional[bool] = None
+    relance_jours_avant: Optional[int] = Field(default=None, ge=0, le=30)
+    relance_jours_apres: Optional[int] = Field(default=None, ge=1, le=60)
     pays: Optional[Literal["senegal", "guinee", "autre"]] = None
     inspection: Optional[str] = Field(default=None, max_length=120)
 
@@ -186,6 +196,10 @@ class Eleve(EleveBase, table=True):
     code_parent: Optional[str] = Field(default=None, index=True, exclude=True)   # jamais renvoyé dans les listes
     reduction_pct: float = 0                 # réduction sur les frais (2e enfant, enfant d'enseignant…)
     reduction_montant: int = 0               # ou montant fixe (bourse)
+    moratoire_jusquau: Optional[Date] = None # délai accordé : pas « en retard » jusqu'à cette date
+    moratoire_motif: Optional[str] = None
+    tiers_id: Optional[int] = Field(default=None, foreign_key="tiers.id")   # ONG, entreprise… qui paie une part
+    tiers_pct: int = 0                       # part de la scolarité payée par ce tiers
     reduction_motif: Optional[str] = None
 
 
@@ -243,6 +257,8 @@ class Paiement(PaiementBase, table=True):
     motif_annulation: Optional[str] = None
     cle_client: Optional[str] = Field(default=None, index=True)
     cree_le: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))   # heure de saisie
+    groupe: Optional[str] = Field(default=None, index=True)   # paiements faits ensemble (un seul reçu)
+    tiers_id: Optional[int] = Field(default=None, foreign_key="tiers.id")   # payé par un tiers (ONG…)
 
 
 class AnnulationPaiement(SQLModel):
@@ -405,6 +421,11 @@ class LigneFrais(SQLModel):
     du: int
     paye: int
     reste: int
+    tiers_id: Optional[int] = None           # part payée par un tiers (ONG, entreprise…)
+    mensuel: bool = False                    # cantine, transport… payés au mois
+    montant_mois: int = 0
+    exigible: int = 0                        # dû à ce jour
+    retard: int = 0
 
 
 class Echeance(SQLModel):
@@ -436,6 +457,9 @@ class Solde(SQLModel):
     echeances: list[Echeance] = []
     lignes: list[LigneFrais] = []            # détail par type de frais
     paye_jusqua: Optional[str] = None        # dernier mois (ou tranche) entièrement payé
+    moratoire_jusquau: Optional[Date] = None
+    telephone_parent: Optional[str] = None
+    tiers: Optional[str] = None
     retard_scolarite: int = 0                # mois / tranches échus non payés
     retard_autres: int = 0                   # autres frais dus (inscription, tenue…)
     frais_classe: int = 0                    # scolarité de la classe avant réduction
@@ -575,7 +599,7 @@ class MessageEnvoye(SQLModel, table=True):
     eleve_id: int = Field(foreign_key="eleve.id", index=True)
     type: str                                # impaye / bulletin
     canal: str                               # whatsapp / sms
-    utilisateur_id: int = Field(foreign_key="utilisateur.id")
+    utilisateur_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")   # vide : envoi automatique
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -593,7 +617,7 @@ class MessageParent(SQLModel):
 
 class JournalMessage(SQLModel):
     eleve_id: int
-    type: Literal["impaye", "bulletin", "acces"]
+    type: Literal["impaye", "bulletin", "acces", "relance", "recu"]
     canal: Literal["whatsapp", "sms"]
 
 
@@ -764,6 +788,7 @@ class EspaceParent(SQLModel):
     nb_periodes: int = 3
     bareme: int = 20
     cahier: list["LigneCahier"] = []         # cours récents et travail à faire
+    bulletins_retenus: bool = False          # l'école garde les bulletins tant que la scolarité n'est pas à jour
 
 
 # ---------- Enseignants : matières et classes attribuées ----------
@@ -877,12 +902,14 @@ class TypeFrais(SQLModel, table=True):
     actif: bool = True
     ordre: int = 0
     code: Optional[str] = None               # « inscription » : montant fixé par classe
+    mensuel: bool = False                    # montant par mois (cantine, transport) au lieu d'un montant annuel
 
 
 class TypeFraisSaisie(SQLModel):
     nom: str = Field(min_length=2, max_length=40)
     montant: int = Field(ge=0)
     obligatoire: bool = True
+    mensuel: bool = False
 
 
 class SouscriptionFrais(SQLModel, table=True):
@@ -891,6 +918,7 @@ class SouscriptionFrais(SQLModel, table=True):
     eleve_id: int = Field(foreign_key="eleve.id", index=True)
     type_frais_id: int = Field(foreign_key="typefrais.id", index=True)
     annee_scolaire: str = Field(index=True)
+    debut: Optional[Date] = None             # frais au mois : à partir de quel mois (inscription en cours d'année)
 
 
 class FraisEleve(SQLModel):
@@ -899,6 +927,7 @@ class FraisEleve(SQLModel):
     montant: int
     obligatoire: bool
     souscrit: bool
+    mensuel: bool = False
 
 
 # ---------- Logo et cachet de l'école ----------
@@ -1338,3 +1367,158 @@ class LigneCahier(SQLModel):
 
 
 EspaceParent.model_rebuild()
+
+
+# ---------- Paiements : tiers, guichet, contrôle ----------
+class Tiers(SQLModel, table=True):
+    """Organisme qui prend en charge une part de la scolarité (ONG, entreprise, mairie…)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    nom: str
+    contact: Optional[str] = None
+    telephone: Optional[str] = None
+
+
+class TiersSaisie(SQLModel):
+    nom: str = Field(min_length=2, max_length=80)
+    contact: Optional[str] = Field(default=None, max_length=80)
+    telephone: Optional[str] = Field(default=None, max_length=30)
+
+
+class PriseEnCharge(SQLModel):
+    tiers_id: Optional[int] = None           # vide : plus de prise en charge
+    pourcentage: int = Field(default=0, ge=0, le=100)
+
+
+class MoratoireSaisie(SQLModel):
+    jusquau: Optional[Date] = None           # vide : annuler le délai
+    motif: Optional[str] = Field(default=None, max_length=120)
+
+
+class LignePanier(SQLModel):
+    eleve_id: int
+    type_frais_id: Optional[int] = None      # vide : scolarité
+    tiers_id: Optional[int] = None           # part d'un tiers
+    montant: int = Field(gt=0)
+
+
+class PaiementGroupe(SQLModel):
+    lignes: list[LignePanier] = Field(min_length=1, max_length=40)
+    mode: ModePaiement = ModePaiement.especes
+    reference: Optional[str] = Field(default=None, max_length=60)
+    date_paiement: Optional[Date] = None
+    cle_client: Optional[str] = Field(default=None, max_length=64)
+
+
+class ResultatGroupe(SQLModel):
+    groupe: str
+    total: int
+    paiements: list[Paiement]
+    message_parent: Optional[str] = None     # texte prêt pour WhatsApp / SMS
+    lien_whatsapp: Optional[str] = None
+
+
+class ClotureCaisse(SQLModel, table=True):
+    """Fin de journée : l'argent liquide compté par le caissier, comparé à ce que le logiciel attend."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    jour: Date = Field(index=True)
+    attendu: int                             # espèces attendues dans la caisse
+    compte: int                              # espèces comptées
+    ecart: int
+    verse_banque: int = 0                    # argent déposé à la banque ce jour-là
+    commentaire: Optional[str] = None
+    par_id: int = Field(foreign_key="utilisateur.id")
+    cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    valide_par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+    valide_le: Optional[datetime] = None
+
+
+class ClotureSaisie(SQLModel):
+    jour: Optional[Date] = None
+    compte: int = Field(ge=0)
+    verse_banque: int = Field(default=0, ge=0)
+    commentaire: Optional[str] = Field(default=None, max_length=200)
+
+
+class ClotureDetail(SQLModel):
+    id: int
+    jour: Date
+    attendu: int
+    compte: int
+    ecart: int
+    verse_banque: int
+    commentaire: Optional[str]
+    par: str
+    cree_le: datetime
+    valide_par: Optional[str]
+    valide_le: Optional[datetime]
+
+
+class Alerte(SQLModel, table=True):
+    """Événement à signaler au directeur (annulation, réduction, écart de caisse…)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    type: str
+    message: str
+    cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    lue: bool = False
+
+
+class Promesse(SQLModel, table=True):
+    """Le parent promet de payer à une date : on le relance ce jour-là."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ecole_id: int = Field(foreign_key="ecole.id", index=True)
+    eleve_id: int = Field(foreign_key="eleve.id", index=True)
+    date_promise: Date = Field(index=True)
+    montant: Optional[int] = None
+    note: Optional[str] = None
+    par_id: Optional[int] = Field(default=None, foreign_key="utilisateur.id")
+    cree_le: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    soldee: bool = False
+
+
+class PromesseSaisie(SQLModel):
+    eleve_id: int
+    date_promise: Date
+    montant: Optional[int] = Field(default=None, gt=0)
+    note: Optional[str] = Field(default=None, max_length=200)
+
+
+class ARelancer(SQLModel):
+    eleve_id: int
+    eleve: str
+    classe: str
+    telephone: Optional[str]
+    raison: str                              # avant_echeance / retard / promesse
+    detail: str
+    montant: int
+    texte: str
+    lien_whatsapp: Optional[str]
+    deja_relance: bool = False
+
+
+class MoisPrevision(SQLModel):
+    mois: str
+    attendu: int                             # échéances des élèves ce mois-là
+    salaires: int
+    autres_depenses: int                     # moyenne des mois passés (hors salaires)
+    solde_prevu: int                         # trésorerie en fin de mois
+
+
+class LigneRapprochement(SQLModel):
+    statut: str                              # trouve / absent_logiciel / absent_releve / doublon / montant_different
+    reference: Optional[str]
+    date: Optional[Date]
+    montant_releve: Optional[int]
+    montant_logiciel: Optional[int]
+    eleve: Optional[str] = None
+    paiement_id: Optional[int] = None
+
+
+class Rapprochement(SQLModel):
+    lignes: list[LigneRapprochement]
+    trouves: int
+    absents_logiciel: int
+    absents_releve: int
+    differences: int

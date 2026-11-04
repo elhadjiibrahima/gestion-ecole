@@ -60,6 +60,18 @@ Logiciel de gestion scolaire multi-écoles : classes, élèves, frais de scolari
 - **Bulletin officiel** : en-tête « République du Sénégal / Ministère / Inspection », sexe, date et lieu de naissance, professeur
   de chaque matière, distinction (félicitations, encouragements, tableau d'honneur, avertissement)
 - **Fiche élève complète** (sexe, lieu de naissance, parent / tuteur, adresse) et **dossier** : frais, mois payés, résultats, paiements, absences
+- **Guichet d'encaissement** : recherche par nom, matricule ou téléphone ; toute la famille (frères et sœurs reconnus au
+  téléphone du parent) et tous ses frais (scolarité, inscription, tenue, cantine, transport…) sur un écran ; montants en un clic
+  (1, 2, 3 mois, le retard, tout) ; un seul paiement et un seul reçu pour plusieurs frais et plusieurs enfants ; reçu envoyé
+  au parent par WhatsApp
+- **Frais au mois** (cantine, transport) dus à partir du mois d'inscription ; **réduction famille** à partir du 2e enfant ;
+  **organismes qui paient** une part de la scolarité (ONG…), avec relevé PDF ; **délai accordé** à une famille ;
+  **promesses de paiement**
+- **Relances** : rappel avant l'échéance, après un retard, le jour d'une promesse ; un message par famille ; envoi automatique
+  chaque matin par SMS si un fournisseur est configuré
+- **Contrôle** : clôture de caisse du soir (argent compté, écart, versement banque, validation du directeur) ; alertes au
+  directeur (annulation, réduction, écart, délai) ; rapprochement avec le relevé Wave / Orange Money ; prévision de trésorerie ;
+  bulletin retenu tant que la scolarité n'est pas à jour (au choix)
 - **Paiements Wave, Free Money, chèque** ; **caisse du jour** (par mode et par caissier, à imprimer le soir) ; **autres entrées**
   (dons, ventes, location) ; tableau de bord du jour et du mois, retards de mensualités séparés des autres frais
 - **Personnel sans accès au logiciel** (gardien, cuisinière…) dans la paie ; **absences du personnel** : heures non payées ou retenue proposée

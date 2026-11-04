@@ -115,11 +115,13 @@ def get_eleve(session: Session, eleve_id: int, ecole_id: int, code: int = 404) -
 
 # ---------- Paiements ----------
 def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference, date_paiement,
-                   utilisateur_id: int, type_frais_id: int | None = None) -> Paiement:
+                   utilisateur_id: int, type_frais_id: int | None = None, tiers_id: int | None = None,
+                   groupe: str | None = None) -> Paiement:
     """Enregistre un paiement (sans commit) pour la scolarité ou un autre frais.
     Refuse un montant supérieur au reste à payer de ce frais."""
     solde = calculer_solde(session, eleve)
-    ligne = next((l for l in solde.lignes if l.type_frais_id == type_frais_id and l.du > 0), None)
+    ligne = next((l for l in solde.lignes if l.type_frais_id == type_frais_id and (l.tiers_id is not None) == (tiers_id is not None)
+                  and l.du > 0), None)
     if ligne is None:
         raise HTTPException(400, "Ce frais ne concerne pas cet élève")
     nom = "ses frais de scolarité" if type_frais_id is None else f"« {ligne.nom} »"
@@ -127,7 +129,7 @@ def creer_paiement(session: Session, eleve: Eleve, montant: int, mode, reference
         raise HTTPException(400, f"Cet élève a déjà payé la totalité de {nom}")
     if montant > ligne.reste:
         raise HTTPException(400, f"Montant trop élevé : il ne reste que {ligne.reste:,} à payer pour {nom}".replace(",", " "))
-    paiement = Paiement(eleve_id=eleve.id, type_frais_id=type_frais_id, montant=montant, mode=mode, reference=reference,
+    paiement = Paiement(eleve_id=eleve.id, type_frais_id=type_frais_id, tiers_id=ligne.tiers_id, groupe=groupe, montant=montant, mode=mode, reference=reference,
                         date_paiement=date_paiement or date.today(), enregistre_par_id=utilisateur_id,
                         annee_scolaire=annee_courante(session, eleve.ecole_id))
     session.add(paiement)
@@ -205,9 +207,29 @@ def calculer_echeances(frais: int, total_paye: int, tranches: list[Tranche],
 
 
 # ---------- Soldes ----------
-def frais_eleve(classe: Classe, eleve: Eleve) -> tuple[int, int]:
-    """(frais dus par l'élève, montant de la réduction)."""
-    reduction = round(classe.frais_annuels * (eleve.reduction_pct or 0) / 100) + (eleve.reduction_montant or 0)
+def chiffres_telephone(tel: str | None) -> str:
+    """Les 9 derniers chiffres : sert à reconnaître les enfants d'une même famille."""
+    d = "".join(c for c in (tel or "") if c.isdigit())
+    return d[-9:] if len(d) >= 8 else ""
+
+
+def freres_et_soeurs(session: Session, eleve: Eleve) -> list[Eleve]:
+    """Élèves inscrits de la même famille (même téléphone du parent), du plus ancien au plus récent."""
+    tel = chiffres_telephone(eleve.telephone_parent)
+    if not tel:
+        return [eleve]
+    autres = session.exec(select(Eleve).where(Eleve.ecole_id == eleve.ecole_id, Eleve.actif == True,  # noqa: E712
+                                              Eleve.telephone_parent.is_not(None))).all()
+    famille = [e for e in autres if chiffres_telephone(e.telephone_parent) == tel]
+    if eleve not in famille:
+        famille.append(eleve)
+    return sorted(famille, key=lambda e: e.id)
+
+
+def frais_eleve(classe: Classe, eleve: Eleve, fratrie_pct: float = 0) -> tuple[int, int]:
+    """(frais dus par l'élève, montant de la réduction). fratrie_pct : réduction famille nombreuse."""
+    pct = (eleve.reduction_pct or 0) + fratrie_pct
+    reduction = round(classe.frais_annuels * pct / 100) + (eleve.reduction_montant or 0)
     reduction = min(reduction, classe.frais_annuels)
     return classe.frais_annuels - reduction, reduction
 
@@ -235,63 +257,105 @@ def frais_annexes(session: Session, eleve: Eleve) -> list:
 
 
 def calculer_solde(session: Session, eleve: Eleve, tranches: list[Tranche] | None = None) -> Solde:
-    from app.models import LigneFrais, TypeFrais
+    from app.models import LigneFrais, SouscriptionFrais, Tiers, TypeFrais
     classe = session.get(Classe, eleve.classe_id)
-    scolarite, reduction = frais_eleve(classe, eleve)
+    ecole = session.get(Ecole, eleve.ecole_id)
+    aujourd_hui = date.today()
+    # Réduction famille : à partir du 2e enfant inscrit (même téléphone du parent)
+    fratrie = 0
+    if ecole.reduction_fratrie_pct and eleve.actif:
+        famille = freres_et_soeurs(session, eleve)
+        if famille.index(eleve) >= 1:
+            fratrie = ecole.reduction_fratrie_pct
+    scolarite, reduction = frais_eleve(classe, eleve, fratrie)
+    # Prise en charge d'une part par un tiers (ONG, entreprise…) : facturée au tiers, pas au parent
+    tiers = session.get(Tiers, eleve.tiers_id) if eleve.tiers_id and eleve.tiers_pct else None
+    part_tiers = round(scolarite * eleve.tiers_pct / 100) if tiers else 0
+    scolarite_parent = scolarite - part_tiers
     annee = annee_courante(session, eleve.ecole_id)
-    par_type = {t: (s or 0, n) for t, s, n in session.exec(
-        select(Paiement.type_frais_id, func.sum(Paiement.montant), func.count(Paiement.id))
+    par_type = {(t, ti): (s or 0, n) for t, ti, s, n in session.exec(
+        select(Paiement.type_frais_id, Paiement.tiers_id, func.sum(Paiement.montant), func.count(Paiement.id))
         .where(Paiement.eleve_id == eleve.id, Paiement.annule == False,  # noqa: E712
                Paiement.annee_scolaire == annee)
-        .group_by(Paiement.type_frais_id)).all()}
+        .group_by(Paiement.type_frais_id, Paiement.tiers_id)).all()}
     nb = sum(n for _, n in par_type.values())
     dernier = session.exec(select(func.max(Paiement.date_paiement)).where(
         Paiement.eleve_id == eleve.id, Paiement.annule == False, Paiement.annee_scolaire == annee)).one()  # noqa: E712
-    # Une ligne par frais : scolarité, puis les autres frais dus (ou déjà payés)
-    paye_sco = par_type.get(None, (0, 0))[0]
-    lignes = [LigneFrais(type_frais_id=None, nom="Scolarité", du=scolarite, paye=paye_sco,
-                         reste=max(scolarite - paye_sco, 0))]
+    paye = lambda tid: sum(v[0] for (t, ti), v in par_type.items() if t == tid and ti is None)  # noqa: E731
+    # Une ligne par frais : scolarité (part du parent), part du tiers, puis les autres frais
+    paye_sco = paye(None)
+    lignes = [LigneFrais(type_frais_id=None, nom="Scolarité", du=scolarite_parent, paye=paye_sco,
+                         reste=max(scolarite_parent - paye_sco, 0))]
+    if tiers or any(ti for (t, ti) in par_type if t is None):
+        p_t = sum(v[0] for (t, ti), v in par_type.items() if t is None and ti)
+        lignes.append(LigneFrais(type_frais_id=None, tiers_id=tiers.id if tiers else eleve.tiers_id,
+                                 nom=f"Scolarité — part {tiers.nom if tiers else 'tiers'}", du=part_tiers, paye=p_t,
+                                 reste=max(part_tiers - p_t, 0), exigible=0))
+    mois = mensualites(ecole)           # calendrier des mois (frais au mois : cantine, transport…)
+    debuts = {x.type_frais_id: x.debut for x in session.exec(select(SouscriptionFrais).where(
+        SouscriptionFrais.eleve_id == eleve.id, SouscriptionFrais.annee_scolaire == annee)).all()}
     annexes = frais_annexes(session, eleve)
-    ids_annexes = {t.id for t in annexes if t.code != "inscription" or classe.frais_inscription or par_type.get(t.id)}
+    ids_annexes = {t.id for t in annexes if t.code != "inscription" or classe.frais_inscription or paye(t.id)}
     for t in annexes:
-        p = par_type.get(t.id, (0, 0))[0]
-        du = classe.frais_inscription if t.code == "inscription" else t.montant
-        if du == 0 and p == 0 and t.code == "inscription":
-            continue
-        lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=du, paye=p, reste=max(du - p, 0)))
-    for tid, (p, _) in par_type.items():   # payé pour un frais qui ne s'applique plus : on le montre quand même
+        p = paye(t.id)
+        if t.code == "inscription":
+            du = classe.frais_inscription
+            if du == 0 and p == 0:
+                continue
+            lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=du, paye=p, reste=max(du - p, 0), exigible=du,
+                                     retard=max(du - p, 0)))
+        elif t.mensuel:
+            debut = debuts.get(t.id)
+            applicables = [m for m in mois if not debut or m.date_limite >= date(debut.year, debut.month, 1)]
+            du = t.montant * len(applicables)
+            exigible = t.montant * sum(1 for m in applicables if m.date_limite < aujourd_hui)
+            lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=du, paye=p, reste=max(du - p, 0), mensuel=True,
+                                     montant_mois=t.montant, exigible=exigible, retard=max(exigible - p, 0)))
+        else:
+            lignes.append(LigneFrais(type_frais_id=t.id, nom=t.nom, du=t.montant, paye=p, reste=max(t.montant - p, 0),
+                                     exigible=t.montant, retard=max(t.montant - p, 0)))
+    for (tid, ti), (p, _) in par_type.items():   # payé pour un frais qui ne s'applique plus : on le montre quand même
         if tid is not None and tid not in ids_annexes:
             t = session.get(TypeFrais, tid)
             lignes.append(LigneFrais(type_frais_id=tid, nom=t.nom if t else "?", du=0, paye=p, reste=0))
     du_total = sum(l.du for l in lignes)
     total = sum(l.paye for l in lignes)
     reste = sum(l.reste for l in lignes)
-    reste_annexes = sum(l.reste for l in lignes[1:])
+    autres = [l for l in lignes if l.type_frais_id is not None]
     statut = (StatutPaiement.a_jour if reste == 0
               else StatutPaiement.partiel if total > 0 else StatutPaiement.rien_paye)
-    # L'échéancier porte sur la scolarité ; les autres frais sont dus dès maintenant
+    # L'échéancier porte sur la part du parent de la scolarité
     if tranches is None:
         tranches = tranches_annee(session, eleve.ecole_id)
     if tranches:
-        echeances = calculer_echeances(scolarite, paye_sco, tranches)
-        exigible_sco = sum(e.montant for e in echeances if e.date_limite < date.today())
+        echeances = calculer_echeances(scolarite_parent, paye_sco, tranches)
+        exigible_sco = sum(e.montant for e in echeances if e.date_limite < aujourd_hui)
         prochaine = next((e for e in echeances if e.statut == "a_venir"), None)
     else:
-        echeances, exigible_sco, prochaine = [], scolarite, None
+        echeances, exigible_sco, prochaine = [], scolarite_parent, None
+    lignes[0].exigible = exigible_sco
+    lignes[0].retard = max(exigible_sco - paye_sco, 0)
+    if mois and tranches and len(tranches) == len(mois):
+        lignes[0].mensuel, lignes[0].montant_mois = True, round(scolarite_parent / len(mois))
     payees = [e for e in echeances if e.statut == "payee"]
-    retard_sco = max(exigible_sco - paye_sco, 0)
+    retard_sco = lignes[0].retard
+    retard_autres = sum(l.retard for l in autres)
+    moratoire = eleve.moratoire_jusquau if eleve.moratoire_jusquau and eleve.moratoire_jusquau >= aujourd_hui else None
+    if moratoire:                       # délai accordé par l'école : pas en retard jusqu'à cette date
+        retard_sco = retard_autres = 0
     return Solde(
         paye_jusqua=payees[-1].nom if payees else None,
-        retard_scolarite=retard_sco, retard_autres=reste_annexes,
-        montant_exigible=exigible_sco + sum(l.du for l in lignes[1:]),
-        retard=max(exigible_sco - paye_sco, 0) + reste_annexes,
+        retard_scolarite=retard_sco, retard_autres=retard_autres, moratoire_jusquau=moratoire,
+        telephone_parent=eleve.telephone_parent, tiers=tiers.nom if tiers else None,
+        montant_exigible=exigible_sco + sum(l.exigible for l in autres),
+        retard=retard_sco + retard_autres,
         prochaine_echeance=prochaine.date_limite if prochaine else None,
         prochain_montant=prochaine.reste if prochaine else 0,
         echeances=echeances,
         lignes=lignes,
         frais_classe=classe.frais_annuels,
         reduction=reduction,
-        reduction_motif=eleve.reduction_motif if reduction else None,
+        reduction_motif=(eleve.reduction_motif or ("Réduction famille" if fratrie else None)) if reduction else None,
         eleve_id=eleve.id,
         matricule=eleve.matricule,
         nom_complet=f"{eleve.prenom} {eleve.nom}",

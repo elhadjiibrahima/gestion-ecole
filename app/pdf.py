@@ -257,6 +257,92 @@ def pdf_recu(ecole: Ecole, paiement: Paiement, eleve: Eleve, classe: Classe,
     return buf.getvalue()
 
 
+def pdf_recu_groupe(ecole: Ecole, paiements: list, caissier: str | None) -> bytes:
+    """Un seul reçu pour plusieurs paiements faits ensemble (plusieurs frais, ou plusieurs enfants d'une famille).
+    paiements : [(Paiement, Eleve, Classe, nom du frais, Solde après paiement)]."""
+    buf = io.BytesIO()
+    marge = 12 * mm
+    p0 = paiements[0][0]
+    doc = SimpleDocTemplate(buf, pagesize=A5, leftMargin=marge, rightMargin=marge, topMargin=marge, bottomMargin=marge,
+                            title=f"Reçu {p0.numero_recu}", author=ecole.nom)
+    largeur = A5[0] - 2 * marge
+    d = ecole.devise
+    total = sum(p.montant for p, *_ in paiements)
+    S_CELL = ParagraphStyle("cg", parent=S_NORMAL, fontSize=8.5, leading=10)
+    lignes = [["Élève", "Pour", "N° reçu", "Montant"]] + [
+        [Paragraph(f"{e.prenom} {e.nom}<br/><font size=7 color='#6b7280'>{c.nom}</font>", S_CELL),
+         Paragraph(frais + (f"<br/><font size=7 color='#6b7280'>{_mois_couverts(s, ecole)}</font>"
+                            if frais.startswith("Scolarité") and _mois_couverts(s, ecole) else ""), S_CELL),
+         Paragraph(p.numero_recu or "", S_CELL), argent(p.montant, d)]
+        for p, e, c, frais, s in paiements] + [["", "", "TOTAL", argent(total, d)]]
+    t = Table(lignes, colWidths=[largeur * 0.32, largeur * 0.3, largeur * 0.18, largeur * 0.2])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLEU), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("BACKGROUND", (0, -1), (-1, -1), FOND),
+        ("ALIGN", (3, 0), (3, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")),
+    ]))
+    restes = {}
+    for _, e, _, _, s in paiements:
+        restes[e.id] = (f"{e.prenom} {e.nom}", s.reste_a_payer)
+    situation = Table([[f"Reste à payer — {n}", argent(r, d)] for n, r in restes.values()],
+                      colWidths=[largeur * 0.62, largeur * 0.38])
+    situation.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 9), ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                                   ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.lightgrey)]))
+    infos = [("Date", date_fr(p0.date_paiement)), ("Mode de paiement", MODES.get(p0.mode.value, p0.mode.value))]
+    if p0.reference:
+        infos.append(("Référence", p0.reference))
+    elems = _entete_ecole(ecole) + [
+        Paragraph("REÇU DE PAIEMENT", S_TITRE),
+        _tableau_infos(infos, largeur), Spacer(1, 6), t, Spacer(1, 6),
+        Paragraph(f"<i>Arrêté à la somme de {en_lettres(total)} {d}.</i>", S_PETIT), Spacer(1, 8),
+        Paragraph("<b>Situation après ce paiement</b>", S_NORMAL), Spacer(1, 3), situation, Spacer(1, 14),
+        _signatures("Le parent", f"Le caissier{' : ' + caissier if caissier else ''}", largeur, ecole),
+        Spacer(1, 6), Paragraph(f"Édité le {date_fr(date.today())} — conservez ce reçu.", S_PETIT),
+    ]
+    doc.build(elems)
+    return buf.getvalue()
+
+
+def _mois_couverts(solde: Solde, ecole: Ecole) -> str:
+    if not solde.echeances:
+        return ""
+    reglees = [e.nom for e in solde.echeances if e.statut == "payee"]
+    return ("payé jusqu'à " + reglees[-1]) if reglees else ""
+
+
+def pdf_releve_tiers(ecole: Ecole, tiers, lignes: list) -> bytes:
+    """Relevé envoyé à l'organisme qui prend en charge des élèves : lignes = [(élève, classe, dû, payé)]."""
+    buf = io.BytesIO()
+    marge = 15 * mm
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=marge, rightMargin=marge, topMargin=marge, bottomMargin=marge,
+                            title=f"Relevé {tiers.nom}", author=ecole.nom)
+    largeur = A4[0] - 2 * marge
+    d = ecole.devise
+    data = [["Élève", "Classe", "Part prise en charge", "Déjà réglé", "Reste à régler"]] + [
+        [e, c, argent(du, d), argent(p, d), argent(max(du - p, 0), d)] for e, c, du, p in lignes]
+    tot_du, tot_p = sum(x[2] for x in lignes), sum(x[3] for x in lignes)
+    data.append(["TOTAL", "", argent(tot_du, d), argent(tot_p, d), argent(max(tot_du - tot_p, 0), d)])
+    t = Table(data, colWidths=[largeur * f for f in (0.3, 0.16, 0.18, 0.18, 0.18)], repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLEU), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), FOND), ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")), ("FONTSIZE", (0, 0), (-1, -1), 9),
+    ]))
+    elems = _entete_ecole(ecole) + [
+        Paragraph(f"RELEVÉ DE PRISE EN CHARGE — {tiers.nom.upper()}", S_TITRE),
+        Paragraph(f"Année scolaire {ecole.annee_scolaire}" + (f" · Contact : {tiers.contact}" if tiers.contact else ""), S_NORMAL),
+        Spacer(1, 8), t, Spacer(1, 10),
+        Paragraph(f"<b>Montant restant à régler : {argent(max(tot_du - tot_p, 0), d)}</b>", S_NORMAL), Spacer(1, 20),
+        _signatures("", "Le directeur", largeur, ecole),
+        Spacer(1, 6), Paragraph(f"Édité le {date_fr(date.today())}", S_PETIT),
+    ]
+    doc.build(elems)
+    return buf.getvalue()
+
+
 # ---------- Bulletins ----------
 def _page_bulletin(ecole: Ecole, b: Bulletin, largeur: float) -> list:
     S_CELL = ParagraphStyle("cell", parent=S_NORMAL, fontSize=8, leading=9.5)

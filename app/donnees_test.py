@@ -14,11 +14,12 @@ from sqlmodel import Session, select
 
 from app.cursus import regles_classe
 from app.models import (
-    Affectation, Classe, Ecole, Eleve, InscriptionEcole, ModePaiement, Note, Role, Utilisateur,
+    Affectation, Classe, Ecole, Eleve, InscriptionEcole, ModePaiement, Note, Role, SouscriptionFrais, Tiers, TypeFrais,
+    Utilisateur,
 )
 from app.routers.paie import postes_ecole
 from app.security import hacher_mot_de_passe
-from app.services import creer_paiement, matieres_classe, trier_classes, type_inscription
+from app.services import calculer_solde, creer_paiement, matieres_classe, trier_classes, type_inscription
 
 PRENOMS_F = ["Aminata", "Fatou", "Awa", "Mariama", "Khady", "Ndeye", "Aïssatou", "Coumba", "Astou", "Bineta"]
 PRENOMS_M = ["Modou", "Cheikh", "Ousmane", "Moussa", "Ibrahima", "Abdoulaye", "Mamadou", "Serigne", "Pape", "Alioune"]
@@ -197,22 +198,47 @@ def remplir(session: Session, nom_ecole: str, pays: str, nom_directeur: str, ema
     modes = [ModePaiement.especes, ModePaiement.wave, ModePaiement.orange_money] if ecole.pays != "guinee" \
         else [ModePaiement.especes, ModePaiement.orange_money, ModePaiement.mtn_momo]
     annee_debut = int(ecole.annee_scolaire[:4])
+    # Autres frais : tenue (tous, une fois), cantine et transport (au choix, chaque mois)
+    tenue = TypeFrais(ecole_id=ecole.id, nom="Tenue", montant=15000, obligatoire=True, ordre=1)
+    cantine = TypeFrais(ecole_id=ecole.id, nom="Cantine", montant=10000, obligatoire=False, mensuel=True, ordre=2)
+    transport = TypeFrais(ecole_id=ecole.id, nom="Transport", montant=12500, obligatoire=False, mensuel=True, ordre=3)
+    session.add_all([tenue, cantine, transport])
+    ecole.reduction_fratrie_pct = 10                  # 10 % à partir du 2e enfant
+    ong = Tiers(ecole_id=ecole.id, nom="ONG Éducation pour tous", contact="M. Sy")
+    session.add_all([ecole, ong])
+    session.flush()
+    familles: list[tuple[str, str]] = []              # (nom de famille, téléphone) : des frères et sœurs dans d'autres classes
     for c in classes:
         for _ in range(3):
             sexe = hasard.choice("MF")
-            nom = hasard.choice(NOMS)
+            if familles and hasard.random() < 0.25:   # un enfant sur 4 a un frère ou une sœur dans l'école
+                nom, tel = hasard.choice(familles)
+            else:
+                nom, tel = hasard.choice(NOMS), f"77{hasard.randint(1000000, 9999999)}"
+                familles.append((nom, tel))
             naissance = date(annee_debut - _age(c), hasard.randint(1, 12), hasard.randint(1, 28))
             e = Eleve(ecole_id=ecole.id, classe_id=c.id, nom=nom, sexe=sexe,
                       prenom=hasard.choice(PRENOMS_F if sexe == "F" else PRENOMS_M), date_naissance=naissance,
                       lieu_naissance=hasard.choice(VILLES), nom_tuteur=f"{hasard.choice(PRENOMS_M)} {nom}",
-                      telephone_parent=f"77{hasard.randint(1000000, 9999999)}", adresse="Quartier de test")
+                      telephone_parent=tel, adresse="Quartier de test")
             session.add(e)
             session.flush()
             e.matricule = f"{date.today().year}-{e.id:05d}"
+            if hasard.random() < 0.3:
+                session.add(SouscriptionFrais(eleve_id=e.id, type_frais_id=cantine.id, annee_scolaire=ecole.annee_scolaire))
+            if hasard.random() < 0.2:
+                session.add(SouscriptionFrais(eleve_id=e.id, type_frais_id=transport.id, annee_scolaire=ecole.annee_scolaire))
+            if nb_eleves % 20 == 7:                    # quelques élèves pris en charge à moitié par l'ONG
+                e.tiers_id, e.tiers_pct = ong.id, 50
+            session.flush()
             creer_paiement(session, e, c.frais_inscription, hasard.choice(modes), None, None, directeur.id, type_ins.id)
+            if hasard.random() < 0.6:
+                creer_paiement(session, e, 15000, hasard.choice(modes), None, None, directeur.id, tenue.id)
+            solde = calculer_solde(session, e)
             mois = hasard.choice([0, 1, 1, 2])
             if mois:
-                creer_paiement(session, e, c.mensualite * mois, hasard.choice(modes), None, None, directeur.id)
+                creer_paiement(session, e, min(c.mensualite * mois, solde.lignes[0].reste), hasard.choice(modes), None, None,
+                               directeur.id)
             # Notes de la 1re période (non publiées) : 2 devoirs et une composition par matière
             bareme = regles_classe(session, c).bareme
             niveau = hasard.uniform(0.35, 0.9)            # chaque élève a son niveau

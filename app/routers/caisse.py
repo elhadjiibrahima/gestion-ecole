@@ -81,6 +81,9 @@ def annuler(
     d.annule, d.annule_le, d.annule_par_id = True, datetime.now(timezone.utc), user.id
     d.motif_annulation = data.motif.strip()
     session.add(d)
+    from app.routers.guichet import alerter
+    alerter(session, user.ecole_id, "annulation", f"Dépense « {d.libelle} » ({d.montant:,}) annulée par {user.nom} : "
+            f"{d.motif_annulation}".replace(",", " "))
     session.commit()
     session.refresh(d)
     return _details(session, [d])[0]

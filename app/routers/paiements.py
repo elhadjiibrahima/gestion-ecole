@@ -80,6 +80,12 @@ def annuler_paiement(
     paiement.annule_par_id = user.id
     paiement.motif_annulation = data.motif.strip()
     session.add(paiement)
+    from app.routers.guichet import alerter
+    e = session.get(Eleve, paiement.eleve_id)
+    ecole = session.get(Ecole, user.ecole_id)
+    alerter(session, user.ecole_id, "annulation",
+            f"Paiement {paiement.numero_recu} de {e.prenom} {e.nom} ({paiement.montant:,} {ecole.devise}) annulé par "
+            f"{user.nom} : {paiement.motif_annulation}".replace(",", " "))
     session.commit()
     session.refresh(paiement)
     return details_paiements(session, [paiement])[0]

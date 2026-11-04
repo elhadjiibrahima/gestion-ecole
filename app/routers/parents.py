@@ -49,6 +49,8 @@ def espace(eleve: Eleve = Depends(eleve_du_parent), session: Session = Depends(g
     ecole = session.get(Ecole, eleve.ecole_id)
     classe = session.get(Classe, eleve.classe_id)
     regles = regles_classe(session, classe)
+    solde = calculer_solde(session, eleve)
+    retenus = ecole.bloquer_bulletin_impaye and solde.retard_scolarite > 0
     annee = ecole.annee_scolaire
     paiements = session.exec(select(Paiement).where(Paiement.eleve_id == eleve.id, Paiement.annee_scolaire == annee)
                              .order_by(Paiement.date_paiement.desc(), Paiement.id.desc())).all()
@@ -58,11 +60,12 @@ def espace(eleve: Eleve = Depends(eleve_du_parent), session: Session = Depends(g
         eleve_id=eleve.id, nom=eleve.nom, prenom=eleve.prenom, matricule=eleve.matricule, classe=classe.nom,
         ecole=ecole.nom, ecole_telephone=ecole.telephone, devise=ecole.devise, annee_scolaire=annee,
         a_photo=session.get(PhotoEleve, eleve.id) is not None,
-        solde=calculer_solde(session, eleve),
+        solde=solde,
         paiements=[PaiementParent(id=p.id, numero_recu=p.numero_recu, date_paiement=p.date_paiement,
                                   montant=p.montant, mode=p.mode, annule=p.annule,
                                   frais=nom_frais(session, p.type_frais_id)) for p in paiements],
-        bulletins=[b for b in (bulletin_eleve(session, eleve, t) for t in range(1, regles.periodes + 1)) if b.publie],
+        bulletins=[] if retenus else [b for b in (bulletin_eleve(session, eleve, t) for t in range(1, regles.periodes + 1)) if b.publie],
+        bulletins_retenus=retenus,
         absences=[AbsenceParent(jour=a.jour, type=a.type, justifiee=a.justifiee, motif=a.motif) for a in absences],
         periode=regles.nom_periode, nb_periodes=regles.periodes, bareme=regles.bareme,
         cahier=travail_a_faire(session, classe.id, annee),
@@ -94,6 +97,9 @@ def bulletin(trimestre: int, eleve: Eleve = Depends(eleve_du_parent), session: S
     if trimestre not in (1, 2, 3):
         raise HTTPException(400, "Le trimestre doit être 1, 2 ou 3")
     b = bulletin_eleve(session, eleve, trimestre)
+    ecole = session.get(Ecole, eleve.ecole_id)
+    if ecole.bloquer_bulletin_impaye and calculer_solde(session, eleve).retard_scolarite > 0:
+        raise HTTPException(403, "Le bulletin est disponible à l'école une fois la scolarité à jour")
     if not b.publie:
         raise HTTPException(404, "Les résultats de cette période ne sont pas encore publiés par l'école")
     pdf = pdf_bulletins(session.get(Ecole, eleve.ecole_id), [b])

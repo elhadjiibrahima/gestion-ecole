@@ -154,6 +154,27 @@
   tr.groupe td { background: var(--primary-light); color: var(--primary); font-weight: 600; font-size: .85rem; padding: 6px 8px; }
   .ligne-info { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
   .ligne-info span { color: var(--muted); }
+  .paiements-grille { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1000px) { .paiements-grille { grid-template-columns: minmax(0, 11fr) minmax(0, 10fr); } }
+  #g-resultats { position: absolute; left: 0; right: 0; z-index: 5; background: #fff; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 320px; overflow-y: auto; }
+  .suggestion { display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid var(--border);
+    background: #fff; padding: 8px 10px; cursor: pointer; font-size: .9rem; }
+  .suggestion:hover { background: var(--primary-light); }
+  .suggestion span { display: block; color: var(--muted); font-size: .8rem; }
+  .g-eleve { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+  .g-eleve.frere { background: #fafafa; }
+  table.g-lignes td { vertical-align: top; padding: 6px 4px; }
+  .chips-montant { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .chips-montant button { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 3px 9px;
+    font-size: .78rem; cursor: pointer; color: var(--text); }
+  .chips-montant button b { color: var(--primary); }
+  .chips-montant button.actif { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .chips-montant button.actif b { color: #fff; }
+  .g-total { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; padding: 8px 0;
+    border-top: 2px solid var(--primary); margin-top: 8px; }
+  .g-total b { font-size: 1.4rem; color: var(--primary); }
+  .g-form { margin: 6px 0; padding: 8px; background: var(--primary-light); border-radius: 8px; }
   .mois-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .mois-chips .mois { font-size: .75rem; padding: 2px 6px; border-radius: 999px; background: #f3f4f6; color: var(--muted); }
   .mois-chips .mois.payee { background: var(--ok-bg); color: var(--ok); }
@@ -315,6 +336,13 @@
 <main>
   <!-- ===== Tableau de bord ===== -->
   <section class="tab" id="dashboard">
+    <div class="card" id="carte-alertes" hidden style="margin-bottom:14px;border-color:#f59e0b">
+      <div class="toolbar" style="justify-content:space-between;margin:0">
+        <h2 style="margin:0">🔔 À vérifier</h2>
+        <button class="btn secondary" id="btn-alertes-lues">Tout est vu</button>
+      </div>
+      <div id="liste-alertes"></div>
+    </div>
     <div class="grid">
       <div class="card kpi ok"><div class="label">Encaissé aujourd'hui</div><div class="value" id="k-jour">–</div></div>
       <div class="card kpi ok"><div class="label">Encaissé ce mois</div><div class="value" id="k-mois">–</div></div>
@@ -453,23 +481,30 @@
 
   <!-- ===== Paiements ===== -->
   <section class="tab" id="paiements">
-    <div class="two">
-      <div class="card">
-        <h2>Enregistrer un paiement</h2>
-        <form id="f-paiement">
-          <label>1. Classe<select id="p-classe" class="sel-classes"></select></label>
-          <label>2. Élève<select name="eleve_id" id="p-eleve" required></select></label>
-          <div id="p-solde" class="hint" style="font-size:.85rem;margin-top:-4px"></div>
-          <label id="p-frais-zone" hidden>3. Pour<select name="type_frais_id" id="p-frais"></select></label>
-          <label>Montant<input name="montant" type="number" min="1" required></label>
-          <label>Mode
-            <select name="mode" class="sel-modes"></select>
-          </label>
-          <label>Référence (n° de transaction)<input name="reference"></label>
-          <label>Date<input name="date_paiement" type="date"></label>
-          <button class="btn">Enregistrer</button>
+    <div class="paiements-grille">
+      <div class="card" id="guichet">
+        <h2>Encaisser</h2>
+        <div style="position:relative">
+          <input id="g-q" placeholder="🔍 Nom, matricule ou téléphone du parent…" autocomplete="off">
+          <div id="g-resultats"></div>
+        </div>
+        <div class="toolbar" style="margin:8px 0">
+          <select id="g-classe" class="sel-classes" data-all="… ou choisis la classe"></select>
+          <select id="g-eleve"></select>
+        </div>
+        <div id="g-panier"><p class="hint">Cherche l'élève : ses frais (scolarité, inscription, tenue, cantine, transport…) et ceux de
+          ses frères et sœurs s'affichent. Un clic sur un montant le remplit.</p></div>
+        <form id="f-guichet" hidden>
+          <div class="g-total"><span>Total</span><b id="g-total">0</b></div>
+          <div class="row">
+            <label>Mode<select name="mode" class="sel-modes"></select></label>
+            <label>Référence<input name="reference" placeholder="n° de transaction"></label>
+            <label>Date<input name="date_paiement" type="date"></label>
+          </div>
+          <span id="g-alerte" style="color:var(--bad);font-size:.85rem"></span>
+          <button class="btn" id="g-encaisser" disabled>Choisis ce que le parent paie</button>
         </form>
-        <div id="dernier-recu"></div>
+        <div id="g-recu"></div>
       </div>
       <div class="card">
         <h2>Suivi des paiements par classe</h2>
@@ -691,12 +726,14 @@
       </div>
       <div class="card">
         <h2>Autres frais</h2>
-        <p class="hint">Cantine, transport, tenue… (les frais d'inscription se règlent dans chaque classe). « Pour tous » : dû par chaque élève.
+        <p class="hint">Tenue, fournitures (une fois), cantine, transport (chaque mois)… Les frais d'inscription se règlent dans chaque classe.
+          « Pour tous » : dû par chaque élève.
           Sinon, choisis les élèves concernés dans Élèves → Actions → « Cantine, transport… ».</p>
         <div class="table-wrap"><table id="t-types-frais"></table></div>
         <form id="f-type-frais" class="row" style="align-items:end;margin-top:10px">
           <label style="flex:2">Nom<input name="nom" placeholder="ex : Cantine" required minlength="2" maxlength="40"></label>
-          <label>Montant annuel<input name="montant" type="number" min="0" required></label>
+          <label>Montant<input name="montant" type="number" min="0" required></label>
+          <label>Payé<select name="mensuel"><option value="0">une fois</option><option value="1">chaque mois</option></select></label>
           <label style="flex:0 0 auto;flex-direction:row;gap:6px;align-items:center;color:var(--text)">
             <input type="checkbox" name="obligatoire" style="width:auto" checked> Pour tous</label>
           <button class="btn" style="flex:0 0 auto">Ajouter</button>
@@ -731,6 +768,22 @@
         </div>
         <button class="btn" id="btn-tranches">Enregistrer l'échéancier</button>
       </div>
+    </div>
+    <div class="card mt" style="max-width:720px">
+      <h2>Règles de paiement</h2>
+      <form id="f-regles-paiement">
+        <label style="max-width:280px">Réduction pour le 2e enfant et les suivants (%)<input name="reduction_fratrie_pct" type="number" min="0" max="100" step="0.5"></label>
+        <p class="hint" style="margin:0">Les enfants d'une même famille sont reconnus au téléphone du parent. 0 = pas de réduction.</p>
+        <label style="flex-direction:row;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="bloquer_bulletin_impaye" style="width:auto">
+          Les parents ne voient le bulletin que si la scolarité est à jour</label>
+        <label style="flex-direction:row;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="relances_auto" style="width:auto">
+          Envoyer les relances seules par SMS chaque matin (fournisseur de SMS nécessaire)</label>
+        <div class="row" style="max-width:520px">
+          <label>Rappel avant l'échéance (jours)<input name="relance_jours_avant" type="number" min="0" max="30"></label>
+          <label>Relance après un retard de (jours)<input name="relance_jours_apres" type="number" min="1" max="60"></label>
+        </div>
+        <button class="btn" style="justify-self:start">Enregistrer</button>
+      </form>
     </div>
     <div class="card mt">
       <h2>Nouvelle année scolaire</h2>
@@ -791,6 +844,21 @@
       </div>
       <details class="mt"><summary style="cursor:pointer;color:var(--primary)">Détail des opérations</summary>
         <div class="table-wrap"><table id="t-caisse-jour"></table></div></details>
+      <h2 class="mt" style="font-size:.95rem">Clôturer la journée</h2>
+      <form id="f-cloture" class="row" style="align-items:end">
+        <label>Espèces comptées dans la caisse<input name="compte" type="number" min="0" required></label>
+        <label>Versé à la banque aujourd'hui<input name="verse_banque" type="number" min="0" value="0"></label>
+        <label style="flex:2">Commentaire<input name="commentaire" maxlength="200" placeholder="facultatif"></label>
+        <button class="btn" style="flex:0 0 auto">Clôturer</button>
+      </form>
+      <p class="hint" style="margin:6px 0 0">Un écart entre l'argent compté et ce que le logiciel attend est signalé au directeur, qui valide la clôture.</p>
+      <div class="table-wrap mt" style="max-height:260px;overflow-y:auto"><table id="t-clotures"></table></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>Prévision de trésorerie</h2>
+      <p class="hint">Argent attendu des familles chaque mois (mensualités, cantine, transport, retards), salaires et dépenses habituelles :
+        tu vois à l'avance si les salaires pourront être payés.</p>
+      <div class="table-wrap"><table id="t-prevision"></table></div>
     </div>
     <div class="grid">
       <div class="card kpi ok"><div class="label">Entrées de l'année</div><div class="value" id="c-entrees">–</div><div class="sub" id="c-recettes"></div></div>
@@ -838,6 +906,37 @@
       </div>
       <div class="table-wrap"><table id="t-depenses"></table></div>
     </div>
+    <div class="card mt">
+      <h2>Vérifier un relevé Wave / Orange Money</h2>
+      <p class="hint">Télécharge le relevé de ton compte marchand (Excel ou CSV) et importe-le : le logiciel le compare aux paiements saisis
+        avec la même référence (ou le même montant le même jour).</p>
+      <form id="f-rapprochement" class="row" style="align-items:end">
+        <label>Relevé<input type="file" name="fichier" accept=".xlsx,.csv" required></label>
+        <label>Compte<select name="mode"><option value="wave">Wave</option><option value="orange_money">Orange Money</option>
+          <option value="free_money">Free Money</option><option value="mtn_momo">MTN MoMo</option></select></label>
+        <label>Du<input type="date" name="du"></label>
+        <label>Au<input type="date" name="au"></label>
+        <button class="btn" style="flex:0 0 auto">Comparer</button>
+      </form>
+      <div id="rp-resume" class="mt"></div>
+      <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="t-rapprochement"></table></div>
+    </div>
+    <div class="two mt">
+      <div class="card" data-roles="directeur">
+        <h2>Organismes qui paient</h2>
+        <p class="hint">ONG, entreprise, mairie… qui prennent en charge une part de la scolarité de certains élèves. Leur part n'est pas
+          demandée au parent ; un relevé PDF leur est envoyé.</p>
+        <form id="f-tiers" class="row" style="align-items:end">
+          <label>Nom<input name="nom" required minlength="2"></label>
+          <label>Contact<input name="contact"></label>
+          <button class="btn" style="flex:0 0 auto">Ajouter</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Prises en charge</h2>
+        <div class="table-wrap"><table id="t-tiers"></table></div>
+      </div>
+    </div>
     <div class="two mt">
       <div class="card">
         <h2>Autre entrée d'argent</h2>
@@ -870,6 +969,7 @@
       <p class="hint">Le message est prêt : « WhatsApp » ou « SMS » ouvre l'application avec le texte déjà écrit, il suffit d'appuyer sur Envoyer.</p>
       <div class="toolbar">
         <select id="m-type">
+          <option value="relances">À relancer aujourd'hui (1 message par famille)</option>
           <option value="impaye">Rappels d'impayés</option>
           <option value="bulletin">Bulletins disponibles</option>
           <option value="acces">Accès à l'espace parents (codes)</option>
@@ -1137,7 +1237,7 @@ function toast(msg, error = false) {
 // Ces enregistrements peuvent être faits sans réseau : ils sont gardés sur l'appareil
 // puis envoyés automatiquement dès que la connexion revient.
 const HORS_LIGNE_OK = [
-  ["POST", /^\/paiements$/], ["PUT", /^\/notes\/grille\?/], ["POST", /^\/absences\/appel$/],
+  ["POST", /^\/paiements$/], ["POST", /^\/paiements\/groupe$/], ["PUT", /^\/notes\/grille\?/], ["POST", /^\/absences\/appel$/],
 ];
 let fileMemoire = [], echecsMemoire = [];
 const lireFile = (cle) => { try { return JSON.parse(localStorage.getItem(cle) || "[]"); } catch { return cle === "file_attente" ? fileMemoire : echecsMemoire; } };
@@ -1150,6 +1250,7 @@ function decrire(path, corps) {
     const b = JSON.parse(corps);
     const nomEleve = (id) => { const e = eleves.find((x) => x.id === Number(id)); return e ? `${e.prenom} ${e.nom}` : "élève"; };
     if (path === "/paiements") return `Paiement de ${argent(b.montant)} — ${nomEleve(b.eleve_id)}`;
+    if (path === "/paiements/groupe") return `Paiement de ${argent(b.lignes.reduce((t, l) => t + l.montant, 0))} — ${nomEleve(b.lignes[0].eleve_id)}`;
     if (path.startsWith("/notes/grille")) {
       const q = new URLSearchParams(path.split("?")[1]);
       return `Notes du trimestre ${q.get("trimestre")} — ${nomEleve(q.get("eleve_id"))}`;
@@ -1240,7 +1341,7 @@ async function api(path, options = {}) {
   if (token) headers["Authorization"] = "Bearer " + token;
   const methode = (options.method || "GET").toUpperCase();
   const attente = peutAttendre(methode, path);
-  if (attente && path === "/paiements") {            // clé unique : un renvoi ne crée jamais de doublon
+  if (attente && (path === "/paiements" || path === "/paiements/groupe")) {            // clé unique : un renvoi ne crée jamais de doublon
     const b = JSON.parse(options.body);
     if (!b.cle_client) { b.cle_client = idUnique(); options = { ...options, body: JSON.stringify(b) }; }
   }
@@ -1443,6 +1544,7 @@ async function chargerEleves() {
 
 // ---------- Tableau de bord ----------
 async function afficherDashboard() {
+  afficherAlertes();
   const s = await api("/stats");
   $("#k-eleves").textContent = s.nb_eleves;
   $("#k-classes").textContent = s.nb_classes;
@@ -1933,66 +2035,238 @@ function remplirEleves(selClasse, selEleve, eleveId, invite = "— Choisir un é
 }
 
 // ---------- Paiements ----------
-// Seuls les élèves qui doivent encore de l'argent sont proposés
-let remplissagePaiement = 0;
-let infoListePaiement = "";
-async function remplirElevesPaiement(eleveId) {
-  const classeId = $("#p-classe").value;
-  const sel = $("#p-eleve");
-  const appel = ++remplissagePaiement;     // ignore les réponses d'un ancien choix de classe
-  if (!classeId) { sel.innerHTML = `<option value="">Choisis d'abord une classe</option>`; afficherSoldePaiement(); return; }
-  let soldes;
-  try { soldes = await api(`/eleves/soldes?classe_id=${classeId}`); }
-  catch (err) { toast(err.message, true); return; }
-  if (appel !== remplissagePaiement) return;
-  const nom = (s) => { const e = eleves.find((x) => x.id === s.eleve_id); return e ? `${e.nom} ${e.prenom}` : s.nom_complet; };
-  const doivent = soldes.filter((s) => s.reste_a_payer > 0)
-    .sort((a, b) => nom(a).localeCompare(nom(b), "fr"));
-  const payes = soldes.length - doivent.length;
-  sel.innerHTML = !soldes.length
-    ? `<option value="">Aucun élève dans cette classe</option>`
-    : !doivent.length
-      ? `<option value="">✔ Tous les élèves de cette classe ont tout payé</option>`
-      : `<option value="">— Choisir un élève (${doivent.length}) —</option>` +
-        doivent.map((s) => `<option value="${s.eleve_id}">${esc(nom(s))} — reste ${argent(s.reste_a_payer)}</option>`).join("");
-  infoListePaiement = !soldes.length ? "" : !doivent.length
-    ? `<b style="color:var(--ok)">✔ Toute la classe est à jour</b>`
-    : `${doivent.length} élève(s) doivent encore payer` + (payes ? ` · ${payes} à jour (masqués)` : "");
-  if (eleveId && doivent.some((s) => s.eleve_id === Number(eleveId))) sel.value = String(eleveId);
-  afficherSoldePaiement();
+// ---------- Guichet : encaisser vite (recherche, famille, plusieurs frais, montants en un clic) ----------
+let guichet = { eleve: null, famille: [], facultatifs: {} };
+let rechercheGuichetTimer;
+$("#g-q").addEventListener("input", () => {
+  clearTimeout(rechercheGuichetTimer);
+  const q = $("#g-q").value.trim();
+  if (q.length < 2) { $("#g-resultats").innerHTML = ""; return; }
+  rechercheGuichetTimer = setTimeout(async () => {
+    const r = await api(`/guichet/recherche?q=${encodeURIComponent(q)}`);
+    $("#g-resultats").innerHTML = r.length ? r.map((s) => `<button type="button" class="suggestion" data-g-eleve="${s.eleve_id}">
+        <b>${esc(s.nom_complet)}</b> · ${esc(s.classe)}<span>${s.reste_a_payer ? `reste ${argent(s.reste_a_payer)}` : "✔ à jour"}${
+          s.retard ? ` · <b style="color:var(--bad)">retard ${argent(s.retard)}</b>` : ""}</span></button>`).join("")
+      : `<p class="hint" style="margin:6px 0">Aucun élève trouvé</p>`;
+  }, 250);
+});
+$("#g-q").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); $("#g-resultats [data-g-eleve]")?.click(); }
+});
+document.addEventListener("click", (ev) => {
+  const id = ev.target.closest("[data-g-eleve]")?.dataset.gEleve;
+  if (id) { $("#g-resultats").innerHTML = ""; $("#g-q").value = ""; ouvrirGuichet(Number(id)); }
+});
+$("#g-classe").addEventListener("change", async () => {
+  const cid = $("#g-classe").value;
+  if (!cid) { $("#g-eleve").innerHTML = ""; return; }
+  const soldes = await api(`/eleves/soldes?classe_id=${cid}`);
+  const doivent = soldes.filter((s) => s.reste_a_payer > 0);
+  $("#g-eleve").innerHTML = `<option value="">— Élève (${doivent.length} doivent encore) —</option>` +
+    doivent.map((s) => `<option value="${s.eleve_id}">${esc(s.nom_complet)} — reste ${argent(s.reste_a_payer)}</option>`).join("");
+});
+$("#g-eleve").addEventListener("change", () => { if ($("#g-eleve").value) ouvrirGuichet(Number($("#g-eleve").value)); });
+
+async function ouvrirGuichet(id, garderRecu = false) {
+  const [famille, frais] = await Promise.all([api(`/eleves/${id}/famille`), api(`/eleves/${id}/frais`)]);
+  guichet = { eleve: id, famille, facultatifs: {} };
+  guichet.facultatifs[id] = frais.filter((f) => !f.obligatoire && !f.souscrit);
+  if (!garderRecu) $("#g-recu").innerHTML = "";
+  dessinerGuichet();
+  $("#f-guichet").hidden = false;
+  $("#guichet").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-async function afficherSoldePaiement() {
-  const id = $("#p-eleve").value;
-  const zone = $("#p-solde");
-  const montant = $("#f-paiement").elements.montant;
-  const choix = $("#p-frais");
-  if (!id) { zone.innerHTML = infoListePaiement; montant.placeholder = ""; $("#p-frais-zone").hidden = true; choix.innerHTML = ""; return; }
+// Montants proposés en un clic pour une ligne de frais
+function raccourcis(s, l) {
+  const r = [];
+  if (l.type_frais_id === null && !l.tiers_id && s.echeances.length) {
+    const restes = s.echeances.filter((e) => e.reste > 0);
+    const mot = moi.ecole.mode_paiement === "tranches" ? "tranche" : "mois";
+    for (const k of [1, 2, 3]) {
+      if (restes.length >= k) {
+        const v = restes.slice(0, k).reduce((t, e) => t + e.reste, 0);
+        r.push([`${k} ${mot}${k > 1 && mot === "tranche" ? "s" : ""} · ${restes.slice(0, k).map((e) => e.nom.slice(0, 3)).join("-")}`, v]);
+      }
+    }
+  } else if (l.mensuel && l.montant_mois) {
+    r.push(["1 mois", Math.min(l.montant_mois, l.reste)]);
+    if (l.reste >= 3 * l.montant_mois) r.push(["3 mois", 3 * l.montant_mois]);
+  }
+  if (l.retard && l.retard < l.reste) r.push(["Le retard", l.retard]);
+  r.push(["Tout", l.reste]);
+  const vus = new Set();
+  return r.filter(([, v]) => v > 0 && !vus.has(v) && vus.add(v));
+}
+
+function dessinerGuichet() {
+  const blocs = guichet.famille.map((s, n) => {
+    const lignes = s.lignes.filter((l) => l.reste > 0);
+    const fac = guichet.facultatifs[s.eleve_id] || [];
+    return `<div class="g-eleve ${n ? "frere" : ""}">
+      ${n === 1 ? `<div class="hint" style="margin:10px 0 4px">👪 Même famille (même téléphone) :</div>` : ""}
+      <div class="toolbar" style="justify-content:space-between;margin:0 0 4px">
+        <div><button class="link" data-dossier="${s.eleve_id}"><b>${esc(s.nom_complet)}</b></button> · ${esc(s.classe)}
+          ${s.paye_jusqua ? `<span class="badge ok">payé jusqu'à ${esc(s.paye_jusqua)}</span>` : ""}
+          ${s.retard ? `<span class="badge bad">retard ${argent(s.retard)}</span>` : ""}
+          ${s.moratoire_jusquau ? `<span class="badge info">délai jusqu'au ${new Date(s.moratoire_jusquau).toLocaleDateString("fr-FR")}</span>` : ""}
+          ${s.tiers ? `<span class="badge violet">${esc(s.tiers)}</span>` : ""}</div>
+        ${menuActions([`<button class="link" data-g-promesse="${s.eleve_id}">📅 Promesse de paiement</button>`,
+          ...(peut("directeur") ? [`<button class="link" data-g-delai="${s.eleve_id}">⏸ Accorder un délai</button>`,
+            `<button class="link" data-g-tiers="${s.eleve_id}">🏢 Prise en charge (ONG…)</button>`] : []),
+          `<button class="link" data-g-frais="${s.eleve_id}">🍽 Cantine, transport…</button>`])}
+      </div>
+      <div data-g-panneau="${s.eleve_id}"></div>
+      ${lignes.length ? `<table class="g-lignes">${lignes.map((l) => {
+        const cle = `${s.eleve_id}|${l.type_frais_id ?? ""}|${l.tiers_id ?? ""}`;
+        const detail = l.type_frais_id === null && !l.tiers_id && s.echeances.length
+          ? s.echeances.filter((e) => e.reste > 0).slice(0, 4).map((e) => `${e.nom}${e.statut === "en_retard" ? " ⚠" : ""}`).join(", ")
+          : l.mensuel ? `${argent(l.montant_mois)} / mois` : "";
+        return `<tr data-g-ligne="${cle}"><td style="width:28px"><input type="checkbox" data-g-coche></td>
+          <td><b>${esc(l.nom)}</b><span class="sub">reste ${argent(l.reste)}${detail ? " · " + esc(detail) : ""}${l.retard ? ` · <b style="color:var(--bad)">retard ${argent(l.retard)}</b>` : ""}</span>
+            <div class="chips-montant">${raccourcis(s, l).map(([t, v]) => `<button type="button" data-g-montant="${v}">${esc(t)} <b>${argent(v)}</b></button>`).join("")}</div></td>
+          <td class="num"><input type="number" min="0" max="${l.reste}" data-g-valeur placeholder="0" style="width:120px;text-align:right"></td></tr>`;
+      }).join("")}</table>` : `<p class="hint" style="margin:4px 0">✔ Rien à payer pour l'instant</p>`}
+      ${fac.length ? `<div class="hint" style="margin:4px 0 0">Ajouter : ${fac.map((f) => `<button type="button" class="link" data-g-ajout="${s.eleve_id}:${f.type_frais_id}">+ ${esc(f.nom)} (${argent(f.montant)}${f.mensuel ? "/mois" : ""})</button>`).join(" · ")}</div>` : ""}
+    </div>`;
+  });
+  $("#g-panier").innerHTML = blocs.join("");
+  majTotalGuichet();
+}
+
+function lignesGuichet() {
+  return [...document.querySelectorAll("[data-g-ligne]")].map((tr) => {
+    const [e, t, ti] = tr.dataset.gLigne.split("|");
+    return { tr, eleve_id: Number(e), type_frais_id: t ? Number(t) : null, tiers_id: ti ? Number(ti) : null,
+             coche: tr.querySelector("[data-g-coche]").checked, montant: Number(tr.querySelector("[data-g-valeur]").value || 0),
+             max: Number(tr.querySelector("[data-g-valeur]").max) };
+  });
+}
+function majTotalGuichet() {
+  const ls = lignesGuichet().filter((l) => l.coche && l.montant > 0);
+  const total = ls.reduce((t, l) => t + l.montant, 0);
+  const trop = lignesGuichet().some((l) => l.montant > l.max);
+  $("#g-total").textContent = argent(total);
+  $("#g-encaisser").disabled = !total || trop;
+  $("#g-encaisser").textContent = total ? `💵 Encaisser ${argent(total)}` : "Choisis ce que le parent paie";
+  $("#g-alerte").textContent = trop ? "Un montant dépasse ce qui reste à payer" : "";
+}
+$("#g-panier").addEventListener("click", async (ev) => {
+  const v = ev.target.closest("[data-g-montant]")?.dataset.gMontant;
+  if (v) {
+    const tr = ev.target.closest("tr");
+    tr.querySelector("[data-g-valeur]").value = v;
+    tr.querySelector("[data-g-coche]").checked = true;
+    tr.querySelectorAll("[data-g-montant]").forEach((b) => b.classList.toggle("actif", b.dataset.gMontant === v));
+    return majTotalGuichet();
+  }
+  const d = ev.target.dataset;
+  const zone = (id) => $(`[data-g-panneau="${id}"]`);
   try {
-    const s = await api(`/eleves/${id}/solde`);
-    // Plusieurs frais (scolarité, cantine…) : on choisit ce qui est payé
-    const dus = (s.lignes || []).filter((l) => l.reste > 0);
-    $("#p-frais-zone").hidden = (s.lignes || []).length < 2;
-    choix.innerHTML = dus.map((l) => `<option value="${l.type_frais_id ?? ""}" data-reste="${l.reste}">${esc(l.nom)} — reste ${argent(l.reste)}</option>`).join("");
-    zone.innerHTML = (s.reste_a_payer
-      ? `Déjà payé : ${argent(s.total_paye)} · <b style="color:var(--bad)">reste ${argent(s.reste_a_payer)}</b>`
-      : `<b style="color:var(--ok)">✔ Frais entièrement payés</b>`) +
-      (s.retard ? `<br><b style="color:var(--bad)">⚠ En retard de ${argent(s.retard)} sur l'échéancier</b>` : "") +
-      (s.prochaine_echeance ? `<br>Prochaine échéance : ${new Date(s.prochaine_echeance).toLocaleDateString("fr-FR")} (${argent(s.prochain_montant)})` : "") +
-      (s.echeances.length ? `<div class="mois-chips">${s.echeances.map((e) => `<span class="mois ${e.statut}" title="${esc(e.nom)} : ${argent(e.paye)} / ${argent(e.montant)}">${
-        e.statut === "payee" ? "✔" : e.paye ? "◐" : e.statut === "en_retard" ? "!" : "○"} ${esc(e.nom)}</span>`).join("")}</div>` : "");
-    majPlaceholderFrais(s.reste_a_payer);
+    if (d.gAjout) {
+      const [e, t] = d.gAjout.split(":").map(Number);
+      const actuels = (await api(`/eleves/${e}/frais`)).filter((f) => !f.obligatoire && f.souscrit).map((f) => f.type_frais_id);
+      await api(`/eleves/${e}/frais`, { method: "PUT", body: JSON.stringify([...actuels, t]) });
+      toast("Frais ajouté ✔");
+      return ouvrirGuichet(guichet.eleve);
+    }
+    if (d.gFrais) {
+      const liste = (await api(`/eleves/${d.gFrais}/frais`)).filter((f) => !f.obligatoire);
+      return (zone(d.gFrais).innerHTML = liste.length ? `<form class="g-form" data-g-form-frais="${d.gFrais}"><div class="liste-cases">${liste.map((f) =>
+        `<label><input type="checkbox" value="${f.type_frais_id}" ${f.souscrit ? "checked" : ""}> ${esc(f.nom)} (${argent(f.montant)}${f.mensuel ? "/mois" : ""})</label>`).join("")}</div>
+        <button class="btn secondary">Enregistrer</button></form>` : `<p class="hint">Aucun frais au choix (Paramètres → Autres frais).</p>`);
+    }
+    if (d.gPromesse) {
+      const p = await api(`/promesses?eleve_id=${d.gPromesse}`);
+      return (zone(d.gPromesse).innerHTML = `<form class="g-form row" data-g-form-promesse="${d.gPromesse}" style="align-items:end">
+        <label>Le parent paiera le<input name="date_promise" type="date" required value="${aujourdhui()}"></label>
+        <label>Montant<input name="montant" type="number" min="1"></label>
+        <label style="flex:2">Note<input name="note" maxlength="200" placeholder="ex : le père passe vendredi"></label>
+        <button class="btn secondary" style="flex:0 0 auto">Noter</button></form>
+        ${p.map((x) => `<span class="sub">Promis pour le ${new Date(x.date_promise).toLocaleDateString("fr-FR")}${x.montant ? " : " + argent(x.montant) : ""}${x.note ? " — " + esc(x.note) : ""}</span>`).join("")}`);
+    }
+    if (d.gDelai) {
+      return (zone(d.gDelai).innerHTML = `<form class="g-form row" data-g-form-delai="${d.gDelai}" style="align-items:end">
+        <label>Pas en retard jusqu'au<input name="jusquau" type="date" required></label>
+        <label style="flex:2">Motif<input name="motif" maxlength="120" placeholder="ex : décès dans la famille"></label>
+        <button class="btn secondary" style="flex:0 0 auto">Accorder</button>
+        <button type="button" class="link danger" data-g-fin-delai="${d.gDelai}" style="flex:0 0 auto">Retirer le délai</button></form>`);
+    }
+    if (d.gFinDelai) {
+      await api(`/eleves/${d.gFinDelai}/moratoire`, { method: "PUT", body: JSON.stringify({ jusquau: null }) });
+      toast("Délai retiré");
+      return ouvrirGuichet(guichet.eleve);
+    }
+    if (d.gTiers) {
+      const tiers = await api("/tiers");
+      return (zone(d.gTiers).innerHTML = `<form class="g-form row" data-g-form-tiers="${d.gTiers}" style="align-items:end">
+        <label>Organisme<select name="tiers_id"><option value="">— Aucun —</option>${tiers.map((t) => `<option value="${t.id}">${esc(t.nom)}</option>`).join("")}</select></label>
+        <label>Part de la scolarité (%)<input name="pourcentage" type="number" min="0" max="100" value="100"></label>
+        <button class="btn secondary" style="flex:0 0 auto">Enregistrer</button></form>
+        ${tiers.length ? "" : `<span class="sub">Ajoute d'abord l'organisme dans Argent → Caisse → « Organismes qui paient ».</span>`}`);
+    }
   } catch (err) { toast(err.message, true); }
-}
-function majPlaceholderFrais(defaut) {
-  const opt = $("#p-frais").selectedOptions[0];
-  const reste = opt ? Number(opt.dataset.reste) : defaut;
-  $("#f-paiement").elements.montant.placeholder = reste ? "Reste à payer : " + argent(reste) : "";
-}
-$("#p-frais").addEventListener("change", () => majPlaceholderFrais());
-
-$("#p-classe").addEventListener("change", () => remplirElevesPaiement());
-$("#p-eleve").addEventListener("change", afficherSoldePaiement);
+});
+$("#g-panier").addEventListener("input", (ev) => {
+  if (ev.target.matches("[data-g-valeur]")) {
+    const tr = ev.target.closest("tr");
+    tr.querySelector("[data-g-coche]").checked = Number(ev.target.value) > 0;
+    tr.querySelectorAll("[data-g-montant]").forEach((b) => b.classList.remove("actif"));
+  }
+  majTotalGuichet();
+});
+$("#g-panier").addEventListener("change", (ev) => { if (ev.target.matches("[data-g-coche]")) majTotalGuichet(); });
+$("#g-panier").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, d = formData(f);
+  try {
+    if (f.dataset.gFormFrais) {
+      await api(`/eleves/${f.dataset.gFormFrais}/frais`, { method: "PUT", body: JSON.stringify([...f.querySelectorAll("input:checked")].map((c) => Number(c.value))) });
+      toast("Frais de l'élève enregistrés ✔");
+    } else if (f.dataset.gFormPromesse) {
+      await api("/promesses", { method: "POST", body: JSON.stringify({ ...d, eleve_id: Number(f.dataset.gFormPromesse) }) });
+      toast("Promesse notée ✔ Le parent sera relancé ce jour-là");
+    } else if (f.dataset.gFormDelai) {
+      await api(`/eleves/${f.dataset.gFormDelai}/moratoire`, { method: "PUT", body: JSON.stringify(d) });
+      toast("Délai accordé ✔");
+    } else if (f.dataset.gFormTiers) {
+      await api(`/eleves/${f.dataset.gFormTiers}/prise-en-charge`, { method: "PUT", body: JSON.stringify({ tiers_id: d.tiers_id ?? null, pourcentage: d.pourcentage ?? 0 }) });
+      toast("Prise en charge enregistrée ✔");
+    }
+    ouvrirGuichet(guichet.eleve);
+  } catch (err) { toast(err.message, true); }
+});
+$("#f-guichet").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const lignes = lignesGuichet().filter((l) => l.coche && l.montant > 0)
+    .map(({ eleve_id, type_frais_id, tiers_id, montant }) => ({ eleve_id, type_frais_id, tiers_id, montant }));
+  if (!lignes.length) return;
+  const d = formData(ev.target);
+  const btn = $("#g-encaisser");
+  btn.disabled = true;
+  try {
+    const r = await api("/paiements/groupe", { method: "POST", body: JSON.stringify({ lignes, mode: d.mode, reference: d.reference,
+      date_paiement: d.date_paiement }) });
+    if (r?.__enAttente) {
+      $("#g-recu").innerHTML = `<div class="recu-pret" style="background:#fef3c7"><span>⏳ Paiement gardé hors connexion : il sera envoyé au retour du réseau.</span></div>`;
+    } else {
+      toast(`Encaissé ${argent(r.total)} ✔`);
+      $("#g-recu").innerHTML = `<div class="recu-pret"><span>✔ <b>${argent(r.total)}</b> encaissés — reçu ${esc(r.paiements[0].numero_recu)}</span>
+        <button class="btn" data-recu-groupe="${r.groupe}">📄 Imprimer le reçu</button>
+        ${r.lien_whatsapp ? `<a class="btn wa" href="${esc(r.lien_whatsapp)}" target="_blank" rel="noopener" data-recu-wa="${r.paiements[0].eleve_id}">Envoyer au parent (WhatsApp)</a>` : ""}</div>`;
+      ev.target.elements.reference.value = "";
+      await ouvrirGuichet(guichet.eleve, true);
+    }
+    if (vueActive === "paiements") afficherSuivi();
+  } catch (err) { toast(err.message, true); }
+  finally { majTotalGuichet(); }
+});
+document.addEventListener("click", (ev) => {
+  const g = ev.target.dataset.recuGroupe;
+  if (g) ouvrirFichier(`/paiements/groupe/${g}/recu.pdf`, "recu.pdf");
+  const wa = ev.target.closest("[data-recu-wa]")?.dataset.recuWa;
+  if (wa) api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: Number(wa), type: "recu", canal: "whatsapp" }) }).catch(() => {});
+});
 
 const STATUTS = {
   a_jour: ["À jour", "ok"], partiel: ["Partiel", "warn"], rien_paye: ["Rien payé", "bad"],
@@ -2001,7 +2275,7 @@ let suiviFiltre = "tous";
 let suiviSoldes = [];
 
 async function afficherSuivi() {
-  remplirElevesPaiement($("#p-eleve").value);
+  if (!$("#f-guichet").elements.date_paiement.value) $("#f-guichet").elements.date_paiement.value = aujourdhui();
   const classeId = $("#suivi-classe").value;
   suiviSoldes = await api("/eleves/soldes" + (classeId ? "?classe_id=" + classeId : ""));
   $("#btn-etat-pdf").disabled = !classeId;
@@ -2055,7 +2329,6 @@ function dessinerSuivi() {
 }
 
 $("#suivi-classe").addEventListener("change", () => {
-  if ($("#suivi-classe").value) { $("#p-classe").value = $("#suivi-classe").value; remplirElevesPaiement(); }
   afficherSuivi();
 });
 $("#suivi-q").addEventListener("input", dessinerSuivi);
@@ -2072,15 +2345,9 @@ $("#t-suivi").addEventListener("click", async (ev) => {
   const hist = ev.target.dataset.historique;
   if (hist) afficherHistorique(Number(hist));
   if (payer) {
-    const s = suiviSoldes.find((x) => x.eleve_id === Number(payer));
-    const f = $("#f-paiement");
-    $("#p-classe").value = s.classe_id;
-    await remplirElevesPaiement(payer);
-    f.elements.montant.value = "";
     document.querySelectorAll("#t-suivi tr.surligne").forEach((tr) => tr.classList.remove("surligne"));
     ev.target.closest("tr").classList.add("surligne");
-    f.scrollIntoView({ behavior: "smooth", block: "start" });
-    f.elements.montant.focus({ preventScroll: true });
+    await ouvrirGuichet(Number(payer));
   }
 });
 
@@ -2856,6 +3123,7 @@ async function afficherParametres() {
   if (!moi.ecole.pays) f.elements.pays.value = "autre";
   afficherCycles();
   afficherModePaiement();
+  afficherReglesPaiement();
   if (!estMensuel()) dessinerTranches(await api("/tranches"));
   afficherImagesEcole();
   afficherTypesFrais();
@@ -2976,10 +3244,11 @@ $("#parametres").addEventListener("change", async (ev) => {
 // ---------- Autres frais (cantine, transport…) ----------
 async function afficherTypesFrais() {
   const liste = await chargerTypesFrais();
-  table($("#t-types-frais"), ["Frais", { label: "Montant", num: true }, "Qui paie", ""],
-    liste.map((t) => t.code === "inscription" ? `<tr><td><b>${esc(t.nom)}</b></td><td class="num" colspan="2">montant fixé dans chaque classe</td><td></td></tr>` : `<tr data-type-frais="${t.id}">
+  table($("#t-types-frais"), ["Frais", { label: "Montant", num: true }, "Payé", "Qui paie", ""],
+    liste.map((t) => t.code === "inscription" ? `<tr><td><b>${esc(t.nom)}</b></td><td class="num" colspan="3">montant fixé dans chaque classe</td><td></td></tr>` : `<tr data-type-frais="${t.id}">
       <td><input data-tf="nom" value="${esc(t.nom)}" aria-label="Nom"></td>
       <td class="num"><input data-tf="montant" type="number" min="0" value="${t.montant}" style="width:110px;text-align:right" aria-label="Montant"></td>
+      <td><select data-tf="mensuel"><option value="0">une fois</option><option value="1" ${t.mensuel ? "selected" : ""}>chaque mois</option></select></td>
       <td><select data-tf="obligatoire"><option value="1" ${t.obligatoire ? "selected" : ""}>Tous les élèves</option>
         <option value="0" ${t.obligatoire ? "" : "selected"}>Élèves choisis</option></select></td>
       <td class="actions"><button class="link" data-enreg-tf="${t.id}">Enregistrer</button><button class="link danger" data-suppr-tf="${t.id}">Supprimer</button></td></tr>`),
@@ -2990,7 +3259,8 @@ $("#t-types-frais").addEventListener("click", async (ev) => {
   try {
     if (d.enregTf) {
       const tr = ev.target.closest("tr"), v = (k) => tr.querySelector(`[data-tf="${k}"]`).value;
-      await api(`/frais/${d.enregTf}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), montant: Number(v("montant")), obligatoire: v("obligatoire") === "1" }) });
+      await api(`/frais/${d.enregTf}`, { method: "PATCH", body: JSON.stringify({ nom: v("nom"), montant: Number(v("montant")),
+        obligatoire: v("obligatoire") === "1", mensuel: v("mensuel") === "1" }) });
       toast("Frais modifié ✔");
     }
     if (d.supprTf) {
@@ -3006,7 +3276,7 @@ $("#f-type-frais").addEventListener("submit", async (ev) => {
   const f = ev.target;
   try {
     await api("/frais", { method: "POST", body: JSON.stringify({ nom: f.elements.nom.value, montant: Number(f.elements.montant.value),
-      obligatoire: f.elements.obligatoire.checked }) });
+      obligatoire: f.elements.obligatoire.checked, mensuel: f.elements.mensuel.value === "1" }) });
     toast("Frais ajouté ✔");
     f.reset();
     afficherTypesFrais();
@@ -3233,6 +3503,8 @@ $("#t-absences").addEventListener("click", async (ev) => {
 let messages = [];
 async function afficherMessages() {
   const type = $("#m-type").value;
+  $("#m-classe").hidden = type === "relances";
+  if (type === "relances") return afficherRelances();
   $("#m-trimestre").hidden = type !== "bulletin";
   if ($("#m-classe").value) remplirPeriodes($("#m-trimestre"), $("#m-classe").value);
   const zone = $("#m-liste");
@@ -3264,6 +3536,24 @@ async function afficherMessages() {
   majEnvoiGroupe();
 }
 for (const id of ["#m-type", "#m-classe", "#m-trimestre", "#m-retard"]) $(id).addEventListener("change", afficherMessages);
+
+// Relances du jour : avant l'échéance, après un retard, promesses arrivées à terme ; une par famille
+const RAISONS = { avant_echeance: ["Échéance proche", "info"], retard: ["En retard", "bad"], promesse: ["Promesse", "warn"] };
+async function afficherRelances() {
+  $("#m-trimestre").hidden = true; $("#m-retard-label").hidden = true;
+  const r = await api("/relances");
+  messages = r.map((x) => ({ ...x, lien_sms: null, dernier_envoi: null }));
+  const faits = r.filter((x) => x.deja_relance).length;
+  $("#m-resume").textContent = `${r.length} famille(s) à relancer` + (faits ? ` · ${faits} déjà relancée(s) cette semaine` : "");
+  $("#m-liste").innerHTML = r.length ? r.map((m, i) => `<div class="msg" style="${m.deja_relance ? "opacity:.6" : ""}">
+      <div class="tete"><span><span class="badge ${RAISONS[m.raison][1]}">${RAISONS[m.raison][0]}</span> <b>${esc(m.eleve)}</b></span>
+        <span style="font-size:.85rem;color:var(--muted)">${m.telephone ? esc(m.telephone) : "<span style='color:var(--bad)'>pas de numéro</span>"} · ${argent(m.montant)}${m.deja_relance ? " · déjà relancé" : ""}</span></div>
+      <div class="texte">${esc(m.texte)}</div>
+      <div class="boutons">${m.lien_whatsapp ? `<a class="btn wa" href="${esc(m.lien_whatsapp)}" target="_blank" rel="noopener" data-envoi="${i}" data-canal="whatsapp">WhatsApp</a>` : ""}
+        <button class="btn secondary" data-copier="${i}">Copier le texte</button></div></div>`).join("")
+    : `<p class="empty">Personne à relancer aujourd'hui 🎉</p>`;
+  majEnvoiGroupe();
+}
 
 // Envoi groupé : par SMS automatique (si un fournisseur est configuré sur le serveur), sinon assistant WhatsApp
 let capacitesSms = null;
@@ -3301,7 +3591,7 @@ $("#m-assistant").addEventListener("click", (ev) => {
   const liste = messages.filter((m) => m.lien_whatsapp);
   if (ev.target.closest("[data-assistant-ouvrir]")) {
     const m = liste[assistantPos];
-    api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: m.eleve_id, type: $("#m-type").value, canal: "whatsapp" }) }).catch(() => {});
+    api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: m.eleve_id, type: $("#m-type").value === "relances" ? "relance" : $("#m-type").value, canal: "whatsapp" }) }).catch(() => {});
     assistantPos++;
     setTimeout(dessinerAssistant, 300);     // laisse le lien s'ouvrir
   }
@@ -3314,6 +3604,12 @@ $("#btn-sms-groupe").addEventListener("click", async () => {
   const btn = $("#btn-sms-groupe");
   btn.disabled = true; btn.textContent = "Envoi en cours…";
   const type = $("#m-type").value, cid = $("#m-classe").value;
+  if (type === "relances") {
+    try { const r = await api("/relances/envoyer", { method: "POST" }); toast(`✔ ${r.envoyes} SMS envoyé(s)` + (r.echecs ? ` · ${r.echecs} échec(s)` : ""), r.echecs > 0); afficherMessages(); }
+    catch (err) { toast(err.message, true); }
+    finally { btn.disabled = false; }
+    return;
+  }
   try {
     const r = await api("/messages/envoyer-groupe", { method: "POST", body: JSON.stringify({
       type, classe_id: cid ? Number(cid) : null, trimestre: type === "bulletin" ? Number($("#m-trimestre").value) : null,
@@ -3331,7 +3627,7 @@ $("#m-liste").addEventListener("click", async (ev) => {
   const copier = ev.target.dataset.copier;
   if (lien) {   // le lien s'ouvre normalement ; on note juste l'envoi
     const m = messages[lien.dataset.envoi];
-    api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: m.eleve_id, type: $("#m-type").value, canal: lien.dataset.canal }) })
+    api("/messages/journal", { method: "POST", body: JSON.stringify({ eleve_id: m.eleve_id, type: $("#m-type").value === "relances" ? "relance" : $("#m-type").value, canal: lien.dataset.canal }) })
       .catch(() => {});
   }
   if (copier !== undefined) {
@@ -3365,6 +3661,122 @@ async function afficherCaisseJour() {
     "Aucune opération ce jour-là");
 }
 $("#cj-jour").addEventListener("change", afficherCaisseJour);
+// ---------- Clôture de caisse ----------
+async function afficherClotures() {
+  const l = await api("/caisse/clotures");
+  table($("#t-clotures"), ["Jour", { label: "Attendu", num: true }, { label: "Compté", num: true }, { label: "Écart", num: true }, "Par", ""],
+    l.map((c) => `<tr><td>${new Date(c.jour).toLocaleDateString("fr-FR")}${c.verse_banque ? `<span class="sub">versé banque ${argent(c.verse_banque)}</span>` : ""}</td>
+      <td class="num">${argent(c.attendu)}</td><td class="num">${argent(c.compte)}</td>
+      <td class="num"><span class="badge ${c.ecart ? "bad" : "ok"}">${c.ecart > 0 ? "+" : ""}${argent(c.ecart)}</span>${c.commentaire ? `<span class="sub">${esc(c.commentaire)}</span>` : ""}</td>
+      <td>${esc(c.par)}</td><td class="actions">${c.valide_par ? `<span class="badge ok">validée (${esc(c.valide_par)})</span>`
+        : peut("directeur") ? `<button class="link" data-valider-cloture="${c.id}">✔ Valider</button>` : `<span class="badge warn">à valider</span>`}</td></tr>`),
+    "Aucune clôture");
+}
+$("#f-cloture").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const d = formData(ev.target);
+  d.jour = $("#cj-jour").value;
+  try {
+    const c = await api("/caisse/cloture", { method: "POST", body: JSON.stringify(d) });
+    toast(c.ecart ? `Caisse clôturée avec un écart de ${argent(c.ecart)} (signalé au directeur)` : "Caisse clôturée : aucun écart ✔", !!c.ecart);
+    ev.target.reset();
+    afficherClotures();
+  } catch (err) { toast(err.message, true); }
+});
+$("#t-clotures").addEventListener("click", async (ev) => {
+  const id = ev.target.dataset.validerCloture;
+  if (!id) return;
+  try { await api(`/caisse/clotures/${id}/valider`, { method: "POST" }); afficherClotures(); } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Prévision de trésorerie ----------
+async function afficherPrevision() {
+  const p = await api("/caisse/prevision");
+  table($("#t-prevision"), ["Mois", { label: "Attendu des familles", num: true }, { label: "Salaires", num: true },
+      { label: "Autres dépenses", num: true }, { label: "Trésorerie fin de mois", num: true }],
+    p.map((m) => `<tr><td style="text-transform:capitalize">${nomMois(m.mois)}</td><td class="num" style="color:var(--ok)">${argent(m.attendu)}</td>
+      <td class="num">${argent(m.salaires)}</td><td class="num">${argent(m.autres_depenses)}</td>
+      <td class="num"><b style="color:${m.solde_prevu < 0 ? "var(--bad)" : "var(--ok)"}">${argent(m.solde_prevu)}</b>${m.solde_prevu < 0 ? `<span class="sub" style="color:var(--bad)">⚠ manque d'argent</span>` : ""}</td></tr>`),
+    "Pas de mois restant cette année");
+}
+
+// ---------- Rapprochement Wave / Orange Money ----------
+const STATUTS_RAPPROCHEMENT = { trouve: ["Trouvé", "ok"], absent_logiciel: ["Reçu mais pas saisi", "bad"],
+  absent_releve: ["Saisi mais pas sur le relevé", "warn"], montant_different: ["Montant différent", "bad"], doublon: ["Doublon", "bad"] };
+$("#f-rapprochement").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  if (!fd.get("du")) fd.delete("du");
+  if (!fd.get("au")) fd.delete("au");
+  try {
+    const r = await api("/caisse/rapprochement", { method: "POST", body: fd });
+    $("#rp-resume").innerHTML = `<span class="badge ok">${r.trouves} trouvés</span> <span class="badge bad">${r.absents_logiciel} reçus mais pas saisis</span>
+      <span class="badge warn">${r.absents_releve} saisis mais absents du relevé</span> <span class="badge bad">${r.differences} montants différents / doublons</span>`;
+    table($("#t-rapprochement"), ["État", "Date", "Référence", "Élève", { label: "Relevé", num: true }, { label: "Logiciel", num: true }],
+      r.lignes.map((l) => `<tr><td><span class="badge ${STATUTS_RAPPROCHEMENT[l.statut][1]}">${STATUTS_RAPPROCHEMENT[l.statut][0]}</span></td>
+        <td>${l.date ? new Date(l.date).toLocaleDateString("fr-FR") : "–"}</td><td>${esc(l.reference || "–")}</td><td>${esc(l.eleve || "–")}</td>
+        <td class="num">${l.montant_releve == null ? "–" : argent(l.montant_releve)}</td><td class="num">${l.montant_logiciel == null ? "–" : argent(l.montant_logiciel)}</td></tr>`),
+      "Relevé vide");
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Organismes qui paient (tiers) ----------
+async function afficherTiers() {
+  const t = await api("/tiers");
+  const releves = await Promise.all(t.map((x) => api(`/tiers/${x.id}/releve`)));
+  table($("#t-tiers"), ["Organisme", { label: "Élèves", num: true }, { label: "À régler", num: true }, { label: "Réglé", num: true }, ""],
+    t.map((x, i) => `<tr><td>${esc(x.nom)}${x.contact ? `<span class="sub">${esc(x.contact)}</span>` : ""}</td><td class="num">${releves[i].eleves.length}</td>
+      <td class="num">${argent(releves[i].du)}</td><td class="num">${argent(releves[i].paye)}</td>
+      <td class="actions"><button class="link" data-releve-tiers="${x.id}">📄 Relevé à envoyer</button></td></tr>`),
+    "Aucun organisme. Exemple : une ONG qui paie la scolarité de quelques élèves.");
+}
+$("#t-tiers").addEventListener("click", (ev) => {
+  const id = ev.target.dataset.releveTiers;
+  if (id) ouvrirFichier(`/tiers/${id}/releve.pdf`, "releve.pdf");
+});
+$("#f-tiers").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("/tiers", { method: "POST", body: JSON.stringify(formData(ev.target)) });
+    toast("Organisme ajouté ✔ Attribue-le aux élèves depuis le guichet (Actions → Prise en charge)");
+    ev.target.reset();
+    afficherTiers();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---------- Alertes au directeur ----------
+async function afficherAlertes() {
+  if (!peut("directeur")) return;
+  const a = await api("/alertes");
+  $("#carte-alertes").hidden = !a.length;
+  const ICONES = { annulation: "❌", reduction: "💸", ecart_caisse: "⚠", moratoire: "⏸", prise_en_charge: "🏢" };
+  $("#liste-alertes").innerHTML = a.slice(0, 15).map((x) => `<div class="ligne-info"><span>${ICONES[x.type] || "•"} ${esc(x.message)}</span>
+    <b style="font-weight:400;color:var(--muted);white-space:nowrap">${dateHeure(x.cree_le)}</b></div>`).join("");
+}
+$("#btn-alertes-lues").addEventListener("click", async () => { await api("/alertes/lues", { method: "POST" }); afficherAlertes(); });
+
+// ---------- Règles de paiement ----------
+function afficherReglesPaiement() {
+  const f = $("#f-regles-paiement"), e = moi.ecole;
+  f.elements.reduction_fratrie_pct.value = e.reduction_fratrie_pct || 0;
+  f.elements.bloquer_bulletin_impaye.checked = !!e.bloquer_bulletin_impaye;
+  f.elements.relances_auto.checked = !!e.relances_auto;
+  f.elements.relance_jours_avant.value = e.relance_jours_avant;
+  f.elements.relance_jours_apres.value = e.relance_jours_apres;
+}
+$("#f-regles-paiement").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    moi.ecole = await api("/ecole", { method: "PATCH", body: JSON.stringify({
+      reduction_fratrie_pct: Number(f.elements.reduction_fratrie_pct.value || 0),
+      bloquer_bulletin_impaye: f.elements.bloquer_bulletin_impaye.checked, relances_auto: f.elements.relances_auto.checked,
+      relance_jours_avant: Number(f.elements.relance_jours_avant.value), relance_jours_apres: Number(f.elements.relance_jours_apres.value) }) });
+    toast("Règles de paiement enregistrées ✔");
+  } catch (err) { toast(err.message, true); }
+});
+
+
 $("#btn-cj-imprimer").addEventListener("click", () => {
   const w = window.open("", "_blank");
   w.document.write(`<html><head><title>Caisse du ${$("#cj-jour").value}</title><style>body{font-family:sans-serif;padding:20px}
@@ -3405,6 +3817,9 @@ async function afficherCaisse() {
   if (!$("#f-depense").elements.jour.value) $("#f-depense").elements.jour.value = aujourdhui();
   afficherCaisseJour();
   afficherRecettes();
+  afficherClotures();
+  afficherPrevision();
+  afficherTiers();
   const b = await api("/caisse/bilan");
   $("#c-entrees").textContent = argent(b.total_entrees);
   $("#c-recettes").textContent = b.total_recettes ? `dont ${argent(b.total_recettes)} hors frais des élèves` : "";
@@ -3959,18 +4374,7 @@ $("#f-user").addEventListener("submit", async (ev) => {
     afficherEquipe();
   } catch (err) { toast(err.message, true); }
 });
-brancherFormulaire("#f-paiement", "/paiements", "Paiement enregistré ✔", (p) => {
-  if (p.__enAttente) {
-    $("#dernier-recu").innerHTML = `<div class="recu-pret" style="background:#fef3c7">
-      <span>⏳ Paiement gardé hors connexion. Le reçu sera disponible quand il aura été envoyé.</span></div>`;
-    return;
-  }
-  $("#f-paiement").elements.montant.placeholder = "";
-  $("#p-eleve").value = String(p.eleve_id);
-  $("#dernier-recu").innerHTML = `<div class="recu-pret">
-    <span>Reçu <b>${esc(p.numero_recu)}</b> — ${argent(p.montant)}</span>
-    <button class="btn" data-recu="${p.id}">📄 Imprimer le reçu</button></div>`;
-});
+
 
 let rechercheTimer;
 $("#q-eleve").addEventListener("input", () => {

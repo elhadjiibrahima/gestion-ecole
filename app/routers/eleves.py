@@ -239,6 +239,11 @@ def definir_reduction(
     eleve.reduction_montant = data.montant
     eleve.reduction_motif = (data.motif or "").strip() or None if (data.pourcentage or data.montant) else None
     session.add(eleve)
+    if data.pourcentage or data.montant:
+        from app.routers.guichet import alerter
+        alerter(session, user.ecole_id, "reduction", f"Réduction pour {eleve.prenom} {eleve.nom} : "
+                + " + ".join(x for x in (data.pourcentage and f"{data.pourcentage:g} %", data.montant and f"{data.montant:,}".replace(",", " ")) if x)
+                + f" ({eleve.reduction_motif}) — {user.nom}")
     session.commit()
     return calculer_solde(session, eleve)
 
